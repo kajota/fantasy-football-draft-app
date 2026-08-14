@@ -1,0 +1,84 @@
+## .NET / MSBuild
+bin/
+obj/
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+*.pidb
+*.svclog
+*.DotSettings.user
+project.lock.json
+project.fragment.lock.json
+artifacts/
+*.binlog
+
+## NuGet
+*.nupkg
+*.snupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+*.nuget.props
+*.nuget.targets
+
+## Avalonia
+*.axaml.g.cs
+
+## Publish / self-contained output
+publish/
+[Pp]ublish/
+
+## IDE
+.vs/
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.ionide/
+
+## OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+## App local data (runtime SQLite, secrets, backups)
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+.env
+.env.*
+!.env.example
+credentials.dat
+**/fantasy-draft-assistant/
+
+## Test / coverage
+TestResults/
+[Tt]est[Rr]esult*/
+*.trx
+*.coverage
+*.coveragexml
+coverage*
+coverage.json
+coverage.cobertura.xml
+
+## Rider / ReSharper
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings

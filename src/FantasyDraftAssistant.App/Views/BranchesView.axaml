@@ -1,0 +1,16 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:FantasyDraftAssistant.App.ViewModels"
+             x:Class="FantasyDraftAssistant.App.Views.BranchesView"
+             x:DataType="vm:BranchesViewModel">
+  <StackPanel Spacing="12">
+    <TextBlock Text="Scenario Branches" Classes="h1" />
+    <TextBlock Text="{Binding StatusMessage}" Classes="muted" />
+    <Grid ColumnDefinitions="*,120,Auto" ColumnSpacing="8">
+      <TextBox PlaceholderText="Branch name" Text="{Binding NewBranchName}" />
+      <TextBox Grid.Column="1" PlaceholderText="From pick" Text="{Binding BranchPoint}" />
+      <Button Grid.Column="2" Content="Create branch" Classes="primary" Command="{Binding CreateCommand}" />
+    </Grid>
+    <ListBox ItemsSource="{Binding Branches}" Background="Transparent" />
+  </StackPanel>
+</UserControl>

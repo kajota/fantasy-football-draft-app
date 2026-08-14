@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>FantasyDraftAssistant.Core</RootNamespace>
+    <AssemblyName>FantasyDraftAssistant.Core</AssemblyName>
+  </PropertyGroup>
+</Project>

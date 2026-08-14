@@ -1,0 +1,13 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:FantasyDraftAssistant.App.ViewModels"
+             x:Class="FantasyDraftAssistant.App.Views.DataSourcesView"
+             x:DataType="vm:DataSourcesViewModel">
+  <StackPanel Spacing="12">
+    <TextBlock Text="Player Data Cache" Classes="h1" />
+    <TextBlock Text="The draft room reads this local cache, not the network." Classes="muted" />
+    <Button Content="Refresh seed data" Classes="primary" Command="{Binding RefreshSeedCommand}" HorizontalAlignment="Left" />
+    <TextBlock Text="{Binding StatusMessage}" Classes="muted" />
+    <ListBox ItemsSource="{Binding Rows}" Background="Transparent" />
+  </StackPanel>
+</UserControl>

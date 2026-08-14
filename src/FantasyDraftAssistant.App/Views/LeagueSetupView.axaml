@@ -1,0 +1,96 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:FantasyDraftAssistant.App.ViewModels"
+             x:Class="FantasyDraftAssistant.App.Views.LeagueSetupView"
+             x:DataType="vm:LeagueSetupViewModel">
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+    <StackPanel Spacing="16">
+      <TextBlock Text="League Setup" Classes="h1" />
+      <TextBlock Text="{Binding StatusMessage}" Classes="muted" />
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <StackPanel Spacing="4">
+            <TextBlock Text="League name" FontWeight="SemiBold" />
+            <TextBox Text="{Binding LeagueName}"
+                     ToolTip.Tip="Display name for this league. It is not the number of teams or a scoring format." />
+          </StackPanel>
+          <StackPanel Spacing="4">
+            <TextBlock Text="Season" FontWeight="SemiBold" />
+            <TextBox Text="{Binding Season}"
+                     ToolTip.Tip="NFL season year for this league, for example 2026." />
+            <TextBlock Text="The NFL season this draft is for." Classes="muted" />
+          </StackPanel>
+          <StackPanel Spacing="4">
+            <TextBlock Text="Draft rounds" FontWeight="SemiBold" />
+            <TextBox Text="{Binding RoundCount}"
+                     ToolTip.Tip="How many rounds the draft lasts. This is not the number of teams. A 12-team standard roster is usually 15 rounds; Superflex is usually 16." />
+            <TextBlock Text="How many picks each team makes. This is not the number of teams — that is the list below. Standard 1-QB is usually 15; Superflex is usually 16."
+                       Classes="muted" TextWrapping="Wrap" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+      <Border Classes="card">
+        <StackPanel Spacing="10">
+          <TextBlock Text="Roster" Classes="h2" />
+          <TextBlock Text="Yahoo Fantasy slot types. Change the counts to match your league. Presets only fill these numbers."
+                     Classes="muted" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding RosterSummary}" Classes="muted" TextWrapping="Wrap" />
+          <WrapPanel Margin="0,4,0,8">
+            <Button Content="Yahoo default" Classes="ghost" Command="{Binding ApplyYahooRosterCommand}" Margin="0,0,8,8" />
+            <Button Content="Standard 1-QB" Classes="ghost" Command="{Binding ApplyStandardRosterCommand}" Margin="0,0,8,8" />
+            <Button Content="Superflex" Classes="ghost" Command="{Binding ApplySuperflexRosterCommand}" Margin="0,0,8,8" />
+            <Button Content="Match rounds to roster" Classes="ghost" Command="{Binding MatchRoundsToRosterCommand}" Margin="0,0,8,8" />
+          </WrapPanel>
+          <ItemsControl ItemsSource="{Binding Roster}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:RosterSlotEditor">
+                <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1" Padding="0,8">
+                  <DockPanel LastChildFill="True">
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="12,0,0,0">
+                      <Button Content="−" Classes="ghost" Command="{Binding DecrementCommand}" />
+                      <TextBlock Text="{Binding Count}" Width="24" TextAlignment="Center" VerticalAlignment="Center" FontWeight="SemiBold" />
+                      <Button Content="+" Classes="ghost" Command="{Binding IncrementCommand}" />
+                    </StackPanel>
+                    <StackPanel>
+                      <TextBlock Text="{Binding YahooName}" FontWeight="SemiBold"
+                                 ToolTip.Tip="{Binding DisplayName}" />
+                      <TextBlock Text="{Binding DisplayName}" TextWrapping="Wrap" />
+                      <TextBlock Text="{Binding Eligibility}" Classes="muted" TextWrapping="Wrap" />
+                    </StackPanel>
+                  </DockPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+      <Border Classes="card">
+        <StackPanel Spacing="8">
+          <TextBlock Text="Teams" Classes="h2" />
+          <TextBlock Text="This list is the number of teams. Draft position, team name, and owner."
+                     Classes="muted" TextWrapping="Wrap" />
+          <Grid ColumnDefinitions="60,*,*" ColumnSpacing="8">
+            <TextBlock Text="#" Classes="muted" />
+            <TextBlock Grid.Column="1" Text="Team name" Classes="muted" />
+            <TextBlock Grid.Column="2" Text="Owner" Classes="muted" />
+          </Grid>
+          <ItemsControl ItemsSource="{Binding Teams}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:TeamRow">
+                <Grid ColumnDefinitions="60,*,*" ColumnSpacing="8" Margin="0,4">
+                  <TextBlock Text="{Binding DraftPosition}" VerticalAlignment="Center"
+                             ToolTip.Tip="Draft slot in round 1 for this team." />
+                  <TextBox Grid.Column="1" Text="{Binding Name}"
+                           ToolTip.Tip="Fantasy team name as it should appear on the draft board." />
+                  <TextBox Grid.Column="2" Text="{Binding OwnerName}" PlaceholderText="Owner"
+                           ToolTip.Tip="Person who owns this team. Optional." />
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <Button Content="Save" Classes="primary" Command="{Binding SaveCommand}" HorizontalAlignment="Left" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

@@ -1,0 +1,23 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:FantasyDraftAssistant.App.ViewModels"
+             xmlns:core="using:FantasyDraftAssistant.Core.Results"
+             x:Class="FantasyDraftAssistant.App.Views.ReadinessView"
+             x:DataType="vm:ReadinessViewModel">
+  <DockPanel>
+    <TextBlock DockPanel.Dock="Top" Text="Draft Readiness" Classes="h1" Margin="0,0,0,12" />
+    <ItemsControl ItemsSource="{Binding Items}">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="core:ReadinessItem">
+          <Border Classes="card" Margin="0,0,0,8">
+            <Grid ColumnDefinitions="180,110,*">
+              <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+              <TextBlock Grid.Column="1" Text="{Binding Level}" Classes="accent" />
+              <TextBlock Grid.Column="2" Text="{Binding Detail}" Classes="muted" TextWrapping="Wrap" />
+            </Grid>
+          </Border>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+  </DockPanel>
+</UserControl>

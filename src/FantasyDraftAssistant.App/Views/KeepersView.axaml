@@ -1,0 +1,12 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:FantasyDraftAssistant.App.ViewModels"
+             x:Class="FantasyDraftAssistant.App.Views.KeepersView"
+             x:DataType="vm:KeepersViewModel">
+  <StackPanel Spacing="12">
+    <TextBlock Text="Keepers" Classes="h1" />
+    <TextBlock Text="One keeper per team. Assign them before the draft starts." Classes="muted" />
+    <TextBlock Text="{Binding StatusMessage}" Classes="muted" />
+    <ListBox ItemsSource="{Binding Keepers}" Background="Transparent" />
+  </StackPanel>
+</UserControl>

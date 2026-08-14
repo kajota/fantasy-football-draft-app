@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>FantasyDraftAssistant.App</RootNamespace>
+    <AssemblyName>FantasyDraftAssistant</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\FantasyDraftAssistant.Core\FantasyDraftAssistant.Core.csproj" />
+    <ProjectReference Include="..\FantasyDraftAssistant.Data\FantasyDraftAssistant.Data.csproj" />
+    <ProjectReference Include="..\FantasyDraftAssistant.Providers.FantasyData\FantasyDraftAssistant.Providers.FantasyData.csproj" />
+    <ProjectReference Include="..\FantasyDraftAssistant.Providers.AI\FantasyDraftAssistant.Providers.AI.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Avalonia.Themes.Fluent" />
+    <PackageReference Include="Avalonia.Fonts.Inter" />
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
+  </ItemGroup>
+</Project>

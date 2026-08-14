@@ -1,0 +1,813 @@
+using FantasyDraftAssistant.Core.Commands;
+using FantasyDraftAssistant.Core.Engine;
+using FantasyDraftAssistant.Core.Enums;
+using FantasyDraftAssistant.Core.Ids;
+using FantasyDraftAssistant.Core.Interfaces;
+using FantasyDraftAssistant.Core.Models;
+using FantasyDraftAssistant.Core.Query;
+using FantasyDraftAssistant.Data.Database;
+using Microsoft.Data.Sqlite;
+
+namespace FantasyDraftAssistant.Data.Services;
+
+public sealed class LeagueService(SqliteConnectionFactory factory) : ILeagueService
+{
+    public Task<IReadOnlyList<LeagueSummary>> ListLeaguesAsync(CancellationToken cancellationToken = default)
+    {
+        using var db = factory.Open();
+        using var cmd = db.Cmd("""
+            SELECT l.LeagueId, l.Name, l.Season, l.TeamCount, l.DraftType,
+                   d.DraftId, d.Status
+            FROM Leagues l
+            LEFT JOIN Drafts d ON d.LeagueId = l.LeagueId
+              AND d.CreatedAt = (SELECT MAX(CreatedAt) FROM Drafts WHERE LeagueId = l.LeagueId)
+            ORDER BY l.CreatedAt DESC;
+            """);
+        using var reader = cmd.ExecuteReader();
+        var list = new List<LeagueSummary>();
+        while (reader.Read())
+        {
+            list.Add(new LeagueSummary
+            {
+                LeagueId = LeagueId.Parse(reader.GetString(0)),
+                Name = reader.GetString(1),
+                Season = reader.GetInt32(2),
+                TeamCount = reader.GetInt32(3),
+                DraftType = Enum.Parse<DraftType>(reader.GetString(4)),
+                ActiveDraftId = reader.IsDBNull(5) ? null : DraftId.Parse(reader.GetString(5)),
+                ActiveDraftStatus = reader.IsDBNull(6) ? null : Enum.Parse<DraftStatus>(reader.GetString(6))
+            });
+        }
+
+        return Task.FromResult<IReadOnlyList<LeagueSummary>>(list);
+    }
+
+    public Task<League> CreateLeagueAsync(CreateLeagueRequest request, CancellationToken cancellationToken = default)
+    {
+        var league = new League
+        {
+            LeagueId = LeagueId.New(),
+            Name = request.Name.Trim(),
+            Platform = request.Platform,
+            Season = request.Season,
+            TeamCount = request.TeamCount,
+            DraftType = request.DraftType,
+            RoundCount = request.RoundCount,
+            RosterSize = RosterRules.Preset(request.Superflex).Sum(s => s.Count)
+        };
+
+        using var db = factory.Open();
+        using var tx = db.BeginTransaction();
+        InsertLeague(db, tx, league);
+
+        var teams = new List<Team>();
+        for (var i = 1; i <= request.TeamCount; i++)
+        {
+            var isUser = request.UserTeamName is not null && i == 1;
+            teams.Add(new Team
+            {
+                TeamId = TeamId.New(),
+                LeagueId = league.LeagueId,
+                Name = isUser ? request.UserTeamName! : $"Team {i}",
+                OwnerName = isUser ? "You" : null,
+                DraftPosition = i
+            });
+        }
+
+        league.UserTeamId = teams[0].TeamId;
+        using (var cmd = db.Cmd("UPDATE Leagues SET UserTeamId = $t WHERE LeagueId = $id;", tx)
+                   .Bind("$t", league.UserTeamId.Value.ToString())
+                   .Bind("$id", league.LeagueId.ToString()))
+        {
+            cmd.ExecuteNonQuery();
+        }
+
+        foreach (var team in teams)
+            InsertTeam(db, tx, team);
+
+        foreach (var spec in RosterRules.Preset(request.Superflex))
+        {
+            var slot = new RosterSlot
+            {
+                RosterSlotId = RosterSlotId.New(),
+                LeagueId = league.LeagueId,
+                SlotCode = spec.SlotCode,
+                SlotKind = spec.SlotKind,
+                Count = spec.Count,
+                EligiblePositions = spec.EligiblePositions
+            };
+            InsertRosterSlot(db, tx, slot);
+        }
+
+        foreach (var spec in RosterRules.DefaultScoring())
+        {
+            InsertScoring(db, tx, new ScoringRule
+            {
+                ScoringRuleId = ScoringRuleId.New(),
+                LeagueId = league.LeagueId,
+                Category = spec.Category,
+                Points = spec.Points
+            });
+        }
+
+        tx.Commit();
+        return Task.FromResult(league);
+    }
+
+    public Task SaveLeagueDetailsAsync(LeagueId leagueId, string name, int season, int roundCount, CancellationToken cancellationToken = default)
+    {
+        using var db = factory.Open();
+        using var cmd = db.Cmd("""
+            UPDATE Leagues
+            SET Name = $name, Season = $season, RoundCount = $rounds
+            WHERE LeagueId = $id;
+            """)
+            .Bind("$name", name.Trim())
+            .Bind("$season", season)
+            .Bind("$rounds", roundCount)
+            .Bind("$id", leagueId.ToString());
+        cmd.ExecuteNonQuery();
+        return Task.CompletedTask;
+    }
+
+    public Task<League?> GetLeagueAsync(LeagueId leagueId, CancellationToken cancellationToken = default)
+    {
+        using var db = factory.Open();
+        return Task.FromResult(LoadLeague(db, null, leagueId));
+    }
+
+    public Task<IReadOnlyList<Team>> GetTeamsAsync(LeagueId leagueId, CancellationToken cancellationToken = default)
+    {
+        using var db = factory.Open();
+        return Task.FromResult<IReadOnlyList<Team>>(LoadTeams(db, null, leagueId));
+    }
+
+    public Task SaveTeamsAsync(SaveTeamsRequest request, CancellationToken cancellationToken = default)
+    {
+        using var db = factory.Open();
+        using var tx = db.BeginTransaction();
+        using (var cmd = db.Cmd("DELETE FROM Teams WHERE LeagueId = $id;", tx).Bind("$id", request.LeagueId.ToString()))
+            cmd.ExecuteNonQuery();
+
+        foreach (var spec in request.Teams.OrderBy(t => t.DraftPosition))
+        {
+            InsertTeam(db, tx, new Team
+            {
+                TeamId = spec.TeamId ?? TeamId.New(),
+                LeagueId = request.LeagueId,
+                Name = spec.Name,
+                OwnerName = spec.OwnerName,
+                DisplayLabel = spec.DisplayLabel,
+                DraftPosition = spec.DraftPosition
+            });
+        }
+
+        if (request.UserTeamId is { } user)
+        {
+            using var cmd = db.Cmd("UPDATE Leagues SET UserTeamId = $t, TeamCount = $c WHERE LeagueId = $id;", tx)
+                .Bind("$t", user.ToString())
+                .Bind("$c", request.Teams.Count)
+                .Bind("$id", request.LeagueId.ToString());
+            cmd.ExecuteNonQuery();
+        }
+        else
+        {
+            using var cmd = db.Cmd("UPDATE Leagues SET TeamCount = $c WHERE LeagueId = $id;", tx)
+                .Bind("$c", request.Teams.Count)
+                .Bind("$id", request.LeagueId.ToString());
+            cmd.ExecuteNonQuery();
+        }
+
+        tx.Commit();
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<RosterSlot>> GetRosterSlotsAsync(LeagueId leagueId, CancellationToken cancellationToken = default)
+    {
+        using var db = factory.Open();
+        return Task.FromResult<IReadOnlyList<RosterSlot>>(LoadRoster(db, null, leagueId));
+    }
+
+    public Task SaveRosterAsync(SaveRosterRequest request, CancellationToken cancellationToken = default)
+    {
+        using var db = factory.Open();
+        using var tx = db.BeginTransaction();
+        using (var cmd = db.Cmd("DELETE FROM RosterSlots WHERE LeagueId = $id;", tx).Bind("$id", request.LeagueId.ToString()))
+            cmd.ExecuteNonQuery();
+
+        var size = 0;
+        foreach (var spec in request.Slots)
+        {
+            size += spec.Count;
+            InsertRosterSlot(db, tx, new RosterSlot
+            {
+                RosterSlotId = RosterSlotId.New(),
+                LeagueId = request.LeagueId,
+                SlotCode = spec.SlotCode,
+                SlotKind = spec.SlotKind,
+                Count = spec.Count,
+                EligiblePositions = spec.EligiblePositions
+            });
+        }
+
+        using (var cmd = db.Cmd("UPDATE Leagues SET RosterSize = $s, RoundCount = CASE WHEN RoundCount < $s THEN $s ELSE RoundCount END WHERE LeagueId = $id;", tx)
+                   .Bind("$s", size)
+                   .Bind("$id", request.LeagueId.ToString()))
+        {
+            cmd.ExecuteNonQuery();
+        }
+
+        tx.Commit();
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<ScoringRule>> GetScoringRulesAsync(LeagueId leagueId, CancellationToken cancellationToken = default)
+    {
+        using var db = factory.Open();
+        return Task.FromResult<IReadOnlyList<ScoringRule>>(LoadScoring(db, null, leagueId));
+    }
+
+    public Task SaveScoringAsync(SaveScoringRequest request, CancellationToken cancellationToken = default)
+    {
+        using var db = factory.Open();
+        using var tx = db.BeginTransaction();
+        using (var cmd = db.Cmd("DELETE FROM ScoringRules WHERE LeagueId = $id;", tx).Bind("$id", request.LeagueId.ToString()))
+            cmd.ExecuteNonQuery();
+        foreach (var spec in request.Rules)
+        {
+            InsertScoring(db, tx, new ScoringRule
+            {
+                ScoringRuleId = ScoringRuleId.New(),
+                LeagueId = request.LeagueId,
+                Category = spec.Category,
+                Points = spec.Points
+            });
+        }
+
+        tx.Commit();
+        return Task.CompletedTask;
+    }
+
+    public Task<Draft> CreateDraftAsync(CreateDraftRequest request, CancellationToken cancellationToken = default)
+    {
+        using var db = factory.Open();
+        using var tx = db.BeginTransaction();
+        var league = LoadLeague(db, tx, request.LeagueId)
+                     ?? throw new InvalidOperationException("League not found.");
+        var teams = LoadTeams(db, tx, request.LeagueId);
+        if (teams.Count == 0)
+            throw new InvalidOperationException("League has no teams.");
+
+        var draftId = DraftId.New();
+        var branchId = BranchId.New();
+        var now = DateTimeOffset.UtcNow;
+        var draft = new Draft
+        {
+            DraftId = draftId,
+            LeagueId = request.LeagueId,
+            Name = request.Name,
+            Season = league.Season,
+            Status = DraftStatus.NotStarted,
+            ActiveBranchId = branchId,
+            SourceMode = league.DraftSourcePreference == DraftSourcePreference.Yahoo
+                ? DraftSourceMode.YahooSynchronized
+                : DraftSourceMode.Manual,
+            CreatedAt = now
+        };
+
+        using (var cmd = db.Cmd("""
+            INSERT INTO Drafts(DraftId, LeagueId, Name, Season, Status, ActiveBranchId, CurrentStateVersion, SourceMode, CreatedAt)
+            VALUES ($id, $league, $name, $season, $status, $branch, 0, $mode, $created);
+            """, tx)
+                   .Bind("$id", draftId.ToString())
+                   .Bind("$league", request.LeagueId.ToString())
+                   .Bind("$name", draft.Name)
+                   .Bind("$season", draft.Season)
+                   .Bind("$status", draft.Status.ToString())
+                   .Bind("$branch", branchId.ToString())
+                   .Bind("$mode", draft.SourceMode.ToString())
+                   .Bind("$created", now.ToString("O")))
+        {
+            cmd.ExecuteNonQuery();
+        }
+
+        using (var cmd = db.Cmd("""
+            INSERT INTO DraftBranches(BranchId, DraftId, Name, ParentBranchId, BranchPointOverallPick, CreatedFromStateVersion, CreatedAt)
+            VALUES ($id, $draft, $name, NULL, 0, 0, $created);
+            """, tx)
+                   .Bind("$id", branchId.ToString())
+                   .Bind("$draft", draftId.ToString())
+                   .Bind("$name", "Main Draft")
+                   .Bind("$created", now.ToString("O")))
+        {
+            cmd.ExecuteNonQuery();
+        }
+
+        var positions = teams.Select(t => new TeamDraftPosition
+        {
+            TeamId = t.TeamId,
+            Name = t.Name,
+            DraftPosition = t.DraftPosition
+        }).ToList();
+        var slots = DraftSlotGenerator.ToDraftSlots(draftId, DraftSlotGenerator.Generate(league.DraftType, positions, league.RoundCount));
+        foreach (var slot in slots)
+            InsertSlot(db, tx, slot);
+
+        tx.Commit();
+        return Task.FromResult(draft);
+    }
+
+    public Task SaveKeepersAsync(SaveKeepersRequest request, CancellationToken cancellationToken = default)
+    {
+        var validation = KeeperRules.Validate(request.Keepers);
+        if (!validation.IsValid)
+            throw new InvalidOperationException(validation.Error);
+
+        using var db = factory.Open();
+        using var tx = db.BeginTransaction();
+        var slots = LoadSlots(db, tx, request.DraftId);
+        using (var cmd = db.Cmd("DELETE FROM Keepers WHERE DraftId = $id;", tx).Bind("$id", request.DraftId.ToString()))
+            cmd.ExecuteNonQuery();
+
+        foreach (var spec in request.Keepers)
+        {
+            var keeper = new Keeper
+            {
+                KeeperId = KeeperId.New(),
+                DraftId = request.DraftId,
+                TeamId = spec.TeamId,
+                PlayerId = spec.PlayerId,
+                RoundCost = spec.RoundCost,
+                Notes = spec.Notes
+            };
+            var slot = KeeperRules.ResolveSlot(slots, keeper);
+            if (slot is not null)
+            {
+                keeper.DraftSlotId = slot.DraftSlotId;
+                using var mark = db.Cmd("UPDATE DraftSlots SET IsKeeperSlot = 1 WHERE DraftSlotId = $id;", tx)
+                    .Bind("$id", slot.DraftSlotId.ToString());
+                mark.ExecuteNonQuery();
+            }
+
+            InsertKeeper(db, tx, keeper);
+        }
+
+        tx.Commit();
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<Keeper>> GetKeepersAsync(DraftId draftId, CancellationToken cancellationToken = default)
+    {
+        using var db = factory.Open();
+        return Task.FromResult<IReadOnlyList<Keeper>>(LoadKeepers(db, null, draftId));
+    }
+
+    public Task<IReadOnlyList<Draft>> ListDraftsAsync(LeagueId leagueId, CancellationToken cancellationToken = default)
+    {
+        using var db = factory.Open();
+        using var cmd = db.Cmd("SELECT * FROM Drafts WHERE LeagueId = $id ORDER BY CreatedAt DESC;").Bind("$id", leagueId.ToString());
+        using var reader = cmd.ExecuteReader();
+        var list = new List<Draft>();
+        while (reader.Read())
+            list.Add(ReadDraft(reader));
+        return Task.FromResult<IReadOnlyList<Draft>>(list);
+    }
+
+    public Task<Draft?> GetDraftAsync(DraftId draftId, CancellationToken cancellationToken = default)
+    {
+        using var db = factory.Open();
+        return Task.FromResult(LoadDraft(db, null, draftId));
+    }
+
+    public Task<IReadOnlyList<DraftBranch>> GetBranchesAsync(DraftId draftId, CancellationToken cancellationToken = default)
+    {
+        using var db = factory.Open();
+        return Task.FromResult<IReadOnlyList<DraftBranch>>(LoadBranches(db, null, draftId));
+    }
+
+    internal static League? LoadLeague(SqliteConnection db, SqliteTransaction? tx, LeagueId id)
+    {
+        using var cmd = db.Cmd("SELECT * FROM Leagues WHERE LeagueId = $id;", tx).Bind("$id", id.ToString());
+        using var reader = cmd.ExecuteReader();
+        if (!reader.Read())
+            return null;
+        return new League
+        {
+            LeagueId = LeagueId.Parse(reader.GetString(reader.GetOrdinal("LeagueId"))),
+            Name = reader.GetString(reader.GetOrdinal("Name")),
+            Platform = Enum.Parse<FantasyPlatform>(reader.GetString(reader.GetOrdinal("Platform"))),
+            ExternalLeagueId = reader.GetNullString(reader.GetOrdinal("ExternalLeagueId")),
+            Season = reader.GetInt32(reader.GetOrdinal("Season")),
+            TeamCount = reader.GetInt32(reader.GetOrdinal("TeamCount")),
+            UserTeamId = reader.IsDBNull(reader.GetOrdinal("UserTeamId")) ? null : TeamId.Parse(reader.GetString(reader.GetOrdinal("UserTeamId"))),
+            DraftType = Enum.Parse<DraftType>(reader.GetString(reader.GetOrdinal("DraftType"))),
+            RoundCount = reader.GetInt32(reader.GetOrdinal("RoundCount")),
+            RosterSize = reader.GetInt32(reader.GetOrdinal("RosterSize")),
+            DraftSourcePreference = Enum.Parse<DraftSourcePreference>(reader.GetString(reader.GetOrdinal("DraftSourcePreference"))),
+            CreatedAt = reader.GetTime(reader.GetOrdinal("CreatedAt"))
+        };
+    }
+
+    internal static List<Team> LoadTeams(SqliteConnection db, SqliteTransaction? tx, LeagueId leagueId)
+    {
+        using var cmd = db.Cmd("SELECT * FROM Teams WHERE LeagueId = $id ORDER BY DraftPosition;", tx).Bind("$id", leagueId.ToString());
+        using var reader = cmd.ExecuteReader();
+        var list = new List<Team>();
+        while (reader.Read())
+        {
+            list.Add(new Team
+            {
+                TeamId = TeamId.Parse(reader.GetString(reader.GetOrdinal("TeamId"))),
+                LeagueId = LeagueId.Parse(reader.GetString(reader.GetOrdinal("LeagueId"))),
+                Name = reader.GetString(reader.GetOrdinal("Name")),
+                OwnerName = reader.GetNullString(reader.GetOrdinal("OwnerName")),
+                DisplayLabel = reader.GetNullString(reader.GetOrdinal("DisplayLabel")),
+                DraftPosition = reader.GetInt32(reader.GetOrdinal("DraftPosition")),
+                ExternalTeamId = reader.GetNullString(reader.GetOrdinal("ExternalTeamId"))
+            });
+        }
+
+        return list;
+    }
+
+    internal static List<RosterSlot> LoadRoster(SqliteConnection db, SqliteTransaction? tx, LeagueId leagueId)
+    {
+        using var cmd = db.Cmd("SELECT * FROM RosterSlots WHERE LeagueId = $id;", tx).Bind("$id", leagueId.ToString());
+        using var reader = cmd.ExecuteReader();
+        var slots = new List<RosterSlot>();
+        var ids = new List<string>();
+        while (reader.Read())
+        {
+            var id = reader.GetString(reader.GetOrdinal("RosterSlotId"));
+            ids.Add(id);
+            slots.Add(new RosterSlot
+            {
+                RosterSlotId = RosterSlotId.Parse(id),
+                LeagueId = leagueId,
+                SlotCode = reader.GetString(reader.GetOrdinal("SlotCode")),
+                SlotKind = Enum.Parse<SlotKind>(reader.GetString(reader.GetOrdinal("SlotKind"))),
+                Count = reader.GetInt32(reader.GetOrdinal("Count")),
+                EligiblePositions = []
+            });
+        }
+
+        var eligibility = new Dictionary<string, List<PlayerPosition>>();
+        if (ids.Count > 0)
+        {
+            using var pos = db.Cmd("SELECT RosterSlotId, Position FROM RosterSlotEligiblePositions;", tx);
+            using var posReader = pos.ExecuteReader();
+            while (posReader.Read())
+            {
+                var id = posReader.GetString(0);
+                if (!eligibility.TryGetValue(id, out var list))
+                    eligibility[id] = list = [];
+                list.Add(Enum.Parse<PlayerPosition>(posReader.GetString(1)));
+            }
+        }
+
+        return slots.Select(s =>
+        {
+            s.EligiblePositions = eligibility.GetValueOrDefault(s.RosterSlotId.ToString()) ?? [];
+            return s;
+        }).ToList();
+    }
+
+    internal static List<ScoringRule> LoadScoring(SqliteConnection db, SqliteTransaction? tx, LeagueId leagueId)
+    {
+        using var cmd = db.Cmd("SELECT * FROM ScoringRules WHERE LeagueId = $id;", tx).Bind("$id", leagueId.ToString());
+        using var reader = cmd.ExecuteReader();
+        var list = new List<ScoringRule>();
+        while (reader.Read())
+        {
+            list.Add(new ScoringRule
+            {
+                ScoringRuleId = ScoringRuleId.Parse(reader.GetString(reader.GetOrdinal("ScoringRuleId"))),
+                LeagueId = leagueId,
+                Category = Enum.Parse<ScoringCategory>(reader.GetString(reader.GetOrdinal("Category"))),
+                Points = decimal.Parse(reader.GetString(reader.GetOrdinal("Points")))
+            });
+        }
+
+        return list;
+    }
+
+    internal static Draft? LoadDraft(SqliteConnection db, SqliteTransaction? tx, DraftId id)
+    {
+        using var cmd = db.Cmd("SELECT * FROM Drafts WHERE DraftId = $id;", tx).Bind("$id", id.ToString());
+        using var reader = cmd.ExecuteReader();
+        return reader.Read() ? ReadDraft(reader) : null;
+    }
+
+    internal static Draft ReadDraft(SqliteDataReader reader) => new()
+    {
+        DraftId = DraftId.Parse(reader.GetString(reader.GetOrdinal("DraftId"))),
+        LeagueId = LeagueId.Parse(reader.GetString(reader.GetOrdinal("LeagueId"))),
+        Name = reader.GetString(reader.GetOrdinal("Name")),
+        Season = reader.GetInt32(reader.GetOrdinal("Season")),
+        Status = Enum.Parse<DraftStatus>(reader.GetString(reader.GetOrdinal("Status"))),
+        ActiveBranchId = BranchId.Parse(reader.GetString(reader.GetOrdinal("ActiveBranchId"))),
+        CurrentStateVersion = reader.GetInt32(reader.GetOrdinal("CurrentStateVersion")),
+        SourceMode = Enum.Parse<DraftSourceMode>(reader.GetString(reader.GetOrdinal("SourceMode"))),
+        CreatedAt = reader.GetTime(reader.GetOrdinal("CreatedAt")),
+        StartedAt = reader.GetNullTime(reader.GetOrdinal("StartedAt")),
+        CompletedAt = reader.GetNullTime(reader.GetOrdinal("CompletedAt"))
+    };
+
+    internal static List<DraftBranch> LoadBranches(SqliteConnection db, SqliteTransaction? tx, DraftId draftId)
+    {
+        using var cmd = db.Cmd("SELECT * FROM DraftBranches WHERE DraftId = $id;", tx).Bind("$id", draftId.ToString());
+        using var reader = cmd.ExecuteReader();
+        var list = new List<DraftBranch>();
+        while (reader.Read())
+            list.Add(ReadBranch(reader));
+        return list;
+    }
+
+    internal static DraftBranch? LoadBranch(SqliteConnection db, SqliteTransaction? tx, BranchId id)
+    {
+        using var cmd = db.Cmd("SELECT * FROM DraftBranches WHERE BranchId = $id;", tx).Bind("$id", id.ToString());
+        using var reader = cmd.ExecuteReader();
+        return reader.Read() ? ReadBranch(reader) : null;
+    }
+
+    internal static DraftBranch ReadBranch(SqliteDataReader reader) => new()
+    {
+        BranchId = BranchId.Parse(reader.GetString(reader.GetOrdinal("BranchId"))),
+        DraftId = DraftId.Parse(reader.GetString(reader.GetOrdinal("DraftId"))),
+        Name = reader.GetString(reader.GetOrdinal("Name")),
+        ParentBranchId = reader.IsDBNull(reader.GetOrdinal("ParentBranchId")) ? null : BranchId.Parse(reader.GetString(reader.GetOrdinal("ParentBranchId"))),
+        BranchPointOverallPick = reader.GetInt32(reader.GetOrdinal("BranchPointOverallPick")),
+        CreatedFromStateVersion = reader.GetInt32(reader.GetOrdinal("CreatedFromStateVersion")),
+        CurrentHeadEventId = reader.IsDBNull(reader.GetOrdinal("CurrentHeadEventId")) ? null : EventId.Parse(reader.GetString(reader.GetOrdinal("CurrentHeadEventId"))),
+        CreatedAt = reader.GetTime(reader.GetOrdinal("CreatedAt"))
+    };
+
+    internal static List<DraftSlot> LoadSlots(SqliteConnection db, SqliteTransaction? tx, DraftId draftId)
+    {
+        using var cmd = db.Cmd("SELECT * FROM DraftSlots WHERE DraftId = $id ORDER BY OverallPick;", tx).Bind("$id", draftId.ToString());
+        using var reader = cmd.ExecuteReader();
+        var list = new List<DraftSlot>();
+        while (reader.Read())
+        {
+            list.Add(new DraftSlot
+            {
+                DraftSlotId = DraftSlotId.Parse(reader.GetString(reader.GetOrdinal("DraftSlotId"))),
+                DraftId = draftId,
+                OverallPick = reader.GetInt32(reader.GetOrdinal("OverallPick")),
+                Round = reader.GetInt32(reader.GetOrdinal("Round")),
+                RoundPick = reader.GetInt32(reader.GetOrdinal("RoundPick")),
+                TeamId = TeamId.Parse(reader.GetString(reader.GetOrdinal("TeamId"))),
+                IsKeeperSlot = reader.GetInt32(reader.GetOrdinal("IsKeeperSlot")) == 1
+            });
+        }
+
+        return list;
+    }
+
+    internal static List<Keeper> LoadKeepers(SqliteConnection db, SqliteTransaction? tx, DraftId draftId)
+    {
+        using var cmd = db.Cmd("SELECT * FROM Keepers WHERE DraftId = $id;", tx).Bind("$id", draftId.ToString());
+        using var reader = cmd.ExecuteReader();
+        var list = new List<Keeper>();
+        while (reader.Read())
+        {
+            list.Add(new Keeper
+            {
+                KeeperId = KeeperId.Parse(reader.GetString(reader.GetOrdinal("KeeperId"))),
+                DraftId = draftId,
+                TeamId = TeamId.Parse(reader.GetString(reader.GetOrdinal("TeamId"))),
+                PlayerId = PlayerId.Parse(reader.GetString(reader.GetOrdinal("PlayerId"))),
+                RoundCost = reader.GetInt32(reader.GetOrdinal("RoundCost")),
+                DraftSlotId = reader.IsDBNull(reader.GetOrdinal("DraftSlotId")) ? null : DraftSlotId.Parse(reader.GetString(reader.GetOrdinal("DraftSlotId"))),
+                Notes = reader.GetNullString(reader.GetOrdinal("Notes"))
+            });
+        }
+
+        return list;
+    }
+
+    internal static List<DraftEventRecord> LoadEvents(SqliteConnection db, SqliteTransaction? tx, DraftId draftId, BranchId branchId)
+    {
+        using var cmd = db.Cmd("""
+            SELECT * FROM DraftEvents
+            WHERE DraftId = $d AND (BranchId = $b OR EventType = 'DraftStarted')
+            ORDER BY SequenceNumber;
+            """, tx)
+            .Bind("$d", draftId.ToString())
+            .Bind("$b", branchId.ToString());
+        using var reader = cmd.ExecuteReader();
+        var list = new List<DraftEventRecord>();
+        while (reader.Read())
+        {
+            list.Add(new DraftEventRecord
+            {
+                EventId = EventId.Parse(reader.GetString(reader.GetOrdinal("EventId"))),
+                DraftId = draftId,
+                BranchId = BranchId.Parse(reader.GetString(reader.GetOrdinal("BranchId"))),
+                EventType = Enum.Parse<DraftEventType>(reader.GetString(reader.GetOrdinal("EventType"))),
+                StateVersion = reader.GetInt32(reader.GetOrdinal("StateVersion")),
+                SequenceNumber = reader.GetInt32(reader.GetOrdinal("SequenceNumber")),
+                CreatedAt = reader.GetTime(reader.GetOrdinal("CreatedAt")),
+                CreatedBy = reader.GetString(reader.GetOrdinal("CreatedBy")),
+                CorrelationId = reader.GetNullString(reader.GetOrdinal("CorrelationId")),
+                PayloadJson = reader.GetString(reader.GetOrdinal("PayloadJson"))
+            });
+        }
+
+        return list;
+    }
+
+    internal static List<ActiveSelection> LoadSelections(SqliteConnection db, SqliteTransaction? tx, DraftId draftId, BranchId branchId)
+    {
+        using var cmd = db.Cmd("""
+            SELECT * FROM ActiveDraftSelections WHERE DraftId = $d AND BranchId = $b ORDER BY OverallPick;
+            """, tx)
+            .Bind("$d", draftId.ToString())
+            .Bind("$b", branchId.ToString());
+        using var reader = cmd.ExecuteReader();
+        var list = new List<ActiveSelection>();
+        while (reader.Read())
+        {
+            list.Add(new ActiveSelection
+            {
+                EventId = EventId.Parse(reader.GetString(reader.GetOrdinal("EventId"))),
+                DraftId = draftId,
+                BranchId = branchId,
+                DraftSlotId = DraftSlotId.Parse(reader.GetString(reader.GetOrdinal("DraftSlotId"))),
+                OverallPick = reader.GetInt32(reader.GetOrdinal("OverallPick")),
+                Round = reader.GetInt32(reader.GetOrdinal("Round")),
+                RoundPick = reader.GetInt32(reader.GetOrdinal("RoundPick")),
+                TeamId = TeamId.Parse(reader.GetString(reader.GetOrdinal("TeamId"))),
+                PlayerId = PlayerId.Parse(reader.GetString(reader.GetOrdinal("PlayerId"))),
+                Source = Enum.Parse<PickSource>(reader.GetString(reader.GetOrdinal("Source"))),
+                ExternalSourceId = reader.GetNullString(reader.GetOrdinal("ExternalSourceId")),
+                ObservedAt = reader.GetTime(reader.GetOrdinal("ObservedAt"))
+            });
+        }
+
+        return list;
+    }
+
+    internal static List<DraftQueueItem> LoadQueue(SqliteConnection db, SqliteTransaction? tx, DraftId draftId, BranchId branchId)
+    {
+        using var cmd = db.Cmd("""
+            SELECT * FROM DraftQueueItems WHERE DraftId = $d AND BranchId = $b ORDER BY SortOrder;
+            """, tx)
+            .Bind("$d", draftId.ToString())
+            .Bind("$b", branchId.ToString());
+        using var reader = cmd.ExecuteReader();
+        var list = new List<DraftQueueItem>();
+        while (reader.Read())
+        {
+            list.Add(new DraftQueueItem
+            {
+                QueueItemId = QueueItemId.Parse(reader.GetString(reader.GetOrdinal("QueueItemId"))),
+                DraftId = draftId,
+                BranchId = branchId,
+                PlayerId = PlayerId.Parse(reader.GetString(reader.GetOrdinal("PlayerId"))),
+                SortOrder = reader.GetInt32(reader.GetOrdinal("SortOrder")),
+                CreatedAt = reader.GetTime(reader.GetOrdinal("CreatedAt"))
+            });
+        }
+
+        return list;
+    }
+
+    internal static List<Player> LoadPlayers(SqliteConnection db, SqliteTransaction? tx = null)
+    {
+        using var cmd = db.Cmd("SELECT * FROM Players ORDER BY Name;", tx);
+        using var reader = cmd.ExecuteReader();
+        var players = new List<Player>();
+        while (reader.Read())
+        {
+            players.Add(new Player
+            {
+                PlayerId = PlayerId.Parse(reader.GetString(reader.GetOrdinal("PlayerId"))),
+                Name = reader.GetString(reader.GetOrdinal("Name")),
+                NflTeam = reader.GetString(reader.GetOrdinal("NflTeam")),
+                PrimaryPosition = Enum.Parse<PlayerPosition>(reader.GetString(reader.GetOrdinal("PrimaryPosition"))),
+                EligiblePositions = [Enum.Parse<PlayerPosition>(reader.GetString(reader.GetOrdinal("PrimaryPosition")))],
+                ByeWeek = reader.GetNullInt(reader.GetOrdinal("ByeWeek")),
+                Status = Enum.Parse<PlayerStatus>(reader.GetString(reader.GetOrdinal("Status"))),
+                StatusUpdatedAt = reader.GetNullTime(reader.GetOrdinal("StatusUpdatedAt"))
+            });
+        }
+
+        return players;
+    }
+
+    internal static int NextSequence(SqliteConnection db, SqliteTransaction? tx, DraftId draftId)
+    {
+        using var cmd = db.Cmd("SELECT COALESCE(MAX(SequenceNumber), 0) + 1 FROM DraftEvents WHERE DraftId = $id;", tx)
+            .Bind("$id", draftId.ToString());
+        return Convert.ToInt32(cmd.ExecuteScalar());
+    }
+
+    private static void InsertLeague(SqliteConnection db, SqliteTransaction tx, League league)
+    {
+        using var cmd = db.Cmd("""
+            INSERT INTO Leagues(LeagueId, Name, Platform, ExternalLeagueId, Season, TeamCount, UserTeamId, DraftType, RoundCount, RosterSize, DraftSourcePreference, CreatedAt)
+            VALUES ($id, $name, $platform, $ext, $season, $teams, $user, $type, $rounds, $roster, $pref, $created);
+            """, tx)
+            .Bind("$id", league.LeagueId.ToString())
+            .Bind("$name", league.Name)
+            .Bind("$platform", league.Platform.ToString())
+            .Bind("$ext", league.ExternalLeagueId)
+            .Bind("$season", league.Season)
+            .Bind("$teams", league.TeamCount)
+            .Bind("$user", league.UserTeamId?.ToString())
+            .Bind("$type", league.DraftType.ToString())
+            .Bind("$rounds", league.RoundCount)
+            .Bind("$roster", league.RosterSize)
+            .Bind("$pref", league.DraftSourcePreference.ToString())
+            .Bind("$created", league.CreatedAt.ToString("O"));
+        cmd.ExecuteNonQuery();
+    }
+
+    private static void InsertTeam(SqliteConnection db, SqliteTransaction tx, Team team)
+    {
+        using var cmd = db.Cmd("""
+            INSERT INTO Teams(TeamId, LeagueId, Name, OwnerName, DisplayLabel, DraftPosition, ExternalTeamId)
+            VALUES ($id, $league, $name, $owner, $label, $pos, $ext);
+            """, tx)
+            .Bind("$id", team.TeamId.ToString())
+            .Bind("$league", team.LeagueId.ToString())
+            .Bind("$name", team.Name)
+            .Bind("$owner", team.OwnerName)
+            .Bind("$label", team.DisplayLabel)
+            .Bind("$pos", team.DraftPosition)
+            .Bind("$ext", team.ExternalTeamId);
+        cmd.ExecuteNonQuery();
+    }
+
+    private static void InsertRosterSlot(SqliteConnection db, SqliteTransaction tx, RosterSlot slot)
+    {
+        using (var cmd = db.Cmd("""
+            INSERT INTO RosterSlots(RosterSlotId, LeagueId, SlotCode, SlotKind, Count)
+            VALUES ($id, $league, $code, $kind, $count);
+            """, tx)
+                   .Bind("$id", slot.RosterSlotId.ToString())
+                   .Bind("$league", slot.LeagueId.ToString())
+                   .Bind("$code", slot.SlotCode)
+                   .Bind("$kind", slot.SlotKind.ToString())
+                   .Bind("$count", slot.Count))
+        {
+            cmd.ExecuteNonQuery();
+        }
+
+        foreach (var position in slot.EligiblePositions)
+        {
+            using var cmd = db.Cmd("""
+                INSERT INTO RosterSlotEligiblePositions(RosterSlotId, Position) VALUES ($id, $p);
+                """, tx)
+                .Bind("$id", slot.RosterSlotId.ToString())
+                .Bind("$p", position.ToString());
+            cmd.ExecuteNonQuery();
+        }
+    }
+
+    private static void InsertScoring(SqliteConnection db, SqliteTransaction tx, ScoringRule rule)
+    {
+        using var cmd = db.Cmd("""
+            INSERT INTO ScoringRules(ScoringRuleId, LeagueId, Category, Points)
+            VALUES ($id, $league, $cat, $pts);
+            """, tx)
+            .Bind("$id", rule.ScoringRuleId.ToString())
+            .Bind("$league", rule.LeagueId.ToString())
+            .Bind("$cat", rule.Category.ToString())
+            .Bind("$pts", rule.Points.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        cmd.ExecuteNonQuery();
+    }
+
+    private static void InsertSlot(SqliteConnection db, SqliteTransaction tx, DraftSlot slot)
+    {
+        using var cmd = db.Cmd("""
+            INSERT INTO DraftSlots(DraftSlotId, DraftId, OverallPick, Round, RoundPick, TeamId, IsKeeperSlot)
+            VALUES ($id, $draft, $overall, $round, $rp, $team, $keeper);
+            """, tx)
+            .Bind("$id", slot.DraftSlotId.ToString())
+            .Bind("$draft", slot.DraftId.ToString())
+            .Bind("$overall", slot.OverallPick)
+            .Bind("$round", slot.Round)
+            .Bind("$rp", slot.RoundPick)
+            .Bind("$team", slot.TeamId.ToString())
+            .Bind("$keeper", slot.IsKeeperSlot ? 1 : 0);
+        cmd.ExecuteNonQuery();
+    }
+
+    private static void InsertKeeper(SqliteConnection db, SqliteTransaction tx, Keeper keeper)
+    {
+        using var cmd = db.Cmd("""
+            INSERT INTO Keepers(KeeperId, DraftId, TeamId, PlayerId, RoundCost, DraftSlotId, Notes)
+            VALUES ($id, $draft, $team, $player, $round, $slot, $notes);
+            """, tx)
+            .Bind("$id", keeper.KeeperId.ToString())
+            .Bind("$draft", keeper.DraftId.ToString())
+            .Bind("$team", keeper.TeamId.ToString())
+            .Bind("$player", keeper.PlayerId.ToString())
+            .Bind("$round", keeper.RoundCost)
+            .Bind("$slot", keeper.DraftSlotId?.ToString())
+            .Bind("$notes", keeper.Notes);
+        cmd.ExecuteNonQuery();
+    }
+}

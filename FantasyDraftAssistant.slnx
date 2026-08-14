@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/FantasyDraftAssistant.App/FantasyDraftAssistant.App.csproj" />
+    <Project Path="src/FantasyDraftAssistant.Core/FantasyDraftAssistant.Core.csproj" />
+    <Project Path="src/FantasyDraftAssistant.Data/FantasyDraftAssistant.Data.csproj" />
+    <Project Path="src/FantasyDraftAssistant.Providers.AI/FantasyDraftAssistant.Providers.AI.csproj" />
+    <Project Path="src/FantasyDraftAssistant.Providers.FantasyData/FantasyDraftAssistant.Providers.FantasyData.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/FantasyDraftAssistant.Core.Tests/FantasyDraftAssistant.Core.Tests.csproj" />
+    <Project Path="tests/FantasyDraftAssistant.Data.Tests/FantasyDraftAssistant.Data.Tests.csproj" />
+  </Folder>
+</Solution>

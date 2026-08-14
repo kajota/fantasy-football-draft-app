@@ -1,0 +1,141 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:FantasyDraftAssistant.App.ViewModels"
+             x:Class="FantasyDraftAssistant.App.Views.DraftRoomView"
+             x:DataType="vm:DraftRoomViewModel"
+             Focusable="True">
+  <Grid RowDefinitions="Auto,*,150,150" RowSpacing="8">
+
+    <!-- Current pick -->
+    <Border Classes="card" Padding="14,10" ClipToBounds="True">
+      <StackPanel Spacing="2">
+        <TextBlock Text="CURRENT PICK" FontSize="11" LetterSpacing="1" Classes="muted" />
+        <TextBlock Text="{Binding LocationLine}" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" />
+        <TextBlock Margin="0,6,0,0" TextWrapping="Wrap">
+          <Run Classes="muted" Text="On the clock: " />
+          <Run Text="{Binding RoundPick}" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" />
+          <Run Text="    " />
+          <Run Classes="muted" Text="Selecting: " />
+          <Run Text="{Binding SelectingTeam}" FontWeight="Bold" />
+          <Run Text="    " />
+          <Run Text="{Binding UserNext}" />
+        </TextBlock>
+      </StackPanel>
+    </Border>
+
+    <!-- Board + available players. Two columns only so they cannot be crushed by AI. -->
+    <Grid Grid.Row="1" ColumnDefinitions="*,1.4*" ColumnSpacing="8">
+      <Border Classes="card" Padding="10" ClipToBounds="True" MinWidth="0">
+        <DockPanel>
+          <TextBlock DockPanel.Dock="Top" Text="Draft board" Classes="h2" Margin="0,0,0,6" />
+          <ListBox ItemsSource="{Binding Board}" Background="Transparent" FontSize="12">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:BoardRow">
+                <Grid ColumnDefinitions="16,50,*,*" MinWidth="0">
+                  <TextBlock Text="{Binding Marker}" Foreground="{StaticResource AccentBrush}" FontWeight="Bold" />
+                  <TextBlock Grid.Column="1" Text="{Binding RoundPick}" />
+                  <TextBlock Grid.Column="2" Text="{Binding Team}" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Grid.Column="3" Text="{Binding Player}" TextTrimming="CharacterEllipsis" />
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </DockPanel>
+      </Border>
+
+      <Border Grid.Column="1" Classes="card" Padding="10" ClipToBounds="True" MinWidth="0">
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,6">
+            <TextBlock Text="Available players" Classes="h2" />
+            <Grid ColumnDefinitions="*,100,Auto,Auto" ColumnSpacing="6" MinWidth="0">
+              <TextBox x:Name="SearchBox" Text="{Binding Search}" MinWidth="0"
+                       ToolTip.Tip="Filter players by name. Press / to focus." />
+              <ComboBox Grid.Column="1" ItemsSource="{Binding Positions}" SelectedItem="{Binding PositionFilter}" />
+              <Button Grid.Column="2" Content="Draft" Classes="primary" Command="{Binding DraftSelectedCommand}"
+                      ToolTip.Tip="Give the highlighted player to the team on the clock." />
+              <Button Grid.Column="3" Content="Queue" Classes="ghost" Command="{Binding QueueSelectedCommand}"
+                      ToolTip.Tip="Save this player on My Queue. Does not draft them." />
+            </Grid>
+            <TextBlock Text="{Binding StatusMessage}" Classes="muted" TextWrapping="Wrap" />
+          </StackPanel>
+          <ListBox ItemsSource="{Binding Available}" SelectedItem="{Binding SelectedPlayer}" Background="Transparent">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:PlayerRow">
+                <Grid ColumnDefinitions="32,*,40,40,48" MinWidth="0">
+                  <TextBlock Text="{Binding Rank}" Classes="muted" />
+                  <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Grid.Column="2" Text="{Binding Position}" />
+                  <TextBlock Grid.Column="3" Text="{Binding NflTeam}" Classes="muted" />
+                  <TextBlock Grid.Column="4" Text="{Binding Adp}" />
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </DockPanel>
+      </Border>
+    </Grid>
+
+    <!-- Queue and roster: labeled, separate, never under the AI card -->
+    <Grid Grid.Row="2" ColumnDefinitions="*,*" ColumnSpacing="8">
+      <Border Classes="card" Padding="10" ClipToBounds="True" MinWidth="0">
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Top" Margin="0,0,0,4">
+            <TextBlock Text="My queue" Classes="h2" />
+            <TextBlock Text="A shortlist for later. Ctrl+D drafts the first player. Nothing here is drafted until you say so."
+                       Classes="muted" TextWrapping="Wrap" FontSize="11" />
+          </StackPanel>
+          <TextBlock Text="Empty — select a player above and click Queue."
+                     Classes="muted" IsVisible="{Binding QueueEmpty}" />
+          <ListBox ItemsSource="{Binding Queue}" Background="Transparent" IsVisible="{Binding !QueueEmpty}">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:PlayerRow">
+                <TextBlock Text="{Binding Name}" />
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </DockPanel>
+      </Border>
+      <Border Grid.Column="1" Classes="card" Padding="10" ClipToBounds="True" MinWidth="0">
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Top" Margin="0,0,0,4">
+            <TextBlock Text="My roster" Classes="h2" />
+            <TextBlock Text="Players already drafted to your team."
+                       Classes="muted" FontSize="11" />
+          </StackPanel>
+          <TextBlock Text="Empty — nobody on your team yet."
+                     Classes="muted" IsVisible="{Binding RosterEmpty}" />
+          <ListBox ItemsSource="{Binding Roster}" Background="Transparent" IsVisible="{Binding !RosterEmpty}" />
+        </DockPanel>
+      </Border>
+    </Grid>
+
+    <!-- AI last, full width, fixed height so it cannot cover anything above -->
+    <Border Grid.Row="3" Classes="card" Padding="10" ClipToBounds="True">
+      <Grid ColumnDefinitions="220,*" ColumnSpacing="12" MinWidth="0">
+        <StackPanel Spacing="6" MinWidth="0">
+          <TextBlock Text="AI analysts" Classes="h2" />
+          <TextBlock Text="Optional. Enable API keys under AI Providers."
+                     Classes="muted" TextWrapping="Wrap" FontSize="11" />
+          <TextBox Text="{Binding AiPrompt}" MinWidth="0"
+                   ToolTip.Tip="Question sent to every enabled provider." />
+          <Button Content="Ask" Classes="primary" Command="{Binding AskAiCommand}" HorizontalAlignment="Left" />
+        </StackPanel>
+        <ScrollViewer Grid.Column="1" HorizontalScrollBarVisibility="Disabled">
+          <ItemsControl ItemsSource="{Binding Analysts}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:AiAnalystPanel">
+                <StackPanel Margin="0,0,0,8">
+                  <DockPanel>
+                    <TextBlock DockPanel.Dock="Right" Text="{Binding Status}" Classes="muted" />
+                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
+                  </DockPanel>
+                  <TextBlock Text="{Binding Response}" TextWrapping="Wrap" FontSize="12" />
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

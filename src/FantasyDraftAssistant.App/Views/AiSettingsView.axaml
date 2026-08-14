@@ -1,0 +1,70 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:FantasyDraftAssistant.App.ViewModels"
+             x:Class="FantasyDraftAssistant.App.Views.AiSettingsView"
+             x:DataType="vm:AiSettingsViewModel">
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+    <StackPanel Spacing="16">
+      <TextBlock Text="AI Providers" Classes="h1" />
+      <TextBlock Text="ChatGPT, Claude, and Grok are independent advisors. Each needs its own developer API key. Consumer subscriptions (ChatGPT Plus, Claude Pro, SuperGrok) do not work here."
+                 Classes="muted" TextWrapping="Wrap" />
+      <TextBlock Text="{Binding StoreDescription}" Classes="muted" TextWrapping="Wrap" />
+
+      <ItemsControl ItemsSource="{Binding Providers}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:AiProviderEditor">
+            <Border Classes="card" Margin="0,0,0,12">
+              <StackPanel Spacing="12">
+                <TextBlock Text="{Binding Title}" Classes="h2" />
+                <TextBlock Text="{Binding Help}" Classes="muted" TextWrapping="Wrap" />
+                <CheckBox Content="Enabled for this draft machine" IsChecked="{Binding Enabled}"
+                          ToolTip.Tip="When enabled, this provider can be asked for advice in the Draft Room. A failed or disabled provider never blocks pick entry." />
+
+                <StackPanel Spacing="4">
+                  <TextBlock Text="API key" FontWeight="SemiBold" />
+                  <TextBox Text="{Binding ApiKey}" PasswordChar="•"
+                           ToolTip.Tip="Developer API key for this provider. Leave blank to keep a key that is already saved." />
+                  <TextBlock Text="Leave blank to keep the saved key. The key is stored in the OS credential store when available, never in the draft database."
+                             Classes="muted" TextWrapping="Wrap" />
+                  <TextBlock IsVisible="{Binding KeySaved}" Text="A key is already saved for this provider." Classes="muted" />
+                </StackPanel>
+
+                <StackPanel Spacing="4">
+                  <TextBlock Text="Model" FontWeight="SemiBold" />
+                  <TextBox Text="{Binding Model}"
+                           ToolTip.Tip="Provider model identifier. This is configurable and is not hard-coded into the draft engine." />
+                  <TextBlock Text="The model ID sent to the API, for example gpt-4.1, claude-sonnet-4-6, or grok-4.6."
+                             Classes="muted" TextWrapping="Wrap" />
+                </StackPanel>
+
+                <StackPanel Spacing="4">
+                  <TextBlock Text="Role" FontWeight="SemiBold" />
+                  <ComboBox ItemsSource="{Binding Roles}" SelectedItem="{Binding Role}"
+                            ToolTip.Tip="How this provider is used during a draft. It does not change the draft engine." />
+                </StackPanel>
+
+                <StackPanel Spacing="4">
+                  <TextBlock Text="Per-draft spend limit (USD, optional)" FontWeight="SemiBold" />
+                  <TextBox Text="{Binding PerDraftLimit}"
+                           ToolTip.Tip="Optional dollar cap for this provider during one draft. Leave empty for no cap. Reaching the cap never blocks recording picks." />
+                  <TextBlock Text="Leave empty for no limit. This is a safety cap, not a required setting."
+                             Classes="muted" TextWrapping="Wrap" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <Button Content="Save" Classes="primary"
+                          Command="{Binding $parent[ItemsControl].((vm:AiSettingsViewModel)DataContext).SaveCommand}"
+                          CommandParameter="{Binding}" />
+                  <Button Content="Test connection" Classes="ghost"
+                          Command="{Binding $parent[ItemsControl].((vm:AiSettingsViewModel)DataContext).TestCommand}"
+                          CommandParameter="{Binding}" />
+                </StackPanel>
+                <TextBlock Text="{Binding Status}" Classes="muted" TextWrapping="Wrap" />
+              </StackPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

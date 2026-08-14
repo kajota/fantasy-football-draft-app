@@ -1,0 +1,10 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:FantasyDraftAssistant.App.ViewModels"
+             x:Class="FantasyDraftAssistant.App.Views.RecapView"
+             x:DataType="vm:RecapViewModel">
+  <DockPanel>
+    <TextBlock DockPanel.Dock="Top" Text="Post-Draft Recap" Classes="h1" Margin="0,0,0,12" />
+    <ListBox ItemsSource="{Binding Lines}" Background="Transparent" />
+  </DockPanel>
+</UserControl>

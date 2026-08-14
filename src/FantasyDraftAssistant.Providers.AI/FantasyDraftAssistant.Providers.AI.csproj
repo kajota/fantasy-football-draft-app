@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>FantasyDraftAssistant.Providers.AI</RootNamespace>
+    <AssemblyName>FantasyDraftAssistant.Providers.AI</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\FantasyDraftAssistant.Core\FantasyDraftAssistant.Core.csproj" />
+  </ItemGroup>
+
+</Project>

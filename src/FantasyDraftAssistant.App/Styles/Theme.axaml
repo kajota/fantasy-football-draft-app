@@ -42,6 +42,13 @@
     <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
     <Setter Property="FontWeight" Value="SemiBold" />
   </Style>
+  <Style Selector="TextBlock.danger">
+    <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+  </Style>
+  <Style Selector="TextBlock.ready">
+    <Setter Property="Foreground" Value="{StaticResource ReadyBrush}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
 
   <Style Selector="Button.primary">
     <Setter Property="Background" Value="{StaticResource AccentBrush}" />
@@ -57,6 +64,35 @@
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="Padding" Value="12,7" />
     <Setter Property="CornerRadius" Value="6" />
+  </Style>
+  <Style Selector="Button.compact">
+    <Setter Property="Padding" Value="6,2" />
+    <Setter Property="MinWidth" Value="28" />
+    <Setter Property="MinHeight" Value="24" />
+  </Style>
+  <Style Selector="Button.column">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Left" />
+    <Setter Property="FontSize" Value="11" />
+  </Style>
+  <Style Selector="Button.column:pointerover">
+    <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+  </Style>
+  <Style Selector="Button.danger">
+    <Setter Property="Background" Value="#3A1820" />
+    <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+    <Setter Property="BorderBrush" Value="#6B2A35" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Padding" Value="12,7" />
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="Button.danger:disabled">
+    <Setter Property="Opacity" Value="0.45" />
   </Style>
   <Style Selector="Button.nav">
     <Setter Property="Background" Value="Transparent" />
@@ -81,6 +117,28 @@
     <Setter Property="BorderBrush" Value="{StaticResource LineBrush}" />
     <Setter Property="CornerRadius" Value="6" />
   </Style>
+  <Style Selector="ComboBoxItem">
+    <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+    <Setter Property="Background" Value="{StaticResource ElevatedBrush}" />
+    <Setter Property="Padding" Value="8,6" />
+  </Style>
+  <Style Selector="ComboBoxItem:pointerover">
+    <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
+  </Style>
+  <Style Selector="ComboBoxItem:selected /template/ ContentPresenter">
+    <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+  </Style>
+  <Style Selector="ComboBoxItem:selected">
+    <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
+    <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+  </Style>
+  <Style Selector="ComboBox /template/ Border#PopupBorder">
+    <Setter Property="Background" Value="{StaticResource ElevatedBrush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource LineBrush}" />
+  </Style>
+  <Style Selector="TextBox.invalid">
+    <Setter Property="BorderBrush" Value="{StaticResource DangerBrush}" />
+  </Style>
 
   <Style Selector="Border.card">
     <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
@@ -88,6 +146,53 @@
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="10" />
     <Setter Property="Padding" Value="16" />
+  </Style>
+
+  <Style Selector="TabControl">
+    <Setter Property="Padding" Value="0,8,0,0" />
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+  <Style Selector="TabItem">
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="Padding" Value="12,6" />
+    <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+  </Style>
+  <Style Selector="TabItem:selected">
+    <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="TextBlock.board-swatch">
+    <Setter Property="Foreground" Value="White" />
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Padding" Value="8,2" />
+  </Style>
+  <Style Selector="TextBlock.board-swatch.qb">
+    <Setter Property="Background" Value="#00ACC1" />
+  </Style>
+  <Style Selector="TextBlock.board-swatch.rb">
+    <Setter Property="Background" Value="#E53935" />
+  </Style>
+  <Style Selector="TextBlock.board-swatch.wr">
+    <Setter Property="Background" Value="#43A047" />
+  </Style>
+  <Style Selector="TextBlock.board-swatch.te">
+    <Setter Property="Background" Value="#1E88E5" />
+  </Style>
+  <Style Selector="TextBlock.board-swatch.k">
+    <Setter Property="Background" Value="#8E24AA" />
+  </Style>
+  <Style Selector="TextBlock.board-swatch.def">
+    <Setter Property="Background" Value="#F9A825" />
+  </Style>
+
+  <Style Selector="TextBox.readonly">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="IsReadOnly" Value="True" />
+    <Setter Property="AcceptsReturn" Value="True" />
+    <Setter Property="TextWrapping" Value="Wrap" />
   </Style>
 
 </Styles>

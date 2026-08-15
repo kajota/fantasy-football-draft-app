@@ -1,17 +1,87 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:FantasyDraftAssistant.App.ViewModels"
+             xmlns:views="using:FantasyDraftAssistant.App.Views"
              x:Class="FantasyDraftAssistant.App.Views.DraftOrderView"
              x:DataType="vm:DraftOrderViewModel">
-  <DockPanel>
-    <StackPanel DockPanel.Dock="Top" Spacing="10">
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+    <StackPanel Spacing="16">
       <TextBlock Text="Draft Order" Classes="h1" />
-      <TextBlock Text="{Binding StatusMessage}" Classes="muted" />
-      <StackPanel Orientation="Horizontal" Spacing="8">
-        <Button Content="Create draft" Classes="primary" Command="{Binding CreateDraftCommand}" />
-        <Button Content="Start draft" Classes="ghost" Command="{Binding StartCommand}" />
-      </StackPanel>
+      <TextBlock Text="Set first-round seats before the draft starts. Later rounds are generated from Snake or Linear. Custom is the same as Linear until per-pick trades exist."
+                 Classes="muted" TextWrapping="Wrap" />
+      <TextBlock Text="{Binding StatusMessage}" Classes="muted" TextWrapping="Wrap" />
+
+      <Border Classes="card" IsVisible="{Binding !HasLeague}">
+        <TextBlock Text="Select or create a league first." Classes="muted" />
+      </Border>
+
+      <Border Classes="card" IsVisible="{Binding HasLeague}">
+        <StackPanel Spacing="12">
+          <TextBlock Text="Format" Classes="h2" />
+          <ComboBox ItemsSource="{Binding Formats}" SelectedItem="{Binding SelectedFormat}"
+                    IsEnabled="{Binding CanEdit}" MaxWidth="220" HorizontalAlignment="Left" />
+          <TextBlock Text="{Binding FormatHelp}" Classes="muted" TextWrapping="Wrap" />
+
+          <TextBlock Text="First-round seats" Classes="h2" Margin="0,8,0,0" />
+          <Grid ColumnDefinitions="40,*,*,Auto" ColumnSpacing="8">
+            <TextBlock Text="#" Classes="muted" />
+            <TextBlock Grid.Column="1" Text="Team" Classes="muted" />
+            <TextBlock Grid.Column="2" Text="Owner" Classes="muted" />
+          </Grid>
+          <ItemsControl ItemsSource="{Binding Seats}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:DraftSeatRow">
+                <Grid ColumnDefinitions="40,*,*,Auto" ColumnSpacing="8" Margin="0,4">
+                  <TextBlock Text="{Binding DraftPosition}" VerticalAlignment="Center" FontWeight="SemiBold" />
+                  <TextBlock Grid.Column="1" Text="{Binding TeamName}" VerticalAlignment="Center" TextWrapping="Wrap">
+                    <ToolTip.Tip>
+                      <views:TeamPortraitTip TeamKey="{Binding TeamKey}" />
+                    </ToolTip.Tip>
+                  </TextBlock>
+                  <TextBlock Grid.Column="2" Text="{Binding OwnerName}" Classes="muted" VerticalAlignment="Center" />
+                  <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6">
+                    <Button Content="↑" Classes="ghost compact"
+                            IsEnabled="{Binding CanMoveUp}"
+                            Command="{Binding $parent[ItemsControl].((vm:DraftOrderViewModel)DataContext).MoveUpCommand}"
+                            CommandParameter="{Binding}" />
+                    <Button Content="↓" Classes="ghost compact"
+                            IsEnabled="{Binding CanMoveDown}"
+                            Command="{Binding $parent[ItemsControl].((vm:DraftOrderViewModel)DataContext).MoveDownCommand}"
+                            CommandParameter="{Binding}" />
+                  </StackPanel>
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+            <Button Content="Save order" Classes="primary"
+                    IsVisible="{Binding CanEdit}"
+                    Command="{Binding SaveCommand}" />
+            <Button Content="Create draft" Classes="ghost"
+                    IsVisible="{Binding !HasDraft}"
+                    Command="{Binding CreateDraftCommand}" />
+            <Button Content="Start draft" Classes="ghost"
+                    IsVisible="{Binding CanStart}"
+                    Command="{Binding StartCommand}" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="card" IsVisible="{Binding HasLeague}">
+        <StackPanel Spacing="8">
+          <TextBlock Text="Preview" Classes="h2" />
+          <TextBlock Text="First three rounds from the current seats. Save writes this into the draft."
+                     Classes="muted" TextWrapping="Wrap" />
+          <ItemsControl ItemsSource="{Binding Preview}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <TextBlock Text="{Binding}" Margin="0,2" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
     </StackPanel>
-    <ListBox ItemsSource="{Binding Slots}" Margin="0,16,0,0" Background="Transparent" />
-  </DockPanel>
+  </ScrollViewer>
 </UserControl>

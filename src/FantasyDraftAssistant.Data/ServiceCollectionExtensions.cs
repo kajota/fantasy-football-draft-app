@@ -23,6 +23,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IReadinessService, ReadinessService>();
         services.AddSingleton<IAiConfigStore, AiConfigStore>();
         services.AddSingleton<IAiUsageService, AiUsageService>();
+        services.AddSingleton<IAiResponseStore, AiResponseStore>();
+        services.AddSingleton<ITeamPortraitStore, TeamPortraitStore>();
         services.AddSingleton<FileCredentialStore>();
         services.AddSingleton<ICredentialStore>(sp =>
         {

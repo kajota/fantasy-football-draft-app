@@ -85,6 +85,7 @@ public sealed record TeamDraftPosition
     public string? OwnerName { get; init; }
     public string? DisplayLabel { get; init; }
     public required int DraftPosition { get; init; }
+    public string? ExternalTeamId { get; init; }
 }
 
 public sealed class SaveRosterRequest
@@ -131,4 +132,36 @@ public sealed class CreateDraftRequest
 {
     public required LeagueId LeagueId { get; init; }
     public required string Name { get; init; }
+}
+
+public sealed class SaveDraftOrderRequest
+{
+    public required LeagueId LeagueId { get; init; }
+    public DraftId? DraftId { get; init; }
+    public required DraftType DraftType { get; init; }
+    public required IReadOnlyList<TeamDraftPosition> Teams { get; init; }
+}
+
+public sealed record ImportedLeagueRequest
+{
+    public required FantasyPlatform Platform { get; init; }
+    public required string ExternalLeagueId { get; init; }
+    public required string Name { get; init; }
+    public required int Season { get; init; }
+    public required DraftType DraftType { get; init; }
+    public required int RoundCount { get; init; }
+    public required IReadOnlyList<ImportedTeamSpec> Teams { get; init; }
+    public required IReadOnlyList<RosterSlotSpec> Roster { get; init; }
+    public required IReadOnlyList<ScoringRuleSpec> Scoring { get; init; }
+    public bool ReplaceDraftOrder { get; init; }
+    public DraftSourcePreference SourcePreference { get; init; } = DraftSourcePreference.Yahoo;
+}
+
+public sealed record ImportedTeamSpec
+{
+    public required string ExternalTeamId { get; init; }
+    public required string Name { get; init; }
+    public string? OwnerName { get; init; }
+    public required int SuggestedDraftPosition { get; init; }
+    public bool IsUserTeam { get; init; }
 }

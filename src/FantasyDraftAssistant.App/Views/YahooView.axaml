@@ -1,0 +1,113 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:FantasyDraftAssistant.App.ViewModels"
+             x:Class="FantasyDraftAssistant.App.Views.YahooView"
+             x:DataType="vm:YahooViewModel">
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+    <StackPanel Spacing="16">
+      <TextBlock Text="Yahoo" Classes="h1" />
+      <TextBlock Text="Import league settings from Yahoo Fantasy. Live draft sync is not in this slice. After import, review draft order and keepers before you start."
+                 Classes="muted" TextWrapping="Wrap" />
+      <TextBlock Text="{Binding StatusMessage}" Classes="muted" TextWrapping="Wrap" />
+
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <TextBlock Text="Yahoo developer app" Classes="h2" />
+          <TextBlock Text="Yahoo reviews API access. Apply at sports.yahoo.com/developer/access/, then create an app with Fantasy Sports permission. Register the redirect URI exactly as shown below."
+                     Classes="muted" TextWrapping="Wrap" />
+          <StackPanel Spacing="4">
+            <TextBlock Text="Client ID" FontWeight="SemiBold" />
+            <TextBox Text="{Binding ClientId}"
+                     ToolTip.Tip="Yahoo OAuth Client ID from the developer app." />
+          </StackPanel>
+          <StackPanel Spacing="4">
+            <TextBlock Text="Client secret" FontWeight="SemiBold" />
+            <TextBox Text="{Binding ClientSecret}" PasswordChar="•"
+                     ToolTip.Tip="Yahoo OAuth Client Secret. Leave blank to keep a secret that is already saved." />
+            <TextBlock IsVisible="{Binding HasSavedSecret}"
+                       Text="A client secret is already saved."
+                       Classes="muted" />
+          </StackPanel>
+          <StackPanel Spacing="4">
+            <TextBlock Text="Redirect URI" FontWeight="SemiBold" />
+            <TextBox Text="{Binding RedirectUri}"
+                     ToolTip.Tip="Must match the Yahoo app redirect URI. The default listens on localhost for the sign-in callback." />
+          </StackPanel>
+          <TextBlock Text="{Binding StoreDescription}" Classes="muted" TextWrapping="Wrap" />
+          <Button Content="Save app credentials" Classes="primary" HorizontalAlignment="Left"
+                  Command="{Binding SaveCredentialsCommand}" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <TextBlock Text="Yahoo account" Classes="h2" />
+          <TextBlock Text="{Binding AccountStatus}" Classes="muted" TextWrapping="Wrap" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Content="Sign in with Yahoo" Classes="primary"
+                    Command="{Binding SignInCommand}" />
+            <Button Content="Sign out" Classes="ghost"
+                    Command="{Binding SignOutCommand}"
+                    IsEnabled="{Binding IsSignedIn}" />
+          </StackPanel>
+          <StackPanel Spacing="4">
+            <TextBlock Text="Authorization code (if the browser does not return here)" FontWeight="SemiBold" />
+            <TextBox Text="{Binding AuthorizationCode}"
+                     ToolTip.Tip="If Yahoo redirected to a page this app did not catch, copy the code query parameter here." />
+            <Button Content="Apply code" Classes="ghost" HorizontalAlignment="Left"
+                    Command="{Binding ApplyCodeCommand}" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <TextBlock Text="Yahoo leagues" Classes="h2" />
+          <TextBlock Text="Imports teams, roster slots, and scoring. Draft order is a guess from Yahoo team numbers. Keepers are never overwritten on refresh unless you assign them yourself."
+                     Classes="muted" TextWrapping="Wrap" />
+          <CheckBox Content="On refresh, replace first-round seats with Yahoo team-number order"
+                    IsChecked="{Binding ReplaceDraftOrder}"
+                    IsEnabled="{Binding IsSignedIn}" />
+          <Button Content="Refresh league list" Classes="ghost" HorizontalAlignment="Left"
+                  Command="{Binding RefreshLeaguesCommand}"
+                  IsEnabled="{Binding IsSignedIn}" />
+          <ItemsControl ItemsSource="{Binding Leagues}" IsVisible="{Binding HasLeagues}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:YahooLeagueRow">
+                <Border Classes="card" Margin="0,0,0,10" Background="{StaticResource ElevatedBrush}">
+                  <DockPanel LastChildFill="True">
+                    <Button DockPanel.Dock="Right" Content="{Binding ActionLabel}" Classes="primary"
+                            Margin="12,0,0,0" VerticalAlignment="Center"
+                            Command="{Binding $parent[ItemsControl].((vm:YahooViewModel)DataContext).ImportLeagueCommand}"
+                            CommandParameter="{Binding}"
+                            IsEnabled="{Binding CanImport}" />
+                    <StackPanel>
+                      <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                      <TextBlock Text="{Binding Summary}" Classes="muted" TextWrapping="Wrap" />
+                    </StackPanel>
+                  </DockPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="card" IsVisible="{Binding HasReview}">
+        <StackPanel Spacing="8">
+          <TextBlock Text="Import review" Classes="h2" />
+          <ItemsControl ItemsSource="{Binding ReviewItems}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <TextBlock Text="{Binding}" Classes="muted" TextWrapping="Wrap" Margin="0,2" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+
+      <TextBlock Text="{Binding Attribution}" Classes="muted" TextWrapping="Wrap" />
+      <TextBlock Text="https://football.fantasysports.yahoo.com/" Classes="muted" />
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

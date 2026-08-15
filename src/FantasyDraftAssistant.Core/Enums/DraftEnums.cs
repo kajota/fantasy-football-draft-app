@@ -126,5 +126,11 @@ public enum ScoringCategory
     PointsAllowed14To20 = 20,
     PointsAllowed21To27 = 21,
     PointsAllowed28To34 = 22,
-    PointsAllowed35Plus = 23
+    PointsAllowed35Plus = 23,
+    FieldGoal0To19 = 24,
+    FieldGoal20To29 = 25,
+    FieldGoal30To39 = 26,
+    FieldGoal40To49 = 27,
+    FieldGoal50Plus = 28,
+    ExtraPointReturned = 29
 }

@@ -1,0 +1,3 @@
+ALTER TABLE Players ADD COLUMN InjuryBodyPart TEXT;
+ALTER TABLE Players ADD COLUMN InjuryNotes TEXT;
+ALTER TABLE Players ADD COLUMN InjuryStartedOn TEXT;

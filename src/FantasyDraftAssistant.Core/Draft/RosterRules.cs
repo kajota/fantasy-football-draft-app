@@ -157,19 +157,7 @@ public static class RosterRules
         return counts;
     }
 
-    public static IReadOnlyList<ScoringPreset> DefaultScoring() =>
-    [
-        new(ScoringCategory.PassingYard, 0.04m),
-        new(ScoringCategory.PassingTouchdown, 4m),
-        new(ScoringCategory.Interception, -2m),
-        new(ScoringCategory.RushingYard, 0.10m),
-        new(ScoringCategory.RushingTouchdown, 6m),
-        new(ScoringCategory.Reception, 0.50m),
-        new(ScoringCategory.ReceivingYard, 0.10m),
-        new(ScoringCategory.ReceivingTouchdown, 6m),
-        new(ScoringCategory.FumbleLost, -2m),
-        new(ScoringCategory.TwoPointConversion, 2m)
-    ];
+    public static IReadOnlyList<ScoringPreset> DefaultScoring() => ScoringCatalog.HalfPpr();
 }
 
 public sealed record RosterSlotSpecPreset(

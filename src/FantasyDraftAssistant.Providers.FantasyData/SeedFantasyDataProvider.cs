@@ -7,6 +7,8 @@ public sealed class SeedFantasyDataProvider(IFantasyDataWriter writer) : IFantas
 {
     public const string Key = "seed";
     public string ProviderKey => Key;
+    public string DisplayName => "Built-in seed";
+    public string Description => "Offline sample players for testing when the network is down.";
 
     public Task<FantasyDataRefreshResult> RefreshAsync(FantasyDataRefreshRequest request, CancellationToken cancellationToken)
     {

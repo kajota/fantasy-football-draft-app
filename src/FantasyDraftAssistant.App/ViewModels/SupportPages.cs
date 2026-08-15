@@ -1,108 +1,114 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using FantasyDraftAssistant.Core.Commands;
-using FantasyDraftAssistant.Core.Enums;
-using FantasyDraftAssistant.Core.Ids;
+using FantasyDraftAssistant.Core.Analytics;
 using FantasyDraftAssistant.Core.Interfaces;
-using FantasyDraftAssistant.Core.Query;
 using FantasyDraftAssistant.Core.Results;
+using FantasyDraftAssistant.Providers.FantasyData;
 
 namespace FantasyDraftAssistant.App.ViewModels;
 
-public partial class DraftOrderViewModel(ILeagueService leagues, IDraftCommandService commands, IDraftStateService drafts, SessionState session) : PageViewModel
+public partial class FantasyDataProviderRow : ObservableObject
 {
-    public ObservableCollection<string> Slots { get; } = [];
-
-    [RelayCommand]
-    private async Task CreateDraftAsync()
-    {
-        if (session.LeagueId is not { } leagueId)
-        {
-            StatusMessage = "Select a league first.";
-            return;
-        }
-
-        var draft = await leagues.CreateDraftAsync(new CreateDraftRequest
-        {
-            LeagueId = leagueId,
-            Name = $"{session.LeagueName ?? "League"} Draft"
-        });
-        session.DraftId = draft.DraftId;
-        session.DraftName = draft.Name;
-        session.BranchId = draft.ActiveBranchId;
-        await OnNavigatedToAsync();
-    }
-
-    [RelayCommand]
-    private async Task StartAsync()
-    {
-        if (session.DraftId is not { } id)
-            return;
-        var result = await commands.StartDraftAsync(new StartDraftCommand(id));
-        StatusMessage = result.Succeeded ? "Draft started." : result.Error;
-    }
-
-    public override async Task OnNavigatedToAsync()
-    {
-        Title = "Draft Order";
-        Slots.Clear();
-        if (session.DraftId is not { } id)
-        {
-            StatusMessage = "Create a draft to generate slots.";
-            return;
-        }
-
-        var working = await drafts.GetWorkingStateAsync(id);
-        if (working is null)
-            return;
-        foreach (var slot in working.Slots)
-        {
-            var team = working.Teams.First(t => t.TeamId.Equals(slot.TeamId));
-            Slots.Add($"{slot.Round}.{slot.RoundPick:00}  {team.Label}");
-        }
-    }
+    public required string ProviderKey { get; init; }
+    public required string Title { get; init; }
+    public required string Description { get; init; }
+    public bool NeedsApiKey { get; init; }
+    [ObservableProperty] private string _apiKey = "";
+    [ObservableProperty] private bool _keySaved;
+    [ObservableProperty] private string _lastSynced = "Not synced yet.";
 }
 
-public partial class KeepersViewModel(ILeagueService leagues, IDraftStateService drafts, SessionState session) : PageViewModel
+public partial class DataSourcesViewModel(
+    IFantasyDataProviderRegistry registry,
+    IFantasyDataWriter writer,
+    ICredentialStore credentials,
+    ILeagueService leagues,
+    SessionState session) : PageViewModel
 {
-    public ObservableCollection<string> Keepers { get; } = [];
-
-    public override async Task OnNavigatedToAsync()
-    {
-        Title = "Keepers";
-        Keepers.Clear();
-        if (session.DraftId is not { } id)
-        {
-            StatusMessage = "Create a draft before assigning keepers.";
-            return;
-        }
-
-        foreach (var keeper in await leagues.GetKeepersAsync(id))
-        {
-            var players = await drafts.GetPlayersAsync();
-            var player = players.FirstOrDefault(p => p.PlayerId.Equals(keeper.PlayerId));
-            Keepers.Add($"{player?.Name ?? keeper.PlayerId.ToString()} — round {keeper.RoundCost}");
-        }
-    }
-}
-
-public partial class DataSourcesViewModel(IFantasyDataProvider seed, IFantasyDataWriter writer) : PageViewModel
-{
+    public ObservableCollection<FantasyDataProviderRow> Providers { get; } = [];
     public ObservableCollection<string> Rows { get; } = [];
+
+    [ObservableProperty] private string _cacheTimeZoneNote = LocalClock.ZoneNote();
 
     public override async Task OnNavigatedToAsync()
     {
         Title = "Player Data";
+        Providers.Clear();
+        foreach (var provider in registry.All)
+        {
+            var row = new FantasyDataProviderRow
+            {
+                ProviderKey = provider.ProviderKey,
+                Title = provider.DisplayName,
+                Description = provider.Description,
+                NeedsApiKey = provider.ProviderKey.Equals(FantasyProsFantasyDataProvider.Key, StringComparison.OrdinalIgnoreCase)
+            };
+            if (row.NeedsApiKey)
+            {
+                var secret = await credentials.GetSecretAsync(
+                    FantasyProsFantasyDataProvider.CredentialScope,
+                    FantasyProsFantasyDataProvider.CredentialKey);
+                row.KeySaved = !string.IsNullOrWhiteSpace(secret);
+            }
+
+            Providers.Add(row);
+        }
+
         await RefreshListAsync();
     }
 
     [RelayCommand]
-    private async Task RefreshSeedAsync()
+    private async Task SaveKeyAsync(FantasyDataProviderRow? row)
     {
-        var result = await seed.RefreshAsync(new FantasyDataRefreshRequest(), CancellationToken.None);
+        if (row is null || !row.NeedsApiKey)
+            return;
+        if (string.IsNullOrWhiteSpace(row.ApiKey))
+        {
+            StatusMessage = "Paste the FantasyPros API key first.";
+            return;
+        }
+
+        await credentials.SaveSecretAsync(
+            FantasyProsFantasyDataProvider.CredentialScope,
+            FantasyProsFantasyDataProvider.CredentialKey,
+            row.ApiKey.Trim());
+        row.ApiKey = "";
+        row.KeySaved = true;
+        StatusMessage = "FantasyPros key saved. It is not stored in the draft database.";
+    }
+
+    [RelayCommand]
+    private async Task RefreshProviderAsync(FantasyDataProviderRow? row)
+    {
+        if (row is null)
+            return;
+        if (row.NeedsApiKey && !string.IsNullOrWhiteSpace(row.ApiKey))
+        {
+            await credentials.SaveSecretAsync(
+                FantasyProsFantasyDataProvider.CredentialScope,
+                FantasyProsFantasyDataProvider.CredentialKey,
+                row.ApiKey.Trim());
+            row.ApiKey = "";
+            row.KeySaved = true;
+        }
+
+        var provider = registry.Get(row.ProviderKey);
+        if (provider is null)
+        {
+            StatusMessage = $"Provider {row.ProviderKey} is not registered.";
+            return;
+        }
+
+        var format = await FormatForCurrentLeagueAsync();
+        StatusMessage = $"Refreshing {row.Title} for {format.DisplayName}...";
+        var result = await provider.RefreshAsync(new FantasyDataRefreshRequest
+        {
+            Scoring = format.Scoring,
+            Superflex = format.Superflex
+        }, CancellationToken.None);
         StatusMessage = result.Succeeded
-            ? $"Cached {result.PlayersWritten} players, {result.RankingsWritten} rankings."
+            ? $"Cached {result.PlayersWritten} players, {result.RankingsWritten} ranks, {result.AdpWritten} ADP for {format.DisplayName}. FantasyPros sheets are Standard / Half PPR / PPR and 1-QB or Superflex — closest match, not custom scoring. Proj uses this league's exact rules."
             : result.Error;
         await RefreshListAsync();
     }
@@ -110,8 +116,41 @@ public partial class DataSourcesViewModel(IFantasyDataProvider seed, IFantasyDat
     private async Task RefreshListAsync()
     {
         Rows.Clear();
-        foreach (var info in await writer.GetRefreshInfoAsync())
-            Rows.Add($"{info.Dataset}: {info.RecordCount} rows at {info.RefreshedAt:g}");
+        CacheTimeZoneNote = LocalClock.ZoneNote();
+        var format = await FormatForCurrentLeagueAsync();
+        Rows.Add(session.LeagueId is null
+            ? $"No league selected — FantasyPros refresh uses {format.DisplayName}."
+            : $"Open league will use FantasyPros {format.DisplayName}.");
+
+        var refreshes = await writer.GetRefreshInfoAsync();
+        foreach (var info in refreshes)
+            Rows.Add($"{info.ProviderKey} {info.Dataset}: {info.RecordCount} rows at {LocalClock.Format(info.RefreshedAt)}");
+
+        var latestByProvider = refreshes
+            .GroupBy(info => info.ProviderKey, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Max(info => info.RefreshedAt),
+                StringComparer.OrdinalIgnoreCase);
+
+        foreach (var provider in Providers)
+        {
+            provider.LastSynced = latestByProvider.TryGetValue(provider.ProviderKey, out var stamp)
+                ? $"Last synced {LocalClock.Format(stamp)}"
+                : "Not synced yet.";
+        }
+    }
+
+    private async Task<FantasyDataFormat> FormatForCurrentLeagueAsync()
+    {
+        if (session.LeagueId is not { } leagueId)
+            return FantasyDataFormat.Default;
+
+        var scoring = await leagues.GetScoringRulesAsync(leagueId);
+        var roster = await leagues.GetRosterSlotsAsync(leagueId);
+        if (scoring.Count == 0 && roster.Count == 0)
+            return FantasyDataFormat.Default;
+        return FantasyDataFormat.FromLeague(scoring, roster);
     }
 }
 
@@ -125,76 +164,5 @@ public partial class ReadinessViewModel(IReadinessService readiness, SessionStat
         Items.Clear();
         foreach (var item in await readiness.CheckAsync(session.DraftId))
             Items.Add(item);
-    }
-}
-
-public partial class HistoryViewModel(IDraftStateService drafts, SessionState session) : PageViewModel
-{
-    public ObservableCollection<string> Events { get; } = [];
-
-    public override async Task OnNavigatedToAsync()
-    {
-        Title = "Draft History";
-        Events.Clear();
-        if (session.DraftId is not { } id)
-            return;
-        var state = await drafts.GetWorkingStateAsync(id);
-        if (state is null)
-            return;
-        foreach (var selection in state.ActiveSelections.Values.OrderBy(s => s.OverallPick))
-            Events.Add($"{selection.Round}.{selection.RoundPick:00}  {selection.PlayerId}  ({selection.Source})");
-    }
-}
-
-public partial class BranchesViewModel(ILeagueService leagues, IDraftCommandService commands, SessionState session) : PageViewModel
-{
-    public ObservableCollection<string> Branches { get; } = [];
-    [ObservableProperty] private string _newBranchName = "What-if";
-    [ObservableProperty] private int _branchPoint = 1;
-
-    public override async Task OnNavigatedToAsync()
-    {
-        Title = "Branches";
-        Branches.Clear();
-        if (session.DraftId is not { } id)
-            return;
-        foreach (var branch in await leagues.GetBranchesAsync(id))
-            Branches.Add($"{branch.Name}  (from pick {branch.BranchPointOverallPick})");
-    }
-
-    [RelayCommand]
-    private async Task CreateAsync()
-    {
-        if (session.DraftId is not { } id)
-            return;
-        var result = await commands.CreateBranchAsync(new CreateDraftBranchCommand(id, NewBranchName, BranchPoint));
-        StatusMessage = result.Succeeded ? "Branch created." : result.Error;
-        if (result.Succeeded && result.BranchId is { } branchId)
-            session.BranchId = branchId;
-        await OnNavigatedToAsync();
-    }
-}
-
-public partial class RecapViewModel(IAnalyticsService analytics, IDraftStateService drafts, SessionState session) : PageViewModel
-{
-    public ObservableCollection<string> Lines { get; } = [];
-
-    public override async Task OnNavigatedToAsync()
-    {
-        Title = "Post-Draft Recap";
-        Lines.Clear();
-        if (session.DraftId is not { } id)
-            return;
-        var state = await drafts.GetWorkingStateAsync(id);
-        if (state is null)
-            return;
-        var snapshot = await analytics.GetSnapshotAsync(id);
-        Lines.Add($"Status: {state.Draft.Status}");
-        Lines.Add($"Picks recorded: {state.ActiveSelections.Count}");
-        Lines.Add($"QB demand: {snapshot.QbDemand} (superflex/multi-QB: {snapshot.ElevatedQbDemand})");
-        foreach (var kv in snapshot.DraftedByPosition)
-            Lines.Add($"Drafted {kv.Key}: {kv.Value}");
-        if (state.Draft.Status != DraftStatus.Completed)
-            Lines.Add("Complete the draft to generate the full recap. Deterministic totals are shown above even if AI is offline.");
     }
 }

@@ -62,21 +62,13 @@ public sealed class AnthropicProviderAdapter(
 
         var model = string.IsNullOrWhiteSpace(request.Model) ? DefaultModel : request.Model;
         var context = await OpenAiProviderAdapter.ResolveContextAsync(request, queries, cancellationToken);
-        var payload = new
-        {
-            model,
-            max_tokens = request.FastMode ? 400 : 1200,
-            stream = true,
-            messages = new[]
-            {
-                new { role = "user", content = DraftAnalystPrompt.Build(request, context) }
-            }
-        };
-
-        using var client = CreateClient(key);
+        using var client = CreateClient(key, AiOutputBudget.HttpTimeoutSeconds(model, request.FastMode));
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "https://api.anthropic.com/v1/messages")
         {
-            Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
+            Content = new StringContent(
+                JsonSerializer.Serialize(MessagesBody(model, request.FastMode, DraftAnalystPrompt.Build(request, context))),
+                Encoding.UTF8,
+                "application/json")
         };
 
         HttpResponseMessage? response = null;
@@ -113,6 +105,7 @@ public sealed class AnthropicProviderAdapter(
             await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
             using var reader = new StreamReader(stream);
             var builder = new StringBuilder();
+            string? stopReason = null;
             while (!cancellationToken.IsCancellationRequested)
             {
                 var line = await reader.ReadLineAsync(cancellationToken);
@@ -123,11 +116,19 @@ public sealed class AnthropicProviderAdapter(
                 var data = line["data:".Length..].Trim();
                 if (data is "[DONE]")
                     break;
+                stopReason ??= ExtractAnthropicStopReason(data);
                 var text = ExtractAnthropicDelta(data);
                 if (string.IsNullOrEmpty(text))
                     continue;
                 builder.Append(text);
                 yield return new AiResponseChunk { Text = text, AnalyzedStateVersion = request.StateVersion };
+            }
+
+            var note = AiOutputBudget.EmptyOrTruncatedNote(model, stopReason, builder.Length > 0);
+            if (note.Length > 0)
+            {
+                builder.Append(note);
+                yield return new AiResponseChunk { Text = note, AnalyzedStateVersion = request.StateVersion };
             }
 
             var latency = DateTimeOffset.UtcNow - started;
@@ -137,6 +138,10 @@ public sealed class AnthropicProviderAdapter(
                 Provider = ProviderKey,
                 Model = model,
                 AnalyzedStateVersion = request.StateVersion,
+                EstimatedCost = AiCostEstimate.EstimateUsd(
+                    model,
+                    (request.DecisionContextJson?.Length ?? 0) + request.Prompt.Length,
+                    builder.Length),
                 Latency = latency,
                 RequestStartedAt = started,
                 ResponseCompletedAt = DateTimeOffset.UtcNow
@@ -144,7 +149,6 @@ public sealed class AnthropicProviderAdapter(
 
             yield return new AiResponseChunk
             {
-                Text = builder.Length == 0 ? "No response text was returned." : null,
                 IsComplete = true,
                 AnalyzedStateVersion = request.StateVersion,
                 Latency = latency
@@ -152,15 +156,29 @@ public sealed class AnthropicProviderAdapter(
         }
     }
 
-    private static HttpClient CreateClient(string apiKey)
+    public static Dictionary<string, object?> MessagesBody(string model, bool fastMode, string userContent)
     {
-        var client = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
+        var body = new Dictionary<string, object?>
+        {
+            ["model"] = model,
+            ["max_tokens"] = AiOutputBudget.MaxOutputTokens(model, fastMode),
+            ["stream"] = true,
+            ["messages"] = new[] { new { role = "user", content = userContent } }
+        };
+        if (AiOutputBudget.SupportsClaudeEffort(model))
+            body["output_config"] = new Dictionary<string, object?> { ["effort"] = AiOutputBudget.Effort(fastMode) };
+        return body;
+    }
+
+    private static HttpClient CreateClient(string apiKey, int timeoutSeconds = 60)
+    {
+        var client = new HttpClient { Timeout = TimeSpan.FromSeconds(timeoutSeconds) };
         client.DefaultRequestHeaders.TryAddWithoutValidation("x-api-key", apiKey);
         client.DefaultRequestHeaders.TryAddWithoutValidation("anthropic-version", "2023-06-01");
         return client;
     }
 
-    private static string? ExtractAnthropicDelta(string json)
+    public static string? ExtractAnthropicDelta(string json)
     {
         try
         {
@@ -171,6 +189,29 @@ public sealed class AnthropicProviderAdapter(
             if (!root.TryGetProperty("delta", out var delta))
                 return null;
             return delta.TryGetProperty("text", out var text) ? text.GetString() : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    public static string? ExtractAnthropicStopReason(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("delta", out var delta)
+                && delta.TryGetProperty("stop_reason", out var fromDelta)
+                && fromDelta.ValueKind == JsonValueKind.String)
+            {
+                return fromDelta.GetString();
+            }
+
+            return root.TryGetProperty("stop_reason", out var reason) && reason.ValueKind == JsonValueKind.String
+                ? reason.GetString()
+                : null;
         }
         catch (JsonException)
         {

@@ -34,6 +34,9 @@ public partial class ShellViewModel : ObservableObject
     public Task GoKeepersAsync() => NavigateAsync<KeepersViewModel>("keepers");
 
     [RelayCommand]
+    public Task GoYahooAsync() => NavigateAsync<YahooViewModel>("yahoo");
+
+    [RelayCommand]
     public Task GoDataAsync() => NavigateAsync<DataSourcesViewModel>("data");
 
     [RelayCommand]

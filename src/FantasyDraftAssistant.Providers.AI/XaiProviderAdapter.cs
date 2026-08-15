@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
+using FantasyDraftAssistant.Core.Ai;
 using FantasyDraftAssistant.Core.Interfaces;
 using FantasyDraftAssistant.Core.Query;
 using FantasyDraftAssistant.Core.Results;
@@ -76,10 +77,12 @@ public sealed class XaiProviderAdapter(
         {
             ["model"] = model,
             ["stream"] = true,
-            ["input"] = DraftAnalystPrompt.Build(request, context)
+            ["input"] = DraftAnalystPrompt.Build(request, context),
+            ["reasoning"] = new Dictionary<string, object?> { ["effort"] = request.FastMode ? "low" : "medium" },
+            ["max_output_tokens"] = request.FastMode ? 350 : 900
         };
 
-        using var client = CreateClient(key);
+        using var client = CreateClient(key, request.FastMode ? 60 : 120);
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "responses")
         {
             Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
@@ -132,7 +135,7 @@ public sealed class XaiProviderAdapter(
                 if (data is "[DONE]")
                     break;
 
-                var text = ExtractDelta(data);
+                var text = ResponsesStreamParser.ExtractVisibleDelta(data);
                 if (string.IsNullOrEmpty(text))
                     continue;
                 builder.Append(text);
@@ -150,6 +153,7 @@ public sealed class XaiProviderAdapter(
                 Provider = Key,
                 Model = model,
                 AnalyzedStateVersion = request.StateVersion,
+                EstimatedCost = AiCostEstimate.EstimateUsd(model, context.Length, builder.Length),
                 Latency = latency,
                 RequestStartedAt = started,
                 ResponseCompletedAt = DateTimeOffset.UtcNow
@@ -165,31 +169,11 @@ public sealed class XaiProviderAdapter(
         }
     }
 
-    private static HttpClient CreateClient(string apiKey)
+    private static HttpClient CreateClient(string apiKey, int timeoutSeconds = 60)
     {
-        var client = new HttpClient { BaseAddress = new Uri(BaseUrl), Timeout = TimeSpan.FromSeconds(60) };
+        var client = new HttpClient { BaseAddress = new Uri(BaseUrl), Timeout = TimeSpan.FromSeconds(timeoutSeconds) };
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
         return client;
-    }
-
-    private static string? ExtractDelta(string json)
-    {
-        try
-        {
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-            if (root.TryGetProperty("delta", out var delta) && delta.ValueKind == JsonValueKind.String)
-                return delta.GetString();
-            if (root.TryGetProperty("text", out var text) && text.ValueKind == JsonValueKind.String)
-                return text.GetString();
-            if (root.TryGetProperty("output_text", out var output) && output.ValueKind == JsonValueKind.String)
-                return output.GetString();
-            return null;
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
     }
 
     private static string Trim(string value) => value.Length <= 240 ? value : value[..240];

@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:FantasyDraftAssistant.App.ViewModels"
+             xmlns:views="using:FantasyDraftAssistant.App.Views"
              x:Class="FantasyDraftAssistant.App.Views.LeagueSetupView"
              x:DataType="vm:LeagueSetupViewModel">
   <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
@@ -65,30 +66,91 @@
         </StackPanel>
       </Border>
       <Border Classes="card">
+        <StackPanel Spacing="10">
+          <TextBlock Text="Scoring" Classes="h2" />
+          <TextBlock Text="Each box is the points awarded for that event. Scoring is saved as soon as you change a value. Hover a row for the unit (per yard, per catch, each FG, and so on). Yahoo's “10 yards per point” is Receiving yards = 0.10, not Reception / PPR. FantasyPros only has Standard / Half PPR / PPR sheets; refresh that cache after a scoring change so ranks match."
+                     Classes="muted" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding ScoringSummary}" Classes="muted" TextWrapping="Wrap" />
+          <WrapPanel Margin="0,0,0,4">
+            <Button Content="Standard" Classes="ghost" Command="{Binding ApplyStandardScoringCommand}" Margin="0,0,8,8" />
+            <Button Content="Half PPR" Classes="ghost" Command="{Binding ApplyHalfPprScoringCommand}" Margin="0,0,8,8" />
+            <Button Content="PPR" Classes="ghost" Command="{Binding ApplyPprScoringCommand}" Margin="0,0,8,8" />
+          </WrapPanel>
+          <ItemsControl ItemsSource="{Binding ScoringGroups}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:ScoringGroup">
+                <StackPanel Margin="0,0,0,12" Spacing="6">
+                  <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                  <ItemsControl ItemsSource="{Binding Rules}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:ScoringRuleEditor">
+                        <Grid ColumnDefinitions="*,100" ColumnSpacing="8" Margin="0,3">
+                          <StackPanel>
+                            <TextBlock Text="{Binding Label}" TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding Help}" Classes="muted" TextWrapping="Wrap" FontSize="11" />
+                          </StackPanel>
+                          <TextBox Grid.Column="1" Text="{Binding PointsText}"
+                                   Classes.invalid="{Binding HasInvalidPoints}"
+                                   ToolTip.Tip="{Binding Help}" />
+                        </Grid>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+      <Border Classes="card">
         <StackPanel Spacing="8">
           <TextBlock Text="Teams" Classes="h2" />
-          <TextBlock Text="This list is the number of teams. Draft position, team name, and owner."
+          <TextBlock Text="This list is the number of teams. Draft position, team name, and owner. Hover a name for that team's portrait. Unchecked rivals get roasted; check Normal image for the same over-the-top hero treatment as you. You always look great."
                      Classes="muted" TextWrapping="Wrap" />
-          <Grid ColumnDefinitions="60,*,*" ColumnSpacing="8">
+          <Button Content="Generate team images" Classes="ghost" HorizontalAlignment="Left"
+                  Command="{Binding GenerateAllPortraitsCommand}"
+                  IsEnabled="{Binding !IsGeneratingPortraits}"
+                  ToolTip.Tip="Calls the Grok Imagine API (or ChatGPT images if Grok has no key). Honors each row's Normal image checkbox. You stay handsome. Billed per image." />
+          <Grid ColumnDefinitions="60,*,*,100,Auto,Auto" ColumnSpacing="8">
             <TextBlock Text="#" Classes="muted" />
             <TextBlock Grid.Column="1" Text="Team name" Classes="muted" />
             <TextBlock Grid.Column="2" Text="Owner" Classes="muted" />
+            <TextBlock Grid.Column="3" Text="Normal image" Classes="muted" />
           </Grid>
           <ItemsControl ItemsSource="{Binding Teams}">
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:TeamRow">
-                <Grid ColumnDefinitions="60,*,*" ColumnSpacing="8" Margin="0,4">
+                <Grid ColumnDefinitions="60,*,*,100,Auto,Auto" ColumnSpacing="8" Margin="0,4">
                   <TextBlock Text="{Binding DraftPosition}" VerticalAlignment="Center"
                              ToolTip.Tip="Draft slot in round 1 for this team." />
-                  <TextBox Grid.Column="1" Text="{Binding Name}"
-                           ToolTip.Tip="Fantasy team name as it should appear on the draft board." />
+                  <TextBox Grid.Column="1" Text="{Binding Name}">
+                    <ToolTip.Tip>
+                      <views:TeamPortraitTip TeamKey="{Binding TeamKey}" />
+                    </ToolTip.Tip>
+                  </TextBox>
                   <TextBox Grid.Column="2" Text="{Binding OwnerName}" PlaceholderText="Owner"
                            ToolTip.Tip="Person who owns this team. Optional." />
+                  <CheckBox Grid.Column="3" IsChecked="{Binding NormalImage}"
+                            IsVisible="{Binding CanChoosePortraitStyle}"
+                            VerticalAlignment="Center"
+                            ToolTip.Tip="On: over-the-top handsome genius, same energy as your portrait. Off: the roast. Your team has no checkbox and always looks great." />
+                  <Button Grid.Column="4" Content="New image" Classes="ghost compact"
+                          Command="{Binding $parent[ItemsControl].((vm:LeagueSetupViewModel)DataContext).GenerateOnePortraitCommand}"
+                          CommandParameter="{Binding}"
+                          IsEnabled="{Binding !IsGenerating}"
+                          ToolTip.Tip="Generate a new portrait for this team only." />
+                  <TextBlock Grid.Column="5" Text="{Binding PortraitStatus}" Classes="muted"
+                             VerticalAlignment="Center" MinWidth="80" />
                 </Grid>
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>
-          <Button Content="Save" Classes="primary" Command="{Binding SaveCommand}" HorizontalAlignment="Left" />
+          <StackPanel Orientation="Horizontal" Spacing="12">
+            <Button Content="Save" Classes="primary" Command="{Binding SaveCommand}"
+                    ToolTip.Tip="Save league name, roster, scoring, and teams. Scoring also saves as you edit it." />
+            <TextBlock Text="{Binding SaveNotice}" Classes="ready" VerticalAlignment="Center"
+                       IsVisible="{Binding HasSaveNotice}" />
+          </StackPanel>
         </StackPanel>
       </Border>
     </StackPanel>

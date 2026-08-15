@@ -28,23 +28,31 @@ public sealed class FantasyDataWriter(SqliteConnectionFactory factory) : IFantas
         foreach (var player in players)
         {
             using (var cmd = db.Cmd("""
-                INSERT INTO Players(PlayerId, Name, NflTeam, PrimaryPosition, ByeWeek, Status, StatusUpdatedAt)
-                VALUES ($id, $name, $team, $pos, $bye, $status, $updated)
+                INSERT INTO Players(PlayerId, Name, NflTeam, PrimaryPosition, ByeWeek, YearsExp, Status, StatusUpdatedAt, InjuryBodyPart, InjuryNotes, InjuryStartedOn)
+                VALUES ($id, $name, $team, $pos, $bye, $years, $status, $updated, $part, $notes, $since)
                 ON CONFLICT(PlayerId) DO UPDATE SET
                     Name = excluded.Name,
                     NflTeam = excluded.NflTeam,
                     PrimaryPosition = excluded.PrimaryPosition,
                     ByeWeek = excluded.ByeWeek,
+                    YearsExp = COALESCE(excluded.YearsExp, Players.YearsExp),
                     Status = excluded.Status,
-                    StatusUpdatedAt = excluded.StatusUpdatedAt;
+                    StatusUpdatedAt = excluded.StatusUpdatedAt,
+                    InjuryBodyPart = COALESCE(excluded.InjuryBodyPart, Players.InjuryBodyPart),
+                    InjuryNotes = COALESCE(excluded.InjuryNotes, Players.InjuryNotes),
+                    InjuryStartedOn = COALESCE(excluded.InjuryStartedOn, Players.InjuryStartedOn);
                 """, tx)
                        .Bind("$id", player.PlayerId.ToString())
                        .Bind("$name", player.Name)
                        .Bind("$team", player.NflTeam)
                        .Bind("$pos", player.PrimaryPosition.ToString())
                        .Bind("$bye", player.ByeWeek)
+                       .Bind("$years", player.YearsExp)
                        .Bind("$status", player.Status.ToString())
-                       .Bind("$updated", player.StatusUpdatedAt?.ToString("O")))
+                       .Bind("$updated", player.StatusUpdatedAt?.ToString("O"))
+                       .Bind("$part", player.InjuryBodyPart)
+                       .Bind("$notes", player.InjuryNotes)
+                       .Bind("$since", player.InjuryStartedOn))
             {
                 cmd.ExecuteNonQuery();
             }
@@ -204,7 +212,7 @@ public sealed class FantasyDataWriter(SqliteConnectionFactory factory) : IFantas
                 SourceTimestamp = reader.GetNullTime(reader.GetOrdinal("SourceTimestamp")),
                 CachedAt = reader.GetTime(reader.GetOrdinal("CachedAt"))
             };
-            map[row.PlayerId] = row;
+            Prefer(map, row.PlayerId, row, row.SourceKey);
         }
 
         return Task.FromResult<IReadOnlyDictionary<PlayerId, PlayerRanking>>(map);
@@ -228,7 +236,7 @@ public sealed class FantasyDataWriter(SqliteConnectionFactory factory) : IFantas
                 SourceTimestamp = reader.GetNullTime(reader.GetOrdinal("SourceTimestamp")),
                 CachedAt = reader.GetTime(reader.GetOrdinal("CachedAt"))
             };
-            map[row.PlayerId] = row;
+            Prefer(map, row.PlayerId, row, row.SourceKey);
         }
 
         return Task.FromResult<IReadOnlyDictionary<PlayerId, PlayerAdp>>(map);
@@ -263,7 +271,7 @@ public sealed class FantasyDataWriter(SqliteConnectionFactory factory) : IFantas
                 SourceTimestamp = reader.GetNullTime(reader.GetOrdinal("SourceTimestamp")),
                 CachedAt = reader.GetTime(reader.GetOrdinal("CachedAt"))
             };
-            map[row.PlayerId] = row;
+            Prefer(map, row.PlayerId, row, row.SourceKey);
         }
 
         return Task.FromResult<IReadOnlyDictionary<PlayerId, PlayerProjection>>(map);
@@ -287,6 +295,60 @@ public sealed class FantasyDataWriter(SqliteConnectionFactory factory) : IFantas
         }
 
         return Task.FromResult<IReadOnlyList<FantasyDataRefreshInfo>>(list);
+    }
+
+    public Task<IReadOnlyList<string>> GetSourceKeysAsync(CancellationToken cancellationToken = default)
+    {
+        using var db = factory.Open();
+        using var cmd = db.Cmd("""
+            SELECT SourceKey FROM PlayerRankings
+            UNION
+            SELECT SourceKey FROM PlayerAdp
+            UNION
+            SELECT SourceKey FROM PlayerProjections;
+            """);
+        using var reader = cmd.ExecuteReader();
+        var keys = new List<string>();
+        while (reader.Read())
+            keys.Add(reader.GetString(0));
+
+        return Task.FromResult<IReadOnlyList<string>>(keys
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(SourcePreference)
+            .ToList());
+    }
+
+    private static void Prefer<T>(Dictionary<PlayerId, T> map, PlayerId playerId, T row, string sourceKey)
+    {
+        if (!map.TryGetValue(playerId, out var existing))
+        {
+            map[playerId] = row;
+            return;
+        }
+
+        var existingKey = existing switch
+        {
+            PlayerRanking ranking => ranking.SourceKey,
+            PlayerAdp adp => adp.SourceKey,
+            PlayerProjection projection => projection.SourceKey,
+            _ => ""
+        };
+        if (SourcePreference(sourceKey) < SourcePreference(existingKey))
+            map[playerId] = row;
+    }
+
+    private static int SourcePreference(string sourceKey)
+    {
+        var key = sourceKey.Trim().ToLowerInvariant();
+        if (key == "fantasypros")
+            return 0;
+        if (key.StartsWith("fantasypros", StringComparison.Ordinal))
+            return 1;
+        if (key == "sleeper")
+            return 2;
+        if (key == "seed")
+            return 3;
+        return 4;
     }
 
     private static void RecordRefresh(Microsoft.Data.Sqlite.SqliteConnection db, Microsoft.Data.Sqlite.SqliteTransaction tx, string provider, string dataset, int count, string now)

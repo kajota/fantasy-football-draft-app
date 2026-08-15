@@ -3,11 +3,55 @@
              xmlns:vm="using:FantasyDraftAssistant.App.ViewModels"
              x:Class="FantasyDraftAssistant.App.Views.DataSourcesView"
              x:DataType="vm:DataSourcesViewModel">
-  <StackPanel Spacing="12">
-    <TextBlock Text="Player Data Cache" Classes="h1" />
-    <TextBlock Text="The draft room reads this local cache, not the network." Classes="muted" />
-    <Button Content="Refresh seed data" Classes="primary" Command="{Binding RefreshSeedCommand}" HorizontalAlignment="Left" />
-    <TextBlock Text="{Binding StatusMessage}" Classes="muted" />
-    <ListBox ItemsSource="{Binding Rows}" Background="Transparent" />
-  </StackPanel>
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+    <StackPanel Spacing="16">
+      <TextBlock Text="Player Data" Classes="h1" />
+      <TextBlock Text="The Draft Room reads this local cache, not the network. FantasyPros ranks/ADP use the closest sheet to the open league (Standard / Half PPR / PPR, 1-QB or Superflex). Projections are re-scored with that league's exact rules. The seed pack stays available if you are offline."
+                 Classes="muted" TextWrapping="Wrap" />
+      <TextBlock Text="{Binding StatusMessage}" Classes="muted" TextWrapping="Wrap" />
+
+      <ItemsControl ItemsSource="{Binding Providers}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:FantasyDataProviderRow">
+            <Border Classes="card" Margin="0,0,0,10">
+              <StackPanel Spacing="8">
+                <TextBlock Text="{Binding Title}" Classes="h2" />
+                <TextBlock Text="{Binding LastSynced}" Classes="muted" TextWrapping="Wrap"
+                           ToolTip.Tip="{Binding $parent[ItemsControl].((vm:DataSourcesViewModel)DataContext).CacheTimeZoneNote}" />
+                <TextBlock Text="{Binding Description}" Classes="muted" TextWrapping="Wrap" />
+                <StackPanel Spacing="6" IsVisible="{Binding NeedsApiKey}">
+                  <TextBlock Text="API key" FontWeight="SemiBold" />
+                  <TextBox Text="{Binding ApiKey}" PasswordChar="•"
+                           ToolTip.Tip="FantasyPros public API key. Leave blank to keep a key that is already saved." />
+                  <TextBlock IsVisible="{Binding KeySaved}"
+                             Text="A FantasyPros key is already saved."
+                             Classes="muted" />
+                  <Button Content="Save key" Classes="ghost" HorizontalAlignment="Left"
+                          Command="{Binding $parent[ItemsControl].((vm:DataSourcesViewModel)DataContext).SaveKeyCommand}"
+                          CommandParameter="{Binding}" />
+                </StackPanel>
+                <Button Content="Refresh into local cache" Classes="primary" HorizontalAlignment="Left"
+                        Command="{Binding $parent[ItemsControl].((vm:DataSourcesViewModel)DataContext).RefreshProviderCommand}"
+                        CommandParameter="{Binding}" />
+              </StackPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <Border Classes="card">
+        <StackPanel Spacing="8">
+          <TextBlock Text="Cache contents" Classes="h2" />
+          <TextBlock Text="{Binding CacheTimeZoneNote}" Classes="muted" FontSize="11" TextWrapping="Wrap" />
+          <ItemsControl ItemsSource="{Binding Rows}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <TextBlock Text="{Binding}" Margin="0,2" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
 </UserControl>

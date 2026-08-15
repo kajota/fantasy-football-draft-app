@@ -1,10 +1,58 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:FantasyDraftAssistant.App.ViewModels"
+             xmlns:views="using:FantasyDraftAssistant.App.Views"
              x:Class="FantasyDraftAssistant.App.Views.HistoryView"
              x:DataType="vm:HistoryViewModel">
-  <DockPanel>
-    <TextBlock DockPanel.Dock="Top" Text="Draft History" Classes="h1" Margin="0,0,0,12" />
-    <ListBox ItemsSource="{Binding Events}" Background="Transparent" />
-  </DockPanel>
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+    <StackPanel Spacing="16">
+      <TextBlock Text="Draft History" Classes="h1" />
+      <TextBlock Text="The active timeline for this draft. Each row is a pick that still counts — names, not player ids."
+                 Classes="muted" TextWrapping="Wrap" />
+      <TextBlock Text="{Binding StatusMessage}" Classes="muted" TextWrapping="Wrap" />
+      <TextBlock Text="{Binding Summary}" Classes="accent" TextWrapping="Wrap"
+                 IsVisible="{Binding HasDraft}" />
+
+      <Border Classes="card" IsVisible="{Binding !HasDraft}">
+        <TextBlock Text="Open a league and start a draft first." Classes="muted" TextWrapping="Wrap" />
+      </Border>
+
+      <Border Classes="card" IsVisible="{Binding HasDraft}">
+        <DockPanel>
+          <Grid DockPanel.Dock="Top" ColumnDefinitions="70,*,1.4*,40,44,80" Margin="0,0,0,8">
+            <TextBlock Text="Pick" Classes="muted" FontSize="11" />
+            <TextBlock Grid.Column="1" Text="Team" Classes="muted" FontSize="11" />
+            <TextBlock Grid.Column="2" Text="Player" Classes="muted" FontSize="11" />
+            <TextBlock Grid.Column="3" Text="Pos" Classes="muted" FontSize="11" />
+            <TextBlock Grid.Column="4" Text="NFL" Classes="muted" FontSize="11" />
+            <TextBlock Grid.Column="5" Text="Source" Classes="muted" FontSize="11" />
+          </Grid>
+          <TextBlock Text="No picks on this timeline yet."
+                     Classes="muted" IsVisible="{Binding !HasPicks}" />
+          <ItemsControl ItemsSource="{Binding Picks}" IsVisible="{Binding HasPicks}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:HistoryPickRow">
+                <Grid ColumnDefinitions="70,*,1.4*,40,44,80" Margin="0,3">
+                  <TextBlock Text="{Binding RoundPick}" FontWeight="SemiBold" />
+                  <TextBlock Grid.Column="1" Text="{Binding Team}" TextTrimming="CharacterEllipsis">
+                    <ToolTip.Tip>
+                      <views:TeamPortraitTip TeamKey="{Binding TeamKey}" />
+                    </ToolTip.Tip>
+                  </TextBlock>
+                  <TextBlock Grid.Column="2" Text="{Binding Player}" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Grid.Column="3" Text="{Binding Position}" />
+                  <TextBlock Grid.Column="4" Text="{Binding NflTeam}" />
+                  <TextBlock Grid.Column="5" Text="{Binding Source}" Classes="muted" />
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </DockPanel>
+      </Border>
+
+      <Button Content="Open Draft Room" Classes="primary" HorizontalAlignment="Left"
+              IsVisible="{Binding HasDraft}"
+              Command="{Binding OpenRoomCommand}" />
+    </StackPanel>
+  </ScrollViewer>
 </UserControl>

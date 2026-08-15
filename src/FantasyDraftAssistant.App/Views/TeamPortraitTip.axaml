@@ -1,0 +1,13 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="FantasyDraftAssistant.App.Views.TeamPortraitTip">
+  <Border Width="220" Height="220" CornerRadius="8" ClipToBounds="True"
+          Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
+    <Panel>
+      <TextBlock x:Name="EmptyLabel" Text="No team image yet. Generate them on League Setup."
+                 Classes="muted" TextWrapping="Wrap" Margin="12" TextAlignment="Center"
+                 HorizontalAlignment="Center" VerticalAlignment="Center" />
+      <Image x:Name="PortraitImage" Stretch="UniformToFill" IsVisible="False" />
+    </Panel>
+  </Border>
+</UserControl>

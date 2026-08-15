@@ -16,12 +16,14 @@ public partial class AiProviderEditor : ObservableObject
         Help = descriptor.CredentialHelp;
         DefaultModel = descriptor.DefaultModel;
         Model = descriptor.DefaultModel;
+        SuggestedModels = descriptor.SuggestedModels;
     }
 
     public string ProviderKey { get; }
     public string Title { get; }
     public string Help { get; }
     public string DefaultModel { get; }
+    public IReadOnlyList<string> SuggestedModels { get; }
     public IReadOnlyList<string> Roles => AiProviderCatalog.Roles;
 
     [ObservableProperty] private bool _enabled;

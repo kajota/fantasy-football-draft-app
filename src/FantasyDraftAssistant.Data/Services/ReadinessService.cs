@@ -61,6 +61,13 @@ public sealed class ReadinessService(
             true));
 
         var refreshes = await fantasyData.GetRefreshInfoAsync(cancellationToken);
+        var fantasyProsKey = await credentials.GetSecretAsync("fantasydata", "fantasypros", cancellationToken);
+        items.Add(Item("FantasyPros",
+            !string.IsNullOrWhiteSpace(fantasyProsKey) ? ReadinessLevel.Ready : ReadinessLevel.Optional,
+            !string.IsNullOrWhiteSpace(fantasyProsKey)
+                ? "API key saved. Refresh on Player Data to update ranks."
+                : "Optional. Add a key on Player Data for expert ranks and tiers.",
+            false));
         items.Add(Freshness("Rankings", refreshes.FirstOrDefault(r => r.Dataset == "rankings"), required: true));
         items.Add(Freshness("ADP", refreshes.FirstOrDefault(r => r.Dataset == "adp"), required: true));
         items.Add(Freshness("Projections", refreshes.FirstOrDefault(r => r.Dataset == "projections"), required: false));
@@ -70,9 +77,33 @@ public sealed class ReadinessService(
             statusStamp == default ? "No status timestamp." : $"Cached, last updated {statusStamp:g}.",
             false));
 
-        items.Add(Item("Yahoo authentication", ReadinessLevel.Disabled, "Yahoo integration is deferred past the first milestone.", false));
-        items.Add(Item("Yahoo league access", ReadinessLevel.Disabled, "Not configured.", false));
-        items.Add(Item("Yahoo draft access", ReadinessLevel.Disabled, "Not configured.", false));
+        var yahooAuth = await credentials.GetSecretAsync("yahoo", "refresh_token", cancellationToken)
+                        ?? await credentials.GetSecretAsync("yahoo", "access_token", cancellationToken);
+        var yahooApp = await credentials.GetSecretAsync("yahoo", "client_id", cancellationToken);
+        items.Add(Item("Yahoo authentication",
+            !string.IsNullOrWhiteSpace(yahooAuth) ? ReadinessLevel.Ready
+                : !string.IsNullOrWhiteSpace(yahooApp) ? ReadinessLevel.Attention
+                : ReadinessLevel.Optional,
+            !string.IsNullOrWhiteSpace(yahooAuth) ? "Yahoo account is signed in."
+                : !string.IsNullOrWhiteSpace(yahooApp) ? "App credentials saved. Sign in on the Yahoo page."
+                : "Optional until you import a Yahoo league.",
+            false));
+
+        var currentLeague = draftId is { } selectedDraft
+            ? await leagues.GetDraftAsync(selectedDraft, cancellationToken) is { } selected
+                ? await leagues.GetLeagueAsync(selected.LeagueId, cancellationToken)
+                : null
+            : null;
+        items.Add(Item("Yahoo league access",
+            currentLeague?.Platform == FantasyPlatform.Yahoo ? ReadinessLevel.Ready : ReadinessLevel.Optional,
+            currentLeague?.Platform == FantasyPlatform.Yahoo
+                ? $"Local league linked to {currentLeague.ExternalLeagueId}."
+                : "No Yahoo-imported league is selected.",
+            false));
+        items.Add(Item("Yahoo draft access",
+            ReadinessLevel.Optional,
+            "Live Yahoo pick sync is not in this slice. Manual entry stays available.",
+            false));
 
         var configs = await aiConfigs.ListAsync(cancellationToken);
         foreach (var descriptor in Core.Ai.AiProviderCatalog.All)

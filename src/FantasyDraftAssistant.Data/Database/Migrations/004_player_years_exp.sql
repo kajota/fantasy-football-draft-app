@@ -1,0 +1,1 @@
+ALTER TABLE Players ADD COLUMN YearsExp INTEGER;

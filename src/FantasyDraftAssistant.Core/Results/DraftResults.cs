@@ -1,3 +1,4 @@
+using FantasyDraftAssistant.Core.Analytics;
 using FantasyDraftAssistant.Core.Enums;
 using FantasyDraftAssistant.Core.Ids;
 using FantasyDraftAssistant.Core.Models;
@@ -132,6 +133,8 @@ public sealed class FantasyDataRefreshResult
 public sealed class FantasyDataRefreshRequest
 {
     public int Season { get; init; } = DateTime.UtcNow.Year;
+    public ConsensusScoring? Scoring { get; init; }
+    public bool? Superflex { get; init; }
 }
 
 public sealed class AiConnectionTestResult
@@ -162,6 +165,9 @@ public sealed class AiAnalysisRequest
     public required bool FastMode { get; init; }
     public string? DecisionContextJson { get; init; }
     public string? Model { get; init; }
+    public string? PromptKind { get; init; }
+    public string? TauntStyle { get; init; }
+    public string? TauntTarget { get; init; }
 }
 
 public sealed class AiProviderConfig

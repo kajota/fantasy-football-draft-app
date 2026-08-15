@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using FantasyDraftAssistant.Core.Analytics;
 using FantasyDraftAssistant.Core.Commands;
 using FantasyDraftAssistant.Core.Engine;
 using FantasyDraftAssistant.Core.Enums;
@@ -13,7 +15,13 @@ public partial class TeamRow : ObservableObject
     [ObservableProperty] private string _name = "";
     [ObservableProperty] private string? _ownerName;
     [ObservableProperty] private int _draftPosition;
+    [ObservableProperty] private string _portraitStatus = "";
+    [ObservableProperty] private bool _isGenerating;
+    [ObservableProperty] private bool _normalImage;
+    [ObservableProperty] private bool _canChoosePortraitStyle;
     public Core.Ids.TeamId TeamId { get; init; }
+    public string TeamKey => TeamId.ToString();
+    public string? ExternalTeamId { get; init; }
 }
 
 public partial class RosterSlotEditor : ObservableObject
@@ -62,20 +70,89 @@ public partial class RosterSlotEditor : ObservableObject
     }
 }
 
-public partial class LeagueSetupViewModel(ILeagueService leagues, SessionState session) : PageViewModel
+public partial class ScoringRuleEditor : ObservableObject
 {
+    public ScoringRuleEditor(ScoringCategoryInfo info, decimal points, Action changed)
+    {
+        Category = info.Category;
+        Group = info.Group;
+        Label = info.Label;
+        Help = info.Help;
+        _points = points;
+        _pointsText = Format(points);
+        _changed = changed;
+    }
+
+    private readonly Action _changed;
+
+    public ScoringCategory Category { get; }
+    public string Group { get; }
+    public string Label { get; }
+    public string Help { get; }
+
+    [ObservableProperty] private decimal _points;
+    [ObservableProperty] private string _pointsText = "";
+    [ObservableProperty] private bool _hasInvalidPoints;
+
+    partial void OnPointsChanged(decimal value)
+    {
+        var text = Format(value);
+        if (PointsText != text)
+            PointsText = text;
+        _changed();
+    }
+
+    partial void OnPointsTextChanged(string value)
+    {
+        if (decimal.TryParse(value.Trim(), NumberStyles.Number | NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var points))
+        {
+            HasInvalidPoints = false;
+            if (Points != points)
+                Points = points;
+            return;
+        }
+
+        HasInvalidPoints = true;
+    }
+
+    private static string Format(decimal value) => value.ToString("0.####", CultureInfo.InvariantCulture);
+}
+
+public partial class ScoringGroup
+{
+    public required string Name { get; init; }
+    public required IReadOnlyList<ScoringRuleEditor> Rules { get; init; }
+}
+
+public partial class LeagueSetupViewModel(
+    ILeagueService leagues,
+    SessionState session,
+    ITeamPortraitGenerator portraits,
+    ITeamPortraitStore portraitStore) : PageViewModel
+{
+    private bool _loading;
+
     public ObservableCollection<TeamRow> Teams { get; } = [];
     public ObservableCollection<RosterSlotEditor> Roster { get; } = [];
+    public ObservableCollection<ScoringGroup> ScoringGroups { get; } = [];
 
     [ObservableProperty] private string _leagueName = "";
     [ObservableProperty] private int _season = 2026;
     [ObservableProperty] private int _roundCount = 15;
     [ObservableProperty] private string _rosterSummary = "";
+    [ObservableProperty] private string _scoringSummary = "";
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasSaveNotice))]
+    private string _saveNotice = "";
+    [ObservableProperty] private bool _isGeneratingPortraits;
+
+    public bool HasSaveNotice => !string.IsNullOrWhiteSpace(SaveNotice);
 
     public override async Task OnNavigatedToAsync()
     {
         Title = "League Setup";
         Teams.Clear();
+        SaveNotice = "";
         if (session.LeagueId is not { } id)
         {
             StatusMessage = "Select or create a league first.";
@@ -88,20 +165,39 @@ public partial class LeagueSetupViewModel(ILeagueService leagues, SessionState s
         LeagueName = league.Name;
         Season = league.Season;
         RoundCount = league.RoundCount;
+        if (league.Platform == FantasyPlatform.Yahoo)
+        {
+            StatusMessage = "Imported from Yahoo. Verify team names, first-round seats, and keepers before you start. A later Yahoo refresh will not overwrite draft order or keepers unless you ask it to.";
+        }
+        var userTeam = league.UserTeamId;
         foreach (var team in await leagues.GetTeamsAsync(id))
         {
+            var isMine = userTeam is { } mine && team.TeamId.Equals(mine);
             Teams.Add(new TeamRow
             {
                 TeamId = team.TeamId,
                 Name = team.Name,
                 OwnerName = team.OwnerName,
-                DraftPosition = team.DraftPosition
+                DraftPosition = team.DraftPosition,
+                ExternalTeamId = team.ExternalTeamId,
+                CanChoosePortraitStyle = !isMine
             });
         }
 
-        var saved = await leagues.GetRosterSlotsAsync(id);
-        var counts = RosterRules.CountsFromSlots(saved);
-        RebuildEditors(counts);
+        _loading = true;
+        try
+        {
+            var saved = await leagues.GetRosterSlotsAsync(id);
+            var counts = RosterRules.CountsFromSlots(saved);
+            RebuildEditors(counts);
+
+            var scoring = await leagues.GetScoringRulesAsync(id);
+            RebuildScoring(scoring.ToDictionary(rule => rule.Category, rule => rule.Points));
+        }
+        finally
+        {
+            _loading = false;
+        }
     }
 
     [RelayCommand]
@@ -112,6 +208,15 @@ public partial class LeagueSetupViewModel(ILeagueService leagues, SessionState s
 
     [RelayCommand]
     private void ApplySuperflexRoster() => ApplyPreset(RosterRules.DefaultSuperflexRoster(), "Superflex preset (adds one Q/W/R/T).");
+
+    [RelayCommand]
+    private void ApplyStandardScoring() => ApplyScoringPreset(ScoringCatalog.Standard(), "Standard scoring (no PPR, 4-point pass TDs).");
+
+    [RelayCommand]
+    private void ApplyHalfPprScoring() => ApplyScoringPreset(ScoringCatalog.HalfPpr(), "Half PPR scoring (0.5 points per catch).");
+
+    [RelayCommand]
+    private void ApplyPprScoring() => ApplyScoringPreset(ScoringCatalog.Ppr(), "Full PPR scoring (1 point per catch).");
 
     [RelayCommand]
     private void MatchRoundsToRoster()
@@ -126,6 +231,12 @@ public partial class LeagueSetupViewModel(ILeagueService leagues, SessionState s
         if (session.LeagueId is not { } id)
             return;
 
+        if (ScoringEditors().Any(rule => rule.HasInvalidPoints))
+        {
+            StatusMessage = "Scoring has a value that is not a number. Fix it before saving.";
+            return;
+        }
+
         await leagues.SaveLeagueDetailsAsync(id, LeagueName, Season, RoundCount);
         await leagues.SaveTeamsAsync(new SaveTeamsRequest
         {
@@ -136,7 +247,8 @@ public partial class LeagueSetupViewModel(ILeagueService leagues, SessionState s
                 TeamId = t.TeamId,
                 Name = t.Name,
                 OwnerName = t.OwnerName,
-                DraftPosition = t.DraftPosition
+                DraftPosition = t.DraftPosition,
+                ExternalTeamId = t.ExternalTeamId
             }).ToList()
         });
         await leagues.SaveRosterAsync(new SaveRosterRequest
@@ -151,8 +263,74 @@ public partial class LeagueSetupViewModel(ILeagueService leagues, SessionState s
             }).ToList()
         });
 
+        await leagues.SaveScoringAsync(new SaveScoringRequest
+        {
+            LeagueId = id,
+            Rules = ScoringEditors().Select(rule => new ScoringRuleSpec
+            {
+                Category = rule.Category,
+                Points = rule.Points
+            }).ToList()
+        });
+
         session.LeagueName = LeagueName;
-        StatusMessage = $"Saved. {RosterSummary}";
+        SaveNotice = "Saved. League settings are stored.";
+        StatusMessage = SaveNotice;
+    }
+
+    [RelayCommand]
+    private Task GenerateAllPortraitsAsync() => GeneratePortraitsAsync(Teams.ToList());
+
+    [RelayCommand]
+    private Task GenerateOnePortraitAsync(TeamRow? row) =>
+        row is null ? Task.CompletedTask : GeneratePortraitsAsync([row]);
+
+    private async Task GeneratePortraitsAsync(IReadOnlyList<TeamRow> rows)
+    {
+        if (session.LeagueId is not { } leagueId || rows.Count == 0)
+            return;
+        if (IsGeneratingPortraits)
+            return;
+
+        var league = await leagues.GetLeagueAsync(leagueId);
+        var userTeam = league?.UserTeamId ?? Teams.FirstOrDefault()?.TeamId;
+        IsGeneratingPortraits = true;
+        var done = 0;
+        try
+        {
+            foreach (var row in rows)
+            {
+                row.IsGenerating = true;
+                row.PortraitStatus = "Generating…";
+                StatusMessage = $"Generating {++done} of {rows.Count}: {row.Name}";
+                var isMine = userTeam is { } mine && row.TeamId.Equals(mine);
+                var result = await portraits.GenerateAsync(new TeamPortraitRequest
+                {
+                    TeamId = row.TeamId,
+                    TeamName = string.IsNullOrWhiteSpace(row.Name) ? $"Team {row.DraftPosition}" : row.Name,
+                    OwnerName = row.OwnerName,
+                    IsUserTeam = isMine,
+                    NormalImage = !isMine && row.NormalImage
+                });
+                row.IsGenerating = false;
+                row.PortraitStatus = result.Succeeded
+                    ? "Ready — hover the name"
+                    : result.Error ?? "Failed";
+                if (!result.Succeeded)
+                    StatusMessage = $"{row.Name}: {row.PortraitStatus}";
+            }
+
+            if (rows.All(row => portraitStore.Exists(row.TeamId)))
+                StatusMessage = rows.Count == 1
+                    ? $"Image ready for {rows[0].Name}. Hover the team name."
+                    : "Team images are ready. Hover a name to see the roast — yours is the handsome one.";
+        }
+        finally
+        {
+            IsGeneratingPortraits = false;
+            foreach (var row in rows)
+                row.IsGenerating = false;
+        }
     }
 
     private void ApplyPreset(IReadOnlyList<RosterSlotSpecPreset> preset, string message)
@@ -182,6 +360,72 @@ public partial class LeagueSetupViewModel(ILeagueService leagues, SessionState s
 
     private int DraftedSpots() => Roster.Where(s => s.SlotKind != SlotKind.Inactive).Sum(s => s.Count);
 
+    private void ApplyScoringPreset(IReadOnlyList<ScoringPreset> preset, string message)
+    {
+        RebuildScoring(preset.ToDictionary(rule => rule.Category, rule => rule.Points));
+        _ = PersistScoringAsync($"{message} Scoring is saved. Refresh FantasyPros so ranks match.");
+    }
+
+    private void RebuildScoring(IReadOnlyDictionary<ScoringCategory, decimal> points)
+    {
+        var wasLoading = _loading;
+        _loading = true;
+        try
+        {
+            ScoringGroups.Clear();
+            foreach (var group in ScoringCatalog.All.GroupBy(info => info.Group))
+            {
+                ScoringGroups.Add(new ScoringGroup
+                {
+                    Name = group.Key,
+                    Rules = group.Select(info =>
+                        new ScoringRuleEditor(info, ScoringCatalog.Resolve(info, points), OnScoringChanged)).ToList()
+                });
+            }
+
+            RefreshSummary();
+        }
+        finally
+        {
+            _loading = wasLoading;
+        }
+    }
+
+    private void OnScoringChanged()
+    {
+        RefreshSummary();
+        if (!_loading)
+            _ = PersistScoringAsync();
+    }
+
+    private async Task PersistScoringAsync(string? message = null)
+    {
+        if (session.LeagueId is not { } id)
+            return;
+        if (ScoringEditors().Any(rule => rule.HasInvalidPoints))
+        {
+            SaveNotice = "";
+            StatusMessage = "Scoring has a value that is not a number. Fix it to save.";
+            return;
+        }
+
+        await leagues.SaveScoringAsync(new SaveScoringRequest
+        {
+            LeagueId = id,
+            Rules = ScoringEditors().Select(rule => new ScoringRuleSpec
+            {
+                Category = rule.Category,
+                Points = rule.Points
+            }).ToList()
+        });
+
+        SaveNotice = message ?? "Scoring saved.";
+        StatusMessage = SaveNotice;
+    }
+
+    private IEnumerable<ScoringRuleEditor> ScoringEditors() =>
+        ScoringGroups.SelectMany(group => group.Rules);
+
     private void RefreshSummary()
     {
         var drafted = DraftedSpots();
@@ -198,5 +442,16 @@ public partial class LeagueSetupViewModel(ILeagueService leagues, SessionState s
         var qbDemand = RosterRules.QbDemand(mapped);
         var format = qbDemand >= 2 ? $"Superflex/multi-QB ({qbDemand} QB-eligible starters)" : "1-QB";
         RosterSummary = $"{format} · {drafted} drafted spots · {ir} IR · suggested rounds {Math.Max(1, drafted)}";
+
+        var rules = ScoringEditors().Select(rule => new Core.Models.ScoringRule
+        {
+            ScoringRuleId = Core.Ids.ScoringRuleId.New(),
+            LeagueId = Core.Ids.LeagueId.New(),
+            Category = rule.Category,
+            Points = rule.Points
+        }).ToList();
+        var profile = ScoringCatalog.ProfileName(rules, qbDemand >= 2);
+        var fp = FantasyDataFormat.FromLeague(rules, mapped);
+        ScoringSummary = $"{profile}. FantasyPros ranks use {fp.DisplayName}. AI sees these exact point values.";
     }
 }

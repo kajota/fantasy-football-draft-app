@@ -16,7 +16,11 @@ dotnet test
 dotnet run --project src/FantasyDraftAssistant.App
 ```
 
-On first launch, use **Start 12-team Superflex mock draft** to load the seed player pool and open the Draft Room.
+On first launch, use **Start 12-team Superflex mock draft** to refresh live Sleeper player data (falls back to the offline seed if the network is down) and open the Draft Room. Or open **Player Data** and refresh Sleeper yourself.
+
+FantasyPros is optional. On **Player Data**, paste a public API key and refresh. The app stays under the premium limits (1 request/second, 500/day). FantasyPros ranks and tiers win over Sleeper when both are cached.
+
+Yahoo league import is on the **Yahoo** page. You need a Yahoo Fantasy API app (apply at [sports.yahoo.com/developer/access/](https://sports.yahoo.com/developer/access/)), then save the Client ID/secret and sign in. Import pulls teams, roster slots, and scoring. Review draft order and keepers locally. Live Yahoo pick sync is not in this slice.
 
 ## Layout
 
@@ -25,6 +29,7 @@ src/FantasyDraftAssistant.App            Avalonia UI
 src/FantasyDraftAssistant.Core          Draft engine, analytics, contracts
 src/FantasyDraftAssistant.Data          SQLite, migrations, application services
 src/FantasyDraftAssistant.Providers.FantasyData
+src/FantasyDraftAssistant.Providers.Yahoo
 src/FantasyDraftAssistant.Providers.AI  xAI adapter (https://api.x.ai/v1)
 ```
 

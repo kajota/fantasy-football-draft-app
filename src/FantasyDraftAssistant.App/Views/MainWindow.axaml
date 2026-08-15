@@ -20,6 +20,7 @@
           <Button Content="League Setup" Classes="nav" Command="{Binding GoSetupCommand}" />
           <Button Content="Draft Order" Classes="nav" Command="{Binding GoOrderCommand}" />
           <Button Content="Keepers" Classes="nav" Command="{Binding GoKeepersCommand}" />
+          <Button Content="Yahoo" Classes="nav" Command="{Binding GoYahooCommand}" />
           <Button Content="Player Data" Classes="nav" Command="{Binding GoDataCommand}" />
           <Button Content="AI Providers" Classes="nav" Command="{Binding GoAiCommand}" />
           <Button Content="Readiness" Classes="nav" Command="{Binding GoReadyCommand}" />

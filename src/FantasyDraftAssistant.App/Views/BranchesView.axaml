@@ -3,14 +3,66 @@
              xmlns:vm="using:FantasyDraftAssistant.App.ViewModels"
              x:Class="FantasyDraftAssistant.App.Views.BranchesView"
              x:DataType="vm:BranchesViewModel">
-  <StackPanel Spacing="12">
-    <TextBlock Text="Scenario Branches" Classes="h1" />
-    <TextBlock Text="{Binding StatusMessage}" Classes="muted" />
-    <Grid ColumnDefinitions="*,120,Auto" ColumnSpacing="8">
-      <TextBox PlaceholderText="Branch name" Text="{Binding NewBranchName}" />
-      <TextBox Grid.Column="1" PlaceholderText="From pick" Text="{Binding BranchPoint}" />
-      <Button Grid.Column="2" Content="Create branch" Classes="primary" Command="{Binding CreateCommand}" />
-    </Grid>
-    <ListBox ItemsSource="{Binding Branches}" Background="Transparent" />
-  </StackPanel>
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+    <StackPanel Spacing="16">
+      <TextBlock Text="Scenario Branches" Classes="h1" />
+      <TextBlock Text="A branch is a what-if timeline. It keeps picks before a chosen overall pick and lets you replay from there without changing the main draft."
+                 Classes="muted" TextWrapping="Wrap" />
+      <TextBlock Text="{Binding StatusMessage}" Classes="muted" TextWrapping="Wrap" />
+      <TextBlock Text="{Binding ActiveSummary}" Classes="accent" TextWrapping="Wrap"
+                 IsVisible="{Binding HasDraft}" />
+
+      <Border Classes="card" IsVisible="{Binding !HasDraft}">
+        <TextBlock Text="Open a league and start a draft first. Then come back here to fork the timeline."
+                   Classes="muted" TextWrapping="Wrap" />
+      </Border>
+
+      <Border Classes="card" IsVisible="{Binding HasDraft}">
+        <StackPanel Spacing="12">
+          <TextBlock Text="New branch" Classes="h2" />
+          <TextBlock Text="From pick is the overall pick where the what-if starts. That pick and later ones are open. Earlier picks stay shared with the parent."
+                     Classes="muted" TextWrapping="Wrap" />
+          <Grid ColumnDefinitions="*,120,Auto" ColumnSpacing="8">
+            <TextBox PlaceholderText="Branch name" Text="{Binding NewBranchName}"
+                     ToolTip.Tip="A short name for this what-if, for example WR at 1.03." />
+            <TextBox Grid.Column="1" Text="{Binding BranchPointText}"
+                     Classes.invalid="{Binding HasInvalidBranchPoint}"
+                     PlaceholderText="From pick"
+                     ToolTip.Tip="Overall pick number, a whole number such as 3. Not 3.1, and not round.pick." />
+            <Button Grid.Column="2" Content="Create branch" Classes="primary"
+                    Command="{Binding CreateCommand}" />
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <ItemsControl ItemsSource="{Binding Branches}" IsVisible="{Binding HasDraft}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:BranchRow">
+            <Border Classes="card" Margin="0,0,0,10">
+              <DockPanel LastChildFill="True">
+                <StackPanel DockPanel.Dock="Right" Spacing="8" Margin="12,0,0,0"
+                            VerticalAlignment="Center">
+                  <TextBlock Text="Active" Classes="accent" HorizontalAlignment="Right"
+                             IsVisible="{Binding IsActive}" />
+                  <Button Content="Switch to this" Classes="ghost"
+                          IsVisible="{Binding CanSwitch}"
+                          Command="{Binding $parent[ItemsControl].((vm:BranchesViewModel)DataContext).SwitchCommand}"
+                          CommandParameter="{Binding}" />
+                </StackPanel>
+                <StackPanel>
+                  <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding Detail}" Classes="muted" TextWrapping="Wrap" Margin="0,4,0,0" />
+                  <TextBlock Text="{Binding PickSummary}" Classes="muted" />
+                </StackPanel>
+              </DockPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <Button Content="Open Draft Room" Classes="primary" HorizontalAlignment="Left"
+              IsVisible="{Binding HasDraft}"
+              Command="{Binding OpenRoomCommand}" />
+    </StackPanel>
+  </ScrollViewer>
 </UserControl>

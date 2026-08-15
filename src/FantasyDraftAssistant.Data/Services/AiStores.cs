@@ -126,3 +126,61 @@ public sealed class AiUsageService(SqliteConnectionFactory factory) : IAiUsageSe
             .Sum(r => r.EstimatedCost ?? 0);
     }
 }
+
+public sealed class AiResponseStore(SqliteConnectionFactory factory) : IAiResponseStore
+{
+    public Task SaveAsync(AiSavedResponse response, CancellationToken cancellationToken = default)
+    {
+        using var db = factory.Open();
+        using var cmd = db.Cmd("""
+            INSERT INTO AiResponses(ResponseId, DraftId, BranchId, Provider, Model, AnalyzedStateVersion, RequestStartedAt, ResponseCompletedAt, Body, Prompt)
+            VALUES ($id, $draft, $branch, $p, $m, $v, $start, $end, $body, $prompt);
+            """)
+            .Bind("$id", response.ResponseId)
+            .Bind("$draft", response.DraftId.ToString())
+            .Bind("$branch", response.BranchId.ToString())
+            .Bind("$p", response.Provider)
+            .Bind("$m", response.Model)
+            .Bind("$v", response.AnalyzedStateVersion)
+            .Bind("$start", response.RequestStartedAt.ToString("O"))
+            .Bind("$end", response.ResponseCompletedAt?.ToString("O"))
+            .Bind("$body", response.Body)
+            .Bind("$prompt", response.Prompt);
+        cmd.ExecuteNonQuery();
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<AiSavedResponse>> ListAsync(DraftId draftId, BranchId branchId, CancellationToken cancellationToken = default)
+    {
+        using var db = factory.Open();
+        using var cmd = db.Cmd("""
+            SELECT ResponseId, Provider, Model, AnalyzedStateVersion, RequestStartedAt, ResponseCompletedAt, Body, Prompt
+            FROM AiResponses
+            WHERE DraftId = $d AND BranchId = $b
+            ORDER BY RequestStartedAt;
+            """)
+            .Bind("$d", draftId.ToString())
+            .Bind("$b", branchId.ToString());
+        using var reader = cmd.ExecuteReader();
+        var list = new List<AiSavedResponse>();
+        while (reader.Read())
+        {
+            var promptOrdinal = reader.GetOrdinal("Prompt");
+            list.Add(new AiSavedResponse
+            {
+                ResponseId = reader.GetString(reader.GetOrdinal("ResponseId")),
+                DraftId = draftId,
+                BranchId = branchId,
+                Provider = reader.GetString(reader.GetOrdinal("Provider")),
+                Model = reader.GetString(reader.GetOrdinal("Model")),
+                AnalyzedStateVersion = reader.GetInt32(reader.GetOrdinal("AnalyzedStateVersion")),
+                Prompt = reader.IsDBNull(promptOrdinal) ? "" : reader.GetString(promptOrdinal),
+                Body = reader.GetString(reader.GetOrdinal("Body")),
+                RequestStartedAt = reader.GetTime(reader.GetOrdinal("RequestStartedAt")),
+                ResponseCompletedAt = reader.GetNullTime(reader.GetOrdinal("ResponseCompletedAt"))
+            });
+        }
+
+        return Task.FromResult<IReadOnlyList<AiSavedResponse>>(list);
+    }
+}

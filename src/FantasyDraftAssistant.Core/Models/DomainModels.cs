@@ -17,6 +17,7 @@ public sealed class League
     public int RosterSize { get; set; }
     public DraftSourcePreference DraftSourcePreference { get; set; } = DraftSourcePreference.Manual;
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? ArchivedAt { get; set; }
 }
 
 public sealed class Team
@@ -58,8 +59,44 @@ public sealed class Player
     public required PlayerPosition PrimaryPosition { get; set; }
     public required IReadOnlyList<PlayerPosition> EligiblePositions { get; set; }
     public int? ByeWeek { get; set; }
+    public int? YearsExp { get; set; }
     public PlayerStatus Status { get; set; } = PlayerStatus.Active;
     public DateTimeOffset? StatusUpdatedAt { get; set; }
+    public string? InjuryBodyPart { get; set; }
+    public string? InjuryNotes { get; set; }
+    public string? InjuryStartedOn { get; set; }
+
+    public bool IsRookie => YearsExp == 0;
+    public bool IsInjured => Status != PlayerStatus.Active;
+
+    public string StatusCode => Status switch
+    {
+        PlayerStatus.Questionable => "Q",
+        PlayerStatus.Doubtful => "D",
+        PlayerStatus.Out => "O",
+        PlayerStatus.InjuredReserve => "IR",
+        PlayerStatus.PhysicallyUnableToPerform => "PUP",
+        PlayerStatus.Suspended => "SUS",
+        PlayerStatus.NonFootballInjury => "NFI",
+        _ => ""
+    };
+
+    public string InjuryLine
+    {
+        get
+        {
+            var parts = new List<string>();
+            if (IsInjured)
+                parts.Add(Status.ToString());
+            if (!string.IsNullOrWhiteSpace(InjuryBodyPart))
+                parts.Add(InjuryBodyPart);
+            if (!string.IsNullOrWhiteSpace(InjuryNotes))
+                parts.Add(InjuryNotes);
+            if (!string.IsNullOrWhiteSpace(InjuryStartedOn))
+                parts.Add($"since {InjuryStartedOn}");
+            return string.Join(" · ", parts);
+        }
+    }
 }
 
 public sealed class Draft

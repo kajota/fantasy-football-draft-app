@@ -5,6 +5,7 @@
     <Project Path="src/FantasyDraftAssistant.Data/FantasyDraftAssistant.Data.csproj" />
     <Project Path="src/FantasyDraftAssistant.Providers.AI/FantasyDraftAssistant.Providers.AI.csproj" />
     <Project Path="src/FantasyDraftAssistant.Providers.FantasyData/FantasyDraftAssistant.Providers.FantasyData.csproj" />
+    <Project Path="src/FantasyDraftAssistant.Providers.Yahoo/FantasyDraftAssistant.Providers.Yahoo.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/FantasyDraftAssistant.Core.Tests/FantasyDraftAssistant.Core.Tests.csproj" />

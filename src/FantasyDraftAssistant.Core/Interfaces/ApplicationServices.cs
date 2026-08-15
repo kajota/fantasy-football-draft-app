@@ -4,6 +4,7 @@ using FantasyDraftAssistant.Core.Ids;
 using FantasyDraftAssistant.Core.Models;
 using FantasyDraftAssistant.Core.Query;
 using FantasyDraftAssistant.Core.Results;
+using FantasyDraftAssistant.Core.Yahoo;
 
 namespace FantasyDraftAssistant.Core.Interfaces;
 
@@ -33,6 +34,10 @@ public interface IDraftStateService
 public interface ILeagueService
 {
     Task<IReadOnlyList<LeagueSummary>> ListLeaguesAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<LeagueSummary>> ListArchivedLeaguesAsync(CancellationToken cancellationToken = default);
+    Task ArchiveLeagueAsync(LeagueId leagueId, CancellationToken cancellationToken = default);
+    Task RestoreLeagueAsync(LeagueId leagueId, CancellationToken cancellationToken = default);
+    Task DeleteLeaguePermanentlyAsync(LeagueId leagueId, CancellationToken cancellationToken = default);
     Task<League> CreateLeagueAsync(CreateLeagueRequest request, CancellationToken cancellationToken = default);
     Task SaveLeagueDetailsAsync(LeagueId leagueId, string name, int season, int roundCount, CancellationToken cancellationToken = default);
     Task<League?> GetLeagueAsync(LeagueId leagueId, CancellationToken cancellationToken = default);
@@ -42,12 +47,15 @@ public interface ILeagueService
     Task SaveRosterAsync(SaveRosterRequest request, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ScoringRule>> GetScoringRulesAsync(LeagueId leagueId, CancellationToken cancellationToken = default);
     Task SaveScoringAsync(SaveScoringRequest request, CancellationToken cancellationToken = default);
+    Task SaveDraftOrderAsync(SaveDraftOrderRequest request, CancellationToken cancellationToken = default);
     Task<Draft> CreateDraftAsync(CreateDraftRequest request, CancellationToken cancellationToken = default);
     Task SaveKeepersAsync(SaveKeepersRequest request, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Keeper>> GetKeepersAsync(DraftId draftId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Draft>> ListDraftsAsync(LeagueId leagueId, CancellationToken cancellationToken = default);
     Task<Draft?> GetDraftAsync(DraftId draftId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<DraftBranch>> GetBranchesAsync(DraftId draftId, CancellationToken cancellationToken = default);
+    Task<League?> FindByExternalIdAsync(FantasyPlatform platform, string externalLeagueId, CancellationToken cancellationToken = default);
+    Task<League> UpsertImportedLeagueAsync(ImportedLeagueRequest request, CancellationToken cancellationToken = default);
 }
 
 public interface IAnalyticsService
@@ -115,7 +123,16 @@ public sealed class DraftSourceEvent
 public interface IFantasyDataProvider
 {
     string ProviderKey { get; }
+    string DisplayName { get; }
+    string Description { get; }
     Task<FantasyDataRefreshResult> RefreshAsync(FantasyDataRefreshRequest request, CancellationToken cancellationToken);
+}
+
+public interface IFantasyDataProviderRegistry
+{
+    IReadOnlyList<IFantasyDataProvider> All { get; }
+    IFantasyDataProvider? Get(string providerKey);
+    Task<FantasyDataRefreshResult> RefreshPreferredAsync(FantasyDataRefreshRequest request, CancellationToken cancellationToken);
 }
 
 public interface IFantasyDataWriter
@@ -133,6 +150,7 @@ public interface IFantasyDataWriter
     Task<IReadOnlyDictionary<PlayerId, PlayerAdp>> GetAdpAsync(string? sourceKey = null, CancellationToken cancellationToken = default);
     Task<IReadOnlyDictionary<PlayerId, PlayerProjection>> GetProjectionsAsync(string? sourceKey = null, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<FantasyDataRefreshInfo>> GetRefreshInfoAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<string>> GetSourceKeysAsync(CancellationToken cancellationToken = default);
 }
 
 public interface IAiProviderAdapter
@@ -175,6 +193,23 @@ public interface IReadinessService
     Task<IReadOnlyList<ReadinessItem>> CheckAsync(DraftId? draftId, CancellationToken cancellationToken = default);
 }
 
+public interface IYahooAuthService
+{
+    Task<YahooAuthStatus> GetStatusAsync(CancellationToken cancellationToken = default);
+    Task SaveAppCredentialsAsync(string clientId, string clientSecret, string? redirectUri, CancellationToken cancellationToken = default);
+    Task ClearAppCredentialsAsync(CancellationToken cancellationToken = default);
+    Task<YahooSignInStart> StartSignInAsync(CancellationToken cancellationToken = default);
+    Task CompleteSignInAsync(string authorizationCode, string? state, CancellationToken cancellationToken = default);
+    Task SignOutAsync(CancellationToken cancellationToken = default);
+}
+
+public interface IYahooLeagueImporter
+{
+    Task<IReadOnlyList<YahooLeagueListItem>> ListLeaguesAsync(CancellationToken cancellationToken = default);
+    Task<YahooImportPreview> PreviewAsync(string leagueKey, CancellationToken cancellationToken = default);
+    Task<YahooImportResult> ImportAsync(string leagueKey, YahooImportOptions options, CancellationToken cancellationToken = default);
+}
+
 public interface IAiUsageService
 {
     Task RecordAsync(AiUsageRecord record, CancellationToken cancellationToken = default);
@@ -200,4 +235,24 @@ public interface IAiConfigStore
 {
     Task<IReadOnlyList<AiProviderConfig>> ListAsync(CancellationToken cancellationToken = default);
     Task SaveAsync(AiProviderConfig config, CancellationToken cancellationToken = default);
+}
+
+public interface IAiResponseStore
+{
+    Task SaveAsync(AiSavedResponse response, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<AiSavedResponse>> ListAsync(DraftId draftId, BranchId branchId, CancellationToken cancellationToken = default);
+}
+
+public sealed class AiSavedResponse
+{
+    public required string ResponseId { get; init; }
+    public required DraftId DraftId { get; init; }
+    public required BranchId BranchId { get; init; }
+    public required string Provider { get; init; }
+    public required string Model { get; init; }
+    public required int AnalyzedStateVersion { get; init; }
+    public required string Prompt { get; init; }
+    public required string Body { get; init; }
+    public required DateTimeOffset RequestStartedAt { get; init; }
+    public DateTimeOffset? ResponseCompletedAt { get; init; }
 }

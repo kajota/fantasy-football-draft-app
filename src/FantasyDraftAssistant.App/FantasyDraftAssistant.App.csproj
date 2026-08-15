@@ -12,6 +12,7 @@
     <ProjectReference Include="..\FantasyDraftAssistant.Data\FantasyDraftAssistant.Data.csproj" />
     <ProjectReference Include="..\FantasyDraftAssistant.Providers.FantasyData\FantasyDraftAssistant.Providers.FantasyData.csproj" />
     <ProjectReference Include="..\FantasyDraftAssistant.Providers.AI\FantasyDraftAssistant.Providers.AI.csproj" />
+    <ProjectReference Include="..\FantasyDraftAssistant.Providers.Yahoo\FantasyDraftAssistant.Providers.Yahoo.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" />

@@ -13,6 +13,7 @@ public sealed class LeagueSettingsDto
 {
     public required string Name { get; init; }
     public required int Season { get; init; }
+    public string NflSeason => $"{Season} NFL season";
     public required int TeamCount { get; init; }
     public required string DraftType { get; init; }
     public required int RoundCount { get; init; }
@@ -21,6 +22,8 @@ public sealed class LeagueSettingsDto
     public required int QbDemand { get; init; }
     public required IReadOnlyList<string> RosterSlots { get; init; }
     public required IReadOnlyDictionary<string, decimal> Scoring { get; init; }
+    public required string ScoringProfile { get; init; }
+    public required IReadOnlyList<string> ScoringLines { get; init; }
 }
 
 public sealed class DraftStatusDto
@@ -69,6 +72,12 @@ public sealed class PlayerSummaryDto
     public double? OverallAdp { get; init; }
     public string? AdpRoundPick { get; init; }
     public decimal? ProjectedPoints { get; init; }
+    public int? YearsExp { get; init; }
+    public bool IsRookie { get; init; }
+    public string? InjuryBodyPart { get; init; }
+    public string? InjuryNotes { get; init; }
+    public string? InjuryStartedOn { get; init; }
+    public string? InjuryLine { get; init; }
 }
 
 public sealed class PlayerDetailsDto
@@ -87,8 +96,10 @@ public sealed class PickDto
     public required int OverallPick { get; init; }
     public required string RoundPick { get; init; }
     public required string Team { get; init; }
+    public string TeamId { get; init; } = "";
     public required string Player { get; init; }
     public required string Position { get; init; }
+    public required string NflTeam { get; init; }
     public required string Source { get; init; }
 }
 
@@ -123,13 +134,28 @@ public sealed class DecisionContextDto
     public required DraftStatusDto Status { get; init; }
     public required LeagueSettingsDto League { get; init; }
     public required RosterDto MyRoster { get; init; }
+    public required IReadOnlyList<string> MyRemainingNeeds { get; init; }
     public required MyQueueDto Queue { get; init; }
     public required IReadOnlyList<PlayerSummaryDto> TopAvailable { get; init; }
     public required PositionSummaryDto Positions { get; init; }
     public required RemainingTiersDto Tiers { get; init; }
+    public required IReadOnlyList<string> RecentPositions { get; init; }
     public required IReadOnlyList<string> InterveningTeamNeeds { get; init; }
     public required IReadOnlyList<string> Alerts { get; init; }
+    public required string RankingsSource { get; init; }
+    public required IReadOnlyList<PlayerSummaryDto> AvailableRookies { get; init; }
+    public required IReadOnlyList<PlayerSummaryDto> InjuredAvailable { get; init; }
     public required int StateVersion { get; init; }
+}
+
+public enum PlayerListSort
+{
+    Rank = 0,
+    Name = 1,
+    Position = 2,
+    NflTeam = 3,
+    Adp = 4,
+    ProjectedPoints = 5
 }
 
 public sealed class PlayerFilter
@@ -137,6 +163,9 @@ public sealed class PlayerFilter
     public PlayerPosition? Position { get; init; }
     public int? MaxResults { get; init; } = 40;
     public string? Search { get; init; }
+    public PlayerListSort SortBy { get; init; } = PlayerListSort.Rank;
+    public bool SortDescending { get; init; }
+    public string? SourceKey { get; init; }
 }
 
 public sealed class LeagueSummary
@@ -146,8 +175,13 @@ public sealed class LeagueSummary
     public required int Season { get; init; }
     public required int TeamCount { get; init; }
     public required DraftType DraftType { get; init; }
+    public FantasyPlatform Platform { get; init; } = FantasyPlatform.Manual;
     public DraftId? ActiveDraftId { get; init; }
     public DraftStatus? ActiveDraftStatus { get; init; }
+    public int DraftCount { get; init; }
+    public DateTimeOffset? ArchivedAt { get; init; }
+    public bool IsArchived => ArchivedAt is not null;
+    public bool IsYahoo => Platform == FantasyPlatform.Yahoo;
 }
 
 public sealed class IntegrityReport

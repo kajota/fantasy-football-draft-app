@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>FantasyDraftAssistant.Providers.Yahoo</RootNamespace>
+    <AssemblyName>FantasyDraftAssistant.Providers.Yahoo</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\FantasyDraftAssistant.Core\FantasyDraftAssistant.Core.csproj" />
+  </ItemGroup>
+</Project>

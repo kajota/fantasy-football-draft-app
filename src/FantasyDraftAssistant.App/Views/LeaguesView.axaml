@@ -3,54 +3,130 @@
              xmlns:vm="using:FantasyDraftAssistant.App.ViewModels"
              x:Class="FantasyDraftAssistant.App.Views.LeaguesView"
              x:DataType="vm:LeaguesViewModel">
-  <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-    <StackPanel Spacing="16">
-      <TextBlock Text="Leagues" Classes="h1" />
-      <TextBlock Text="Create a league or jump into a mock draft with the local seed player pool." Classes="muted" TextWrapping="Wrap" />
+  <Grid>
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+      <StackPanel Spacing="16">
+        <TextBlock Text="Leagues" Classes="h1" />
+        <TextBlock Text="Create a league or jump into a mock draft. The mock refresh uses Sleeper when the network is up." Classes="muted" TextWrapping="Wrap" />
 
-      <Border Classes="card">
-        <StackPanel Spacing="12">
-          <TextBlock Text="Quick start" Classes="h2" />
-          <Button Content="Start 12-team Superflex mock draft" Classes="primary" Command="{Binding StartMockDraftCommand}" HorizontalAlignment="Left" />
-          <TextBlock Text="{Binding StatusMessage}" Classes="muted" />
-        </StackPanel>
-      </Border>
-
-      <Border Classes="card">
-        <StackPanel Spacing="12">
-          <TextBlock Text="New league" Classes="h2" />
-          <StackPanel Spacing="4">
-            <TextBlock Text="League name" FontWeight="SemiBold" />
-            <TextBox Text="{Binding NewLeagueName}"
-                     ToolTip.Tip="Display name for the new league. Team count is 12 by default and can be reviewed on League Setup." />
-            <Button Content="Create league" Classes="primary" Command="{Binding CreateLeagueCommand}"
-                    HorizontalAlignment="Left" Margin="0,4,0,0" />
+        <Border Classes="card">
+          <StackPanel Spacing="12">
+            <TextBlock Text="Quick start" Classes="h2" />
+            <Button Content="Start 12-team Superflex mock draft" Classes="primary" Command="{Binding StartMockDraftCommand}" HorizontalAlignment="Left" />
+            <Button Content="Import league from Yahoo" Classes="ghost" Command="{Binding ImportFromYahooCommand}" HorizontalAlignment="Left" />
+            <TextBlock Text="{Binding StatusMessage}" Classes="muted" TextWrapping="Wrap" />
           </StackPanel>
-          <CheckBox Content="Superflex / 2-QB (leave unchecked for a standard 1-QB league)"
-                    IsChecked="{Binding NewLeagueSuperflex}" />
-          <TextBlock Text="A 12-team standard league uses QB/2RB/2WR/TE/FLEX/K/DEF/6 BENCH and 15 rounds. Check Superflex only if QB is flex-eligible."
+        </Border>
+
+        <Border Classes="card">
+          <StackPanel Spacing="12">
+            <TextBlock Text="New league" Classes="h2" />
+            <StackPanel Spacing="4">
+              <TextBlock Text="League name" FontWeight="SemiBold" />
+              <TextBox Text="{Binding NewLeagueName}"
+                       ToolTip.Tip="Display name for the new league. Team count is 12 by default and can be reviewed on League Setup." />
+              <Button Content="Create league" Classes="primary" Command="{Binding CreateLeagueCommand}"
+                      HorizontalAlignment="Left" Margin="0,4,0,0" />
+            </StackPanel>
+            <CheckBox Content="Superflex / 2-QB (leave unchecked for a standard 1-QB league)"
+                      IsChecked="{Binding NewLeagueSuperflex}" />
+            <TextBlock Text="A 12-team standard league uses QB/2RB/2WR/TE/FLEX/K/DEF/6 BENCH and 15 rounds. Check Superflex only if QB is flex-eligible."
+                       Classes="muted" TextWrapping="Wrap" />
+          </StackPanel>
+        </Border>
+
+        <ItemsControl ItemsSource="{Binding Leagues}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Border Classes="card" Margin="0,0,0,10">
+                <DockPanel LastChildFill="True">
+                  <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="8" Margin="0,10,0,0">
+                    <Button Content="Open" Classes="ghost"
+                            Command="{Binding $parent[ItemsControl].((vm:LeaguesViewModel)DataContext).OpenLeagueCommand}"
+                            CommandParameter="{Binding}" />
+                    <Button Content="Archive or remove" Classes="ghost"
+                            Command="{Binding $parent[ItemsControl].((vm:LeaguesViewModel)DataContext).RequestRemoveCommand}"
+                            CommandParameter="{Binding}" />
+                  </StackPanel>
+                  <StackPanel>
+                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    <TextBlock Classes="muted" Text="{Binding Season, StringFormat='Season {0}'}" />
+                    <TextBlock Classes="accent" Text="Yahoo" IsVisible="{Binding IsYahoo}" />
+                  </StackPanel>
+                </DockPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <StackPanel IsVisible="{Binding HasArchived}" Spacing="10">
+          <TextBlock Text="Archived leagues" Classes="h2" />
+          <TextBlock Text="Hidden from the main list. Restore to use again, or permanently delete."
                      Classes="muted" TextWrapping="Wrap" />
+          <ItemsControl ItemsSource="{Binding ArchivedLeagues}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Border Classes="card" Margin="0,0,0,10">
+                  <DockPanel LastChildFill="True">
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="8" Margin="0,10,0,0">
+                      <Button Content="Restore" Classes="ghost"
+                              Command="{Binding $parent[ItemsControl].((vm:LeaguesViewModel)DataContext).RestoreLeagueCommand}"
+                              CommandParameter="{Binding}" />
+                      <Button Content="Delete permanently" Classes="danger"
+                              Command="{Binding $parent[ItemsControl].((vm:LeaguesViewModel)DataContext).RequestPermanentDeleteCommand}"
+                              CommandParameter="{Binding}" />
+                    </StackPanel>
+                    <StackPanel>
+                      <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                      <TextBlock Classes="muted" Text="{Binding Season, StringFormat='Archived · Season {0}'}" />
+                    </StackPanel>
+                  </DockPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </StackPanel>
+    </ScrollViewer>
+
+    <Border IsVisible="{Binding HasRemovalDialog}"
+            Background="#CC0B1220"
+            HorizontalAlignment="Stretch"
+            VerticalAlignment="Stretch"
+            ZIndex="10">
+      <Border Classes="card" MaxWidth="520" Margin="24"
+              HorizontalAlignment="Center" VerticalAlignment="Center">
+        <StackPanel Spacing="14">
+          <TextBlock Text="{Binding RemovalTitle}" Classes="h2" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding RemovalWarning}" Classes="muted" TextWrapping="Wrap" />
+
+          <StackPanel Spacing="10" IsVisible="{Binding !IsConfirmingDelete}">
+            <Button Content="Archive — hide and keep all history"
+                    Classes="primary" HorizontalAlignment="Stretch"
+                    Command="{Binding ArchivePendingCommand}" />
+            <Button Content="Permanently delete — erase this league"
+                    Classes="danger" HorizontalAlignment="Stretch"
+                    Command="{Binding BeginPermanentDeleteCommand}" />
+            <Button Content="Cancel" Classes="ghost" HorizontalAlignment="Left"
+                    Command="{Binding CancelRemovalCommand}" />
+          </StackPanel>
+
+          <StackPanel Spacing="10" IsVisible="{Binding IsConfirmingDelete}">
+            <TextBlock Text="Type the league name to confirm." FontWeight="SemiBold" />
+            <TextBox Text="{Binding ConfirmName}"
+                     PlaceholderText="{Binding PendingLeague.Name}" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Content="Delete forever" Classes="danger"
+                      Command="{Binding ConfirmPermanentDeleteCommand}"
+                      IsEnabled="{Binding CanPermanentlyDelete}" />
+              <Button Content="Back" Classes="ghost"
+                      Command="{Binding BackToRemovalChoicesCommand}" />
+              <Button Content="Cancel" Classes="ghost"
+                      Command="{Binding CancelRemovalCommand}" />
+            </StackPanel>
+          </StackPanel>
         </StackPanel>
       </Border>
-
-      <ItemsControl ItemsSource="{Binding Leagues}">
-        <ItemsControl.ItemTemplate>
-          <DataTemplate>
-            <Border Classes="card" Margin="0,0,0,10">
-              <DockPanel LastChildFill="True">
-                <Button DockPanel.Dock="Bottom" Content="Open" Classes="ghost"
-                        HorizontalAlignment="Left" Margin="0,10,0,0"
-                        Command="{Binding $parent[ItemsControl].((vm:LeaguesViewModel)DataContext).OpenLeagueCommand}"
-                        CommandParameter="{Binding}" />
-                <StackPanel>
-                  <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap" />
-                  <TextBlock Classes="muted" Text="{Binding Season, StringFormat='Season {0}'}" />
-                </StackPanel>
-              </DockPanel>
-            </Border>
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
-    </StackPanel>
-  </ScrollViewer>
+    </Border>
+  </Grid>
 </UserControl>

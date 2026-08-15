@@ -133,7 +133,10 @@ public partial class KeepersViewModel(
     [ObservableProperty] private bool _showCreateDraft;
     [ObservableProperty] private bool _hasPlayers;
     [ObservableProperty] private bool _canEdit;
+    [ObservableProperty] private bool _showLocked;
+    [ObservableProperty] private bool _showReopened;
     [ObservableProperty] private bool _showPicker;
+    [ObservableProperty] private KeeperPlayerChoice? _selectedChoice;
     [ObservableProperty] private string _search = "";
     [ObservableProperty] private string _pickerTitle = "Assign keeper";
     [ObservableProperty] private string _summary = "";
@@ -187,14 +190,22 @@ public partial class KeepersViewModel(
     }
 
     [RelayCommand]
-    private void BeginAssign(KeeperTeamRow? row)
+    private async Task BeginAssignAsync(KeeperTeamRow? row)
     {
         if (row is null || !CanEdit)
             return;
 
+        if (!HasPlayers)
+        {
+            await LoadPlayersAsync();
+            if (!HasPlayers)
+                return;
+        }
+
         AssigningTeam = row;
         PickerTitle = $"Assign keeper for {row.TeamName}";
         Search = "";
+        SelectedChoice = null;
         ShowPicker = true;
         RefreshChoices();
     }
@@ -221,8 +232,11 @@ public partial class KeepersViewModel(
         AssigningTeam.SetPlayer(player);
         ClosePicker();
         RefreshSummary();
-        StatusMessage = $"{player.Name} assigned to {teamName}. Save to keep it.";
+        StatusMessage = $"{player.Name} assigned to {teamName}. Click Save keepers to store it.";
     }
+
+    [RelayCommand]
+    private void ConfirmPick() => PickPlayer(SelectedChoice);
 
     [RelayCommand]
     private void ClearKeeper(KeeperTeamRow? row)
@@ -279,6 +293,9 @@ public partial class KeepersViewModel(
             return;
         }
 
+        var working = await drafts.GetWorkingStateAsync(draftId);
+        var alreadyStarted = working?.Draft.Status == DraftStatus.InProgress;
+
         try
         {
             await leagues.SaveKeepersAsync(new SaveKeepersRequest
@@ -294,10 +311,15 @@ public partial class KeepersViewModel(
             return;
         }
 
-        StatusMessage = specs.Count == 0
-            ? "Saved. No keepers assigned."
-            : $"Saved {specs.Count} keeper(s). They lock in when the draft starts.";
+        var savedMessage = specs.Count == 0
+            ? alreadyStarted
+                ? "Saved. No keepers on the board."
+                : "Saved. No keepers assigned."
+            : alreadyStarted
+                ? $"Saved {specs.Count} keeper(s). They are on the board now."
+                : $"Saved {specs.Count} keeper(s). They lock in once regular picks are made.";
         await ReloadAsync();
+        StatusMessage = savedMessage;
     }
 
     partial void OnSearchChanged(string value)
@@ -312,44 +334,71 @@ public partial class KeepersViewModel(
         HasLeague = session.LeagueId is not null;
         HasDraft = false;
         ShowCreateDraft = false;
+        ShowLocked = false;
+        ShowReopened = false;
         HasPlayers = false;
         CanEdit = false;
         Summary = "";
         _slots = [];
         _players = [];
 
-        if (session.LeagueId is null)
+        if (session.LeagueId is not { } leagueId)
         {
-            StatusMessage ??= "Select or create a league first.";
+            StatusMessage = "Select or create a league first.";
             return;
         }
 
-        if (session.DraftId is not { } draftId)
+        var listed = await leagues.ListDraftsAsync(leagueId);
+        var current = session.DraftId is { } sessionDraft
+            ? listed.FirstOrDefault(item => item.DraftId.Equals(sessionDraft))
+            : null;
+        if (current is null)
+        {
+            current = listed.FirstOrDefault(item => item.Status == DraftStatus.NotStarted);
+        }
+        else if (current.Status != DraftStatus.NotStarted)
+        {
+            var peek = await drafts.GetWorkingStateAsync(current.DraftId);
+            if (peek is null || !KeeperRules.CanEditKeepers(current.Status, peek.ActiveSelections.Values))
+            {
+                var open = listed.FirstOrDefault(item => item.Status == DraftStatus.NotStarted);
+                if (open is not null)
+                {
+                    session.DraftId = open.DraftId;
+                    session.DraftName = open.Name;
+                    session.BranchId = open.ActiveBranchId;
+                    current = open;
+                }
+            }
+        }
+
+        if (current is null)
         {
             ShowCreateDraft = true;
-            StatusMessage ??= "Create a draft before assigning keepers. Keepers use that draft's slots.";
+            StatusMessage = "This league has no draft yet. Create one, assign keepers, then start it from Draft Order.";
             return;
         }
 
-        var draft = await leagues.GetDraftAsync(draftId);
-        if (draft is null)
-        {
-            session.DraftId = null;
-            ShowCreateDraft = true;
-            StatusMessage = "Create a draft before assigning keepers. Keepers use that draft's slots.";
-            return;
-        }
+        var draftId = current.DraftId;
+        session.DraftId = draftId;
+        session.DraftName = current.Name;
+        session.BranchId = current.ActiveBranchId;
 
         HasDraft = true;
         var state = await drafts.GetWorkingStateAsync(draftId);
         _slots = state?.Slots ?? [];
         _players = await drafts.GetPlayersAsync();
         HasPlayers = _players.Count > 0;
-        var started = draft.Status != DraftStatus.NotStarted;
-        CanEdit = HasPlayers && !started;
+        var started = current.Status != DraftStatus.NotStarted;
+        var canEdit = state is not null && KeeperRules.CanEditKeepers(current.Status, state.ActiveSelections.Values);
+        ShowLocked = started && !canEdit;
+        ShowReopened = started && canEdit;
+        CanEdit = canEdit;
 
-        var saved = (await leagues.GetKeepersAsync(draftId)).ToDictionary(k => k.TeamId);
-        var teams = state?.Teams ?? await leagues.GetTeamsAsync(draft.LeagueId);
+        var saved = (await leagues.GetKeepersAsync(draftId))
+            .GroupBy(keeper => keeper.TeamId)
+            .ToDictionary(group => group.Key, group => group.First());
+        var teams = state?.Teams ?? await leagues.GetTeamsAsync(leagueId);
         foreach (var team in teams.OrderBy(t => t.DraftPosition))
         {
             var row = new KeeperTeamRow
@@ -378,12 +427,14 @@ public partial class KeepersViewModel(
         }
 
         RefreshSummary();
-        if (started)
-            StatusMessage = $"Draft is {draft.Status.ToString().ToLowerInvariant()}. Keepers are locked.";
+        if (ShowLocked)
+            StatusMessage = "Keepers are locked because this draft has regular picks. Undo every non-keeper pick in the Draft Room to change them, or create a new draft.";
+        else if (ShowReopened)
+            StatusMessage = "This draft already started, but there are no regular picks yet. Assign keepers and Save to put them on the board.";
         else if (!HasPlayers)
-            StatusMessage = "Load players before assigning keepers.";
-        else if (string.IsNullOrWhiteSpace(StatusMessage))
-            StatusMessage = "One keeper per team. Assign them, then Save. They take that team's pick in the chosen round.";
+            StatusMessage = "Player cache is empty. Click Assign and the app will load Sleeper/seed players, or use Load players.";
+        else
+            StatusMessage = "Click Assign on a team, pick a player, then Save keepers. They take that team's pick in the chosen round.";
     }
 
     private void RefreshChoices()
@@ -437,6 +488,7 @@ public partial class KeepersViewModel(
     {
         ShowPicker = false;
         AssigningTeam = null;
+        SelectedChoice = null;
         Search = "";
         PlayerChoices.Clear();
     }

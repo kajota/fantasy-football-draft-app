@@ -1,7 +1,9 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using FantasyDraftAssistant.Core.Ai;
 using FantasyDraftAssistant.Core.Analytics;
 using FantasyDraftAssistant.Core.Commands;
 using FantasyDraftAssistant.Core.Engine;
@@ -19,6 +21,7 @@ public partial class TeamRow : ObservableObject
     [ObservableProperty] private bool _isGenerating;
     [ObservableProperty] private bool _normalImage;
     [ObservableProperty] private bool _canChoosePortraitStyle;
+    [ObservableProperty] private bool _hasPortrait;
     public Core.Ids.TeamId TeamId { get; init; }
     public string TeamKey => TeamId.ToString();
     public string? ExternalTeamId { get; init; }
@@ -124,17 +127,30 @@ public partial class ScoringGroup
     public required IReadOnlyList<ScoringRuleEditor> Rules { get; init; }
 }
 
+public sealed class PortraitAiOption
+{
+    public required string Label { get; init; }
+    public required string ProviderKey { get; init; }
+    public override string ToString() => Label;
+}
+
 public partial class LeagueSetupViewModel(
     ILeagueService leagues,
     SessionState session,
     ITeamPortraitGenerator portraits,
-    ITeamPortraitStore portraitStore) : PageViewModel
+    ITeamPortraitStore portraitStore,
+    IFileSavePicker files) : PageViewModel
 {
     private bool _loading;
 
     public ObservableCollection<TeamRow> Teams { get; } = [];
     public ObservableCollection<RosterSlotEditor> Roster { get; } = [];
     public ObservableCollection<ScoringGroup> ScoringGroups { get; } = [];
+    public IReadOnlyList<PortraitAiOption> PortraitProviders { get; } =
+    [
+        new() { Label = "Grok", ProviderKey = AiProviderCatalog.Xai },
+        new() { Label = "ChatGPT", ProviderKey = AiProviderCatalog.OpenAi }
+    ];
 
     [ObservableProperty] private string _leagueName = "";
     [ObservableProperty] private int _season = 2026;
@@ -145,6 +161,7 @@ public partial class LeagueSetupViewModel(
     [NotifyPropertyChangedFor(nameof(HasSaveNotice))]
     private string _saveNotice = "";
     [ObservableProperty] private bool _isGeneratingPortraits;
+    [ObservableProperty] private PortraitAiOption? _selectedPortraitProvider;
 
     public bool HasSaveNotice => !string.IsNullOrWhiteSpace(SaveNotice);
 
@@ -153,6 +170,7 @@ public partial class LeagueSetupViewModel(
         Title = "League Setup";
         Teams.Clear();
         SaveNotice = "";
+        SelectedPortraitProvider ??= PortraitProviders[0];
         if (session.LeagueId is not { } id)
         {
             StatusMessage = "Select or create a league first.";
@@ -180,7 +198,8 @@ public partial class LeagueSetupViewModel(
                 OwnerName = team.OwnerName,
                 DraftPosition = team.DraftPosition,
                 ExternalTeamId = team.ExternalTeamId,
-                CanChoosePortraitStyle = !isMine
+                CanChoosePortraitStyle = !isMine,
+                HasPortrait = portraitStore.Exists(team.TeamId)
             });
         }
 
@@ -285,6 +304,27 @@ public partial class LeagueSetupViewModel(
     private Task GenerateOnePortraitAsync(TeamRow? row) =>
         row is null ? Task.CompletedTask : GeneratePortraitsAsync([row]);
 
+    [RelayCommand]
+    private async Task ExportPortraitAsync(TeamRow? row)
+    {
+        if (row is null)
+            return;
+        var source = portraitStore.ExistingPath(row.TeamId);
+        if (source is null)
+        {
+            StatusMessage = $"No image for {row.Name} yet.";
+            return;
+        }
+
+        var dest = await files.PickSavePathAsync(
+            TeamPortraitFiles.SuggestedFileName(row.Name, source),
+            Path.GetExtension(source));
+        if (dest is null)
+            return;
+        portraitStore.CopyTo(row.TeamId, dest);
+        StatusMessage = $"Saved {row.Name} to {dest}.";
+    }
+
     private async Task GeneratePortraitsAsync(IReadOnlyList<TeamRow> rows)
     {
         if (session.LeagueId is not { } leagueId || rows.Count == 0)
@@ -310,11 +350,13 @@ public partial class LeagueSetupViewModel(
                     TeamName = string.IsNullOrWhiteSpace(row.Name) ? $"Team {row.DraftPosition}" : row.Name,
                     OwnerName = row.OwnerName,
                     IsUserTeam = isMine,
-                    NormalImage = !isMine && row.NormalImage
+                    NormalImage = !isMine && row.NormalImage,
+                    ProviderKey = SelectedPortraitProvider?.ProviderKey
                 });
                 row.IsGenerating = false;
+                row.HasPortrait = result.Succeeded || portraitStore.Exists(row.TeamId);
                 row.PortraitStatus = result.Succeeded
-                    ? "Ready — hover the name"
+                    ? "Ready"
                     : result.Error ?? "Failed";
                 if (!result.Succeeded)
                     StatusMessage = $"{row.Name}: {row.PortraitStatus}";

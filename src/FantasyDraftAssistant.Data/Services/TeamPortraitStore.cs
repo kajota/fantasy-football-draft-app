@@ -45,6 +45,16 @@ public sealed class TeamPortraitStore : ITeamPortraitStore
         Changed?.Invoke(this, teamId);
     }
 
+    public string? CopyTo(TeamId teamId, string destinationPath)
+    {
+        var source = ExistingPath(teamId);
+        if (source is null)
+            return null;
+        Directory.CreateDirectory(Path.GetDirectoryName(destinationPath) ?? ".");
+        File.Copy(source, destinationPath, overwrite: true);
+        return destinationPath;
+    }
+
     private static string Extension(byte[] bytes)
     {
         if (bytes.Length >= 8

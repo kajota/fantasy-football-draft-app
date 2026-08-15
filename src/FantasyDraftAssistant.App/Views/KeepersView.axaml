@@ -8,7 +8,7 @@
     <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
       <StackPanel Spacing="16">
         <TextBlock Text="Keepers" Classes="h1" />
-        <TextBlock Text="One keeper per team. Assign them before the draft starts. A keeper uses that team's pick in the chosen round and cannot be drafted by anyone else."
+        <TextBlock Text="One keeper per team. A keeper uses that team's pick in the chosen round and cannot be drafted by anyone else. You can still assign them after a draft starts if you undo every regular pick first."
                    Classes="muted" TextWrapping="Wrap" />
         <TextBlock Text="{Binding StatusMessage}" Classes="muted" TextWrapping="Wrap" />
 
@@ -29,27 +29,42 @@
         <Border Classes="card" IsVisible="{Binding HasDraft}">
           <StackPanel Spacing="12">
             <DockPanel>
-              <Button DockPanel.Dock="Right" Content="Load players" Classes="ghost"
-                      IsVisible="{Binding !HasPlayers}"
-                      Command="{Binding LoadPlayersCommand}" />
+              <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
+                <Button Content="Load players" Classes="ghost"
+                        IsVisible="{Binding CanEdit}"
+                        Command="{Binding LoadPlayersCommand}" />
+                <Button Content="New draft" Classes="ghost"
+                        IsVisible="{Binding ShowLocked}"
+                        Command="{Binding CreateDraftCommand}"
+                        ToolTip.Tip="Starts a fresh unstarted draft on this league so you can assign keepers." />
+              </StackPanel>
               <StackPanel>
                 <TextBlock Text="Assignments" Classes="h2" />
                 <TextBlock Text="{Binding Summary}" Classes="muted" />
               </StackPanel>
             </DockPanel>
 
-            <Grid ColumnDefinitions="*,1.4*,70,120,*,Auto" ColumnSpacing="8">
+            <Border IsVisible="{Binding ShowLocked}" Background="#33E8A317" CornerRadius="6" Padding="10">
+              <TextBlock Text="Keepers lock once regular picks are on the board. Undo every non-keeper pick in the Draft Room to change them here, or use New draft."
+                         TextWrapping="Wrap" />
+            </Border>
+
+            <Border IsVisible="{Binding ShowReopened}" Background="#3322C55E" CornerRadius="6" Padding="10">
+              <TextBlock Text="No regular picks are on this draft yet, so keepers can still be assigned. Save to put them on the board, then return to the Draft Room."
+                         TextWrapping="Wrap" />
+            </Border>
+
+            <Grid ColumnDefinitions="160,*,56,72,Auto" ColumnSpacing="8">
               <TextBlock Text="Team" Classes="muted" />
               <TextBlock Grid.Column="1" Text="Player" Classes="muted" />
               <TextBlock Grid.Column="2" Text="Round" Classes="muted" />
               <TextBlock Grid.Column="3" Text="Slot" Classes="muted" />
-              <TextBlock Grid.Column="4" Text="Notes" Classes="muted" />
             </Grid>
 
             <ItemsControl ItemsSource="{Binding Teams}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="vm:KeeperTeamRow">
-                  <Grid ColumnDefinitions="*,1.4*,70,120,*,Auto" ColumnSpacing="8" Margin="0,6">
+                  <Grid ColumnDefinitions="160,*,56,72,Auto" ColumnSpacing="8" Margin="0,6">
                     <StackPanel VerticalAlignment="Center">
                       <TextBlock Text="{Binding TeamName}" FontWeight="SemiBold" TextWrapping="Wrap">
                         <ToolTip.Tip>
@@ -61,23 +76,24 @@
                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
                       <TextBlock Text="{Binding PlayerName}" FontWeight="SemiBold" TextWrapping="Wrap" />
                       <TextBlock Text="{Binding PlayerDetail}" Classes="muted" />
+                      <TextBox Text="{Binding Notes}" Margin="0,4,0,0"
+                               PlaceholderText="Notes"
+                               IsEnabled="{Binding $parent[UserControl].((vm:KeepersViewModel)DataContext).CanEdit}"
+                               ToolTip.Tip="Optional note, for example the Yahoo round." />
                     </StackPanel>
                     <TextBox Grid.Column="2" Text="{Binding RoundCostText}" VerticalAlignment="Center"
                              Classes.invalid="{Binding HasInvalidRound}"
-                             IsEnabled="{Binding $parent[ItemsControl].((vm:KeepersViewModel)DataContext).CanEdit}"
+                             IsEnabled="{Binding $parent[UserControl].((vm:KeepersViewModel)DataContext).CanEdit}"
                              ToolTip.Tip="The draft round this keeper costs. Use a whole number such as 4, not 4.3." />
                     <TextBlock Grid.Column="3" Text="{Binding SlotLabel}" VerticalAlignment="Center"
                                Classes.danger="{Binding HasInvalidRound}" />
-                    <TextBox Grid.Column="4" Text="{Binding Notes}" VerticalAlignment="Center"
-                             IsEnabled="{Binding $parent[ItemsControl].((vm:KeepersViewModel)DataContext).CanEdit}"
-                             ToolTip.Tip="Optional note, for example the Yahoo round or a reminder." />
-                    <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="6"
-                                IsVisible="{Binding $parent[ItemsControl].((vm:KeepersViewModel)DataContext).CanEdit}">
-                      <Button Content="Assign" Classes="ghost"
-                              Command="{Binding $parent[ItemsControl].((vm:KeepersViewModel)DataContext).BeginAssignCommand}"
+                    <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="6"
+                                IsVisible="{Binding $parent[UserControl].((vm:KeepersViewModel)DataContext).CanEdit}">
+                      <Button Content="Assign" Classes="primary compact"
+                              Command="{Binding $parent[UserControl].((vm:KeepersViewModel)DataContext).BeginAssignCommand}"
                               CommandParameter="{Binding}" />
-                      <Button Content="Clear" Classes="ghost"
-                              Command="{Binding $parent[ItemsControl].((vm:KeepersViewModel)DataContext).ClearKeeperCommand}"
+                      <Button Content="Clear" Classes="ghost compact"
+                              Command="{Binding $parent[UserControl].((vm:KeepersViewModel)DataContext).ClearKeeperCommand}"
                               CommandParameter="{Binding}" />
                     </StackPanel>
                   </Grid>
@@ -105,26 +121,27 @@
             <TextBlock Text="{Binding PickerTitle}" Classes="h2" TextWrapping="Wrap" />
             <TextBox Text="{Binding Search}"
                      PlaceholderText="Search name, team, or position"
-                     ToolTip.Tip="Filter the local player cache." />
-            <Button Content="Cancel" Classes="ghost" HorizontalAlignment="Left"
-                    Command="{Binding CancelAssignCommand}" />
+                     ToolTip.Tip="Filter the local player cache. Type at least part of the name." />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Content="Use this player" Classes="primary"
+                      Command="{Binding ConfirmPickCommand}" />
+              <Button Content="Cancel" Classes="ghost"
+                      Command="{Binding CancelAssignCommand}" />
+            </StackPanel>
           </StackPanel>
-          <ListBox ItemsSource="{Binding PlayerChoices}" Background="Transparent">
+          <ListBox ItemsSource="{Binding PlayerChoices}"
+                   SelectedItem="{Binding SelectedChoice}"
+                   Background="Transparent"
+                   DoubleTapped="OnPlayerDoubleTapped">
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="vm:KeeperPlayerChoice">
-                <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
-                        Classes="ghost" Margin="0,0,0,6"
-                        Command="{Binding $parent[ListBox].((vm:KeepersViewModel)DataContext).PickPlayerCommand}"
-                        CommandParameter="{Binding}"
-                        IsEnabled="{Binding IsAvailable}">
-                  <StackPanel>
-                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                    <TextBlock Text="{Binding Detail}" Classes="muted" />
-                    <TextBlock Text="{Binding TakenBy, StringFormat='Already kept by {0}'}"
-                               Foreground="{StaticResource DangerBrush}"
-                               IsVisible="{Binding !IsAvailable}" />
-                  </StackPanel>
-                </Button>
+                <StackPanel Margin="0,4">
+                  <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                  <TextBlock Text="{Binding Detail}" Classes="muted" />
+                  <TextBlock Text="{Binding TakenBy, StringFormat='Already kept by {0}'}"
+                             Foreground="{StaticResource DangerBrush}"
+                             IsVisible="{Binding !IsAvailable}" />
+                </StackPanel>
               </DataTemplate>
             </ListBox.ItemTemplate>
           </ListBox>

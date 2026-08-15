@@ -237,6 +237,17 @@ public static class AnalyticsEngine
 
         if (userNext is not null && state.CurrentSlot is not null)
         {
+            var until = userNext.OverallPick - state.CurrentSlot.OverallPick;
+            if (until is 1 or 2)
+            {
+                alerts.Add(new DraftAlert
+                {
+                    Kind = AlertKind.PickApproaching,
+                    Severity = 3,
+                    Message = until == 1 ? "Your pick is next." : "Your pick is 2 picks away."
+                });
+            }
+
             var intervening = state.Slots
                 .Where(s => s.OverallPick >= state.CurrentSlot.OverallPick && s.OverallPick < userNext.OverallPick)
                 .Select(s => s.TeamId)

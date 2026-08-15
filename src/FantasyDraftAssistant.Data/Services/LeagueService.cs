@@ -10,7 +10,7 @@ using Microsoft.Data.Sqlite;
 
 namespace FantasyDraftAssistant.Data.Services;
 
-public sealed class LeagueService(SqliteConnectionFactory factory, IBackupService backups) : ILeagueService
+public sealed class LeagueService(SqliteConnectionFactory factory, IBackupService backups, IDraftChangeNotifier notifier) : ILeagueService
 {
     public Task<IReadOnlyList<LeagueSummary>> ListLeaguesAsync(CancellationToken cancellationToken = default) =>
         ListLeaguesCoreAsync(archived: false);
@@ -416,8 +416,10 @@ public sealed class LeagueService(SqliteConnectionFactory factory, IBackupServic
         using var tx = db.BeginTransaction();
         var draft = LoadDraft(db, tx, request.DraftId)
                     ?? throw new InvalidOperationException("Draft not found.");
-        if (draft.Status != DraftStatus.NotStarted)
-            throw new InvalidOperationException("Keepers can only be changed before the draft starts.");
+        var selections = LoadSelections(db, tx, request.DraftId, draft.ActiveBranchId);
+        var editCheck = KeeperRules.ValidateCanEditKeepers(draft.Status, selections);
+        if (!editCheck.IsValid)
+            throw new InvalidOperationException(editCheck.Error);
 
         var slots = LoadSlots(db, tx, request.DraftId);
         using (var clearMarks = db.Cmd("UPDATE DraftSlots SET IsKeeperSlot = 0 WHERE DraftId = $id;", tx)
@@ -450,6 +452,19 @@ public sealed class LeagueService(SqliteConnectionFactory factory, IBackupServic
             }
 
             InsertKeeper(db, tx, keeper);
+        }
+
+        if (draft.Status == DraftStatus.InProgress)
+        {
+            var state = DraftStateLoader.Load(db, tx, request.DraftId);
+            var applied = DraftEngine.ApplyKeepers(state);
+            if (!applied.Succeeded)
+                throw new InvalidOperationException(applied.Error ?? "Could not apply keepers to the board.");
+
+            DraftCommandService.Persist(db, tx, state);
+            tx.Commit();
+            notifier.Notify(state.Draft.DraftId, state.ActiveBranch.BranchId, state.Draft.CurrentStateVersion);
+            return Task.CompletedTask;
         }
 
         tx.Commit();

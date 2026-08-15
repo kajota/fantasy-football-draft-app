@@ -25,6 +25,7 @@ public partial class AiAnalystPanel : ObservableObject
     public string? Model { get; init; }
     public string Role { get; init; } = AiAnalysisMode.FastAdvisor;
     public decimal? SpendLimit { get; init; }
+    [ObservableProperty] private bool _includeInAsk = true;
     [ObservableProperty] private string _status = "Idle";
     [ObservableProperty] private string _response = "";
     [ObservableProperty]
@@ -201,12 +202,17 @@ public partial class DraftRoomViewModel : PageViewModel
     private readonly IDraftChangeNotifier _notifier;
     private readonly IFantasyDataWriter _fantasyData;
     private readonly ITeamPortraitStore _portraits;
+    private readonly IFileSavePicker _files;
     private readonly SessionState _session;
     private bool _muteExternalReload;
     private bool _suppressSourceReload;
     private DraftId? _conversationDraft;
     private BranchId? _conversationBranch;
     private bool _suppressRosterTeamChange;
+    private readonly HashSet<string> _seenWatchKeys = new(StringComparer.Ordinal);
+    private bool _watchSeeded;
+    private int _lastAutoAskOverall = -1;
+    private bool _boardReactionBusy;
 
     public DraftRoomViewModel(
         IDraftCommandService commands,
@@ -220,6 +226,7 @@ public partial class DraftRoomViewModel : PageViewModel
         IDraftChangeNotifier notifier,
         IFantasyDataWriter fantasyData,
         ITeamPortraitStore portraits,
+        IFileSavePicker files,
         SessionState session)
     {
         _commands = commands;
@@ -233,6 +240,7 @@ public partial class DraftRoomViewModel : PageViewModel
         _notifier = notifier;
         _fantasyData = fantasyData;
         _portraits = portraits;
+        _files = files;
         _session = session;
         _notifier.DraftChanged += OnDraftChanged;
     }
@@ -278,6 +286,7 @@ public partial class DraftRoomViewModel : PageViewModel
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AiModeHint))]
     private bool _aiDeepMode;
+    [ObservableProperty] private bool _autoAskEnabled = true;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AiTileHorizontal))]
     [NotifyPropertyChangedFor(nameof(AiTileVertical))]
@@ -288,10 +297,10 @@ public partial class DraftRoomViewModel : PageViewModel
 
     public string AiModeHint =>
         AiDeepMode
-            ? "Deep: same snapshot, longer look (next-pick board, intervening teams). Slower and costs more."
+            ? WatcherHint("Deep: same snapshot, longer look (next-pick board, intervening teams). Slower and costs more.")
             : Analysts.Any(panel => panel.Enabled && AiAnalysisMode.IsDeep(false, panel.Role))
-                ? "Fast for most providers. Anyone set to Deep Advisor on AI Providers still uses Deep."
-                : "Fast: short answer from the current snapshot.";
+                ? WatcherHint("Fast for most providers. Anyone set to Deep Advisor on AI Providers still uses Deep.")
+                : WatcherHint("Fast: short answer from the current snapshot.");
     [ObservableProperty] private BoardRow? _currentBoardRow;
     [ObservableProperty] private int _stateVersion;
     [ObservableProperty] private bool _canUndo;
@@ -562,6 +571,7 @@ public partial class DraftRoomViewModel : PageViewModel
         var sourceKey = SourceKeyFor(DataSource);
         AiContextLine = $"Advice uses {FantasyDataSourcePicker.Describe(sourceKey, format)} ranks, ADP, and this league's scoring.";
         await RefreshAnalystsAsync();
+        await ReactToBoardAsync(snapshot);
     }
 
     partial void OnSelectedRosterTeamChanged(TauntTargetOption? value)
@@ -641,6 +651,27 @@ public partial class DraftRoomViewModel : PageViewModel
         if (teamId is { } id && _portraits.ExistingPath(id) is { } path)
             SelectedRosterPortrait = new Bitmap(path);
         HasSelectedRosterPortrait = SelectedRosterPortrait is not null;
+    }
+
+    [RelayCommand]
+    private async Task ExportSelectedRosterPortraitAsync()
+    {
+        if (SelectedRosterTeam is not { } team)
+            return;
+        var source = _portraits.ExistingPath(team.TeamId);
+        if (source is null)
+        {
+            StatusMessage = $"No image for {team.Label} yet.";
+            return;
+        }
+
+        var dest = await _files.PickSavePathAsync(
+            TeamPortraitFiles.SuggestedFileName(team.Label, source),
+            Path.GetExtension(source));
+        if (dest is null)
+            return;
+        _portraits.CopyTo(team.TeamId, dest);
+        StatusMessage = $"Saved {team.Label} to {dest}.";
     }
 
     [RelayCommand]
@@ -758,23 +789,8 @@ public partial class DraftRoomViewModel : PageViewModel
     {
         if (_session.DraftId is not { } draftId || _session.BranchId is not { } branchId)
             return;
-
-        if (Analysts.Count == 0)
-            await RefreshAnalystsAsync();
-        var enabled = Analysts.Where(a => a.Enabled).ToList();
-        if (enabled.Count == 0)
-        {
-            StatusMessage = "No AI provider is enabled. Configure ChatGPT, Claude, or Grok under AI Providers.";
-            return;
-        }
-
-        if (enabled.Any(panel => panel.Status == "Generating"))
-            return;
-
-        var version = StateVersion;
         var prompt = string.IsNullOrWhiteSpace(AiPrompt) ? "Who should I take here?" : AiPrompt.Trim();
-        var tasks = enabled.Select(panel => AskOneAsync(panel, draftId, branchId, version, prompt));
-        await Task.WhenAll(tasks);
+        await AskAdvisorsAsync(draftId, branchId, prompt, auto: false);
     }
 
     [RelayCommand]
@@ -790,14 +806,16 @@ public partial class DraftRoomViewModel : PageViewModel
 
         if (Analysts.Count == 0)
             await RefreshAnalystsAsync();
-        var enabled = Analysts.Where(panel => panel.Enabled).ToList();
+        var enabled = Analysts.Where(panel => panel.Enabled && panel.IncludeInAsk).ToList();
         if (enabled.Count == 0)
         {
-            StatusMessage = "No AI provider is enabled. Configure ChatGPT, Claude, or Grok under AI Providers.";
+            StatusMessage = Analysts.Any(panel => panel.Enabled)
+                ? "No analyst is checked. Tick ChatGPT, Claude, and/or Grok next to their names."
+                : "No AI provider is enabled. Configure ChatGPT, Claude, or Grok under AI Providers.";
             return;
         }
 
-        if (enabled.Any(panel => panel.Status == "Generating"))
+        if (enabled.Any(IsBusy))
             return;
 
         var state = await _drafts.GetWorkingStateAsync(draftId, branchId);
@@ -875,9 +893,11 @@ public partial class DraftRoomViewModel : PageViewModel
         }
 
         var taunt = string.Equals(promptKind, TauntStyles.PromptKind, StringComparison.OrdinalIgnoreCase);
-        var deep = !taunt && AiAnalysisMode.IsDeep(AiDeepMode, panel.Role);
+        var watch = string.Equals(promptKind, DraftWatcherTrigger.PromptKind, StringComparison.OrdinalIgnoreCase);
+        var deep = !taunt && !watch && AiAnalysisMode.IsDeep(AiDeepMode, panel.Role);
         panel.Status = taunt
             ? $"Generating · {TauntStyles.Title(tauntStyle ?? TauntStyles.Melville)}"
+            : watch ? "Generating · Watch"
             : deep ? "Generating · Deep" : "Generating";
         panel.Response = "";
         var started = DateTimeOffset.UtcNow;
@@ -909,6 +929,7 @@ public partial class DraftRoomViewModel : PageViewModel
                 {
                     var stale = StateVersion != version
                         ? $"Stale (v{version} / current {StateVersion})"
+                        : watch ? "Ready · Watch"
                         : deep ? "Ready · Deep" : "Ready";
                     panel.Status = stale;
                 }
@@ -959,6 +980,9 @@ public partial class DraftRoomViewModel : PageViewModel
                 Conversation.Clear();
                 _conversationDraft = draftId;
                 _conversationBranch = branchId;
+                _watchSeeded = false;
+                _seenWatchKeys.Clear();
+                _lastAutoAskOverall = -1;
             }
 
             saved = await _responses.ListAsync(draftId, branchId);
@@ -1000,6 +1024,7 @@ public partial class DraftRoomViewModel : PageViewModel
                 Model = config?.Model ?? descriptor.DefaultModel,
                 Role = string.IsNullOrWhiteSpace(config?.Role) ? AiAnalysisMode.FastAdvisor : config.Role,
                 SpendLimit = config?.PerDraftSpendLimit,
+                IncludeInAsk = prior?.IncludeInAsk ?? true,
                 Status = config?.Enabled == true ? prior?.Status ?? (last is null ? "Idle" : "Saved") : "Disabled",
                 Response = response ?? placeholder,
                 SpendLabel = spent > 0 ? AiCostEstimate.Label(spent) : ""
@@ -1008,6 +1033,104 @@ public partial class DraftRoomViewModel : PageViewModel
 
         OnPropertyChanged(nameof(AiModeHint));
     }
+
+    private async Task ReactToBoardAsync(AnalyticsSnapshot snapshot)
+    {
+        if (_boardReactionBusy)
+            return;
+        if (_session.DraftId is not { } draftId || _session.BranchId is not { } branchId)
+            return;
+
+        _boardReactionBusy = true;
+        try
+        {
+            var fresh = DraftWatcherTrigger.Unseen(snapshot.Alerts, _seenWatchKeys);
+            if (!_watchSeeded)
+            {
+                foreach (var alert in snapshot.Alerts)
+                    _seenWatchKeys.Add(DraftWatcherTrigger.Fingerprint(alert));
+                _watchSeeded = true;
+                fresh = [];
+            }
+            else
+            {
+                foreach (var alert in snapshot.Alerts)
+                    _seenWatchKeys.Add(DraftWatcherTrigger.Fingerprint(alert));
+            }
+
+            var onClock = snapshot.PicksUntilUser == 0 && snapshot.UserNextRoundPick is not null;
+            var watchTask = fresh.Count > 0
+                ? WatchAsync(draftId, branchId, fresh)
+                : Task.CompletedTask;
+            var askTask = AutoAskEnabled && onClock && snapshot.CurrentOverallPick != _lastAutoAskOverall
+                ? AskAdvisorsAsync(draftId, branchId, "Who should I take here?", auto: true)
+                : Task.CompletedTask;
+            if (AutoAskEnabled && onClock)
+                _lastAutoAskOverall = snapshot.CurrentOverallPick;
+            await Task.WhenAll(watchTask, askTask);
+        }
+        finally
+        {
+            _boardReactionBusy = false;
+        }
+    }
+
+    private async Task AskAdvisorsAsync(DraftId draftId, BranchId branchId, string prompt, bool auto)
+    {
+        if (Analysts.Count == 0)
+            await RefreshAnalystsAsync();
+        var advisors = Analysts.Where(panel => panel.Enabled && panel.IncludeInAsk && !AiAnalysisMode.IsWatcher(panel.Role)).ToList();
+        if (advisors.Count == 0)
+        {
+            if (!auto)
+            {
+                StatusMessage = Analysts.Any(panel => panel.Enabled && panel.IncludeInAsk && AiAnalysisMode.IsWatcher(panel.Role))
+                    ? "Checked providers are Draft Watchers. They speak on board events. Check a Fast or Deep Advisor to Ask."
+                    : Analysts.Any(panel => panel.Enabled)
+                        ? "No analyst is checked. Tick ChatGPT, Claude, and/or Grok next to their names."
+                        : "No AI provider is enabled. Configure ChatGPT, Claude, or Grok under AI Providers.";
+            }
+            return;
+        }
+
+        if (advisors.Any(IsBusy))
+            return;
+
+        if (auto)
+            StatusMessage = "On the clock — asking advisors.";
+        var version = StateVersion;
+        await Task.WhenAll(advisors.Select(panel => AskOneAsync(panel, draftId, branchId, version, prompt)));
+    }
+
+    private async Task WatchAsync(DraftId draftId, BranchId branchId, IReadOnlyList<DraftAlert> events)
+    {
+        if (Analysts.Count == 0)
+            await RefreshAnalystsAsync();
+        var watchers = Analysts.Where(panel => panel.Enabled && panel.IncludeInAsk && AiAnalysisMode.IsWatcher(panel.Role)).ToList();
+        if (watchers.Count == 0 || watchers.Any(IsBusy))
+            return;
+
+        var prompt = string.Join("\n", events.Select(item => $"- {item.Message}"));
+        StatusMessage = "Board event — asking the Draft Watcher.";
+        var version = StateVersion;
+        await Task.WhenAll(watchers.Select(panel => AskOneAsync(
+            panel,
+            draftId,
+            branchId,
+            version,
+            prompt,
+            DraftWatcherTrigger.PromptKind)));
+    }
+
+    private string WatcherHint(string core)
+    {
+        if (Analysts.Any(panel => panel.Enabled && AiAnalysisMode.IsWatcher(panel.Role)))
+            return core + " Draft Watcher is on: it speaks when the board changes, not on Ask.";
+        return core;
+    }
+
+    private static bool IsBusy(AiAnalystPanel panel) =>
+        panel.Status.StartsWith("Generating", StringComparison.Ordinal);
 
     private static string StatusCode(string? status) => status switch
     {

@@ -210,13 +210,60 @@ public class PersistenceTests : IDisposable
         Assert.Equal(3, selection.Round);
         Assert.Equal(player, selection.PlayerId);
 
+        var other = PlayerId.FromName("Saquon Barkley", "PHI", "RB");
+        await leagues.SaveKeepersAsync(new SaveKeepersRequest
+        {
+            DraftId = draftId,
+            Keepers =
+            [
+                new KeeperSpec { TeamId = teamId, PlayerId = other, RoundCost = 2 }
+            ]
+        });
+
+        var replaced = await states.GetWorkingStateAsync(draftId);
+        Assert.NotNull(replaced);
+        Assert.False(replaced.UnavailablePlayers.Contains(player));
+        Assert.True(replaced.UnavailablePlayers.Contains(other));
+        var replacedSelection = Assert.Single(replaced.ActiveSelections.Values);
+        Assert.Equal(PickSource.Keeper, replacedSelection.Source);
+        Assert.Equal(2, replacedSelection.Round);
+        Assert.Equal(other, replacedSelection.PlayerId);
+        Assert.Null(replaced.Redo);
+
+        var drafted = await commands.DraftPlayerAsync(new DraftPlayerCommand(draftId, player));
+        Assert.True(drafted.Succeeded, drafted.Error);
+
         var locked = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             leagues.SaveKeepersAsync(new SaveKeepersRequest
             {
                 DraftId = draftId,
                 Keepers = []
             }));
-        Assert.Contains("before the draft starts", locked.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("regular picks", locked.Message, StringComparison.OrdinalIgnoreCase);
+
+        var lastHuman = (await states.GetWorkingStateAsync(draftId))!.ActiveSelections.Values
+            .Where(s => s.Source != PickSource.Keeper)
+            .Select(s => s.OverallPick)
+            .Max();
+        var undone = await commands.RollbackAsync(new RollbackDraftCommand(draftId, lastHuman - 1));
+        Assert.True(undone.Succeeded, undone.Error);
+
+        await leagues.SaveKeepersAsync(new SaveKeepersRequest
+        {
+            DraftId = draftId,
+            Keepers =
+            [
+                new KeeperSpec { TeamId = teamId, PlayerId = player, RoundCost = 4 }
+            ]
+        });
+
+        var afterUndo = await states.GetWorkingStateAsync(draftId);
+        Assert.NotNull(afterUndo);
+        var restored = Assert.Single(afterUndo.ActiveSelections.Values);
+        Assert.Equal(PickSource.Keeper, restored.Source);
+        Assert.Equal(4, restored.Round);
+        Assert.Equal(player, restored.PlayerId);
+        Assert.Null(afterUndo.Redo);
     }
 
     [Fact]

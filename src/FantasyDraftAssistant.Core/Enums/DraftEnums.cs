@@ -58,7 +58,8 @@ public enum DraftEventType
     DraftRolledBack = 3,
     DraftRedone = 4,
     DraftBranchCreated = 5,
-    DraftCompleted = 6
+    DraftCompleted = 6,
+    KeepersReplaced = 7
 }
 
 public enum PickSource
@@ -98,7 +99,8 @@ public enum AlertKind
     Position = 1,
     DraftRun = 2,
     OpponentNeed = 3,
-    QbScarcity = 4
+    QbScarcity = 4,
+    PickApproaching = 5
 }
 
 public enum ScoringCategory

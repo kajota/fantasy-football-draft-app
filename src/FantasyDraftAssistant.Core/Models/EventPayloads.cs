@@ -53,3 +53,8 @@ public sealed class DraftCompletedPayload
 {
     [JsonPropertyName("completedAt")] public required DateTimeOffset CompletedAt { get; init; }
 }
+
+public sealed class KeepersReplacedPayload
+{
+    [JsonPropertyName("deactivatedOverallPicks")] public required int[] DeactivatedOverallPicks { get; init; }
+}

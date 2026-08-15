@@ -9,8 +9,8 @@ public class TeamPortraitPromptTests
     public void User_team_is_flattering()
     {
         var prompt = TeamPortraitPrompt.Build("Blue Steel", "You", TeamPortraitTone.Hero, TeamId.New());
-        Assert.Contains("handsome", prompt, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Over-the-top awesome", prompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Distinct face", prompt, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Blue Steel", prompt);
         Assert.DoesNotContain("terrible at fantasy", prompt, StringComparison.OrdinalIgnoreCase);
     }
@@ -19,9 +19,23 @@ public class TeamPortraitPromptTests
     public void Rival_team_is_a_roast()
     {
         var prompt = TeamPortraitPrompt.Build("Team 6", "Mike", TeamPortraitTone.Roast, TeamId.New());
-        Assert.Contains("terrible at fantasy", prompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("roast portrait", prompt, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Mike", prompt);
         Assert.Contains("Team 6", prompt);
+        Assert.Contains("unique loser", prompt, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Different_teams_get_different_looks()
+    {
+        var a = TeamPortraitPrompt.Build("A", "Ann", TeamPortraitTone.Hero, new TeamId(Guid.Parse("11111111-1111-1111-1111-111111111111")));
+        var b = TeamPortraitPrompt.Build("B", "Bob", TeamPortraitTone.Hero, new TeamId(Guid.Parse("22222222-2222-2222-2222-222222222222")));
+        Assert.NotEqual(a, b);
+        Assert.Contains("Outfit:", a);
+        Assert.Contains("Setting:", b);
+        Assert.NotEqual(
+            TeamPortraitPrompt.Marking("A", "Ann", new TeamId(Guid.Parse("11111111-1111-1111-1111-111111111111"))),
+            TeamPortraitPrompt.Marking("B", "Bob", new TeamId(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"))));
     }
 
     [Fact]
@@ -31,5 +45,19 @@ public class TeamPortraitPromptTests
         var prompt = TeamPortraitPrompt.Build("Team 6", "Mike", TeamPortraitTone.Hero, TeamId.New());
         Assert.Contains("Over-the-top awesome", prompt, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("terrible at fantasy", prompt, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Defaults_to_a_white_man_unless_the_name_is_obvious()
+    {
+        Assert.False(TeamPortraitPrompt.SuggestsNotAMan("Mike", "Team 6"));
+        Assert.False(TeamPortraitPrompt.SuggestsNotAMan("Jordan", "Thunder"));
+        Assert.True(TeamPortraitPrompt.SuggestsNotAMan("Sarah", "Team 6"));
+        Assert.True(TeamPortraitPrompt.SuggestsNotAMan("Mike", "The Ladies"));
+        var mike = TeamPortraitPrompt.Build("Team 6", "Mike", TeamPortraitTone.Hero, TeamId.New());
+        Assert.Contains("white man", mike, StringComparison.OrdinalIgnoreCase);
+        var sarah = TeamPortraitPrompt.Build("Team 6", "Sarah", TeamPortraitTone.Hero, TeamId.New());
+        Assert.Contains("woman", sarah, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("white man", sarah, StringComparison.OrdinalIgnoreCase);
     }
 }

@@ -141,6 +141,103 @@ public class DraftEngineTests
     }
 
     [Fact]
+    public void ApplyKeepers_after_start_fills_empty_board()
+    {
+        var state = StartedState();
+        var team = state.Teams[0];
+        var keeperPlayer = PlayerId.New();
+        state.Keepers =
+        [
+            new Keeper
+            {
+                KeeperId = KeeperId.New(),
+                DraftId = state.Draft.DraftId,
+                TeamId = team.TeamId,
+                PlayerId = keeperPlayer,
+                RoundCost = 2
+            }
+        ];
+
+        var applied = DraftEngine.ApplyKeepers(state);
+        Assert.True(applied.Succeeded, applied.Error);
+        Assert.True(state.UnavailablePlayers.Contains(keeperPlayer));
+        var selection = Assert.Single(state.ActiveSelections.Values);
+        Assert.Equal(PickSource.Keeper, selection.Source);
+        Assert.Equal(2, selection.Round);
+        Assert.Equal(keeperPlayer, selection.PlayerId);
+        Assert.Contains(applied.Events, e => e.EventType == DraftEventType.KeepersReplaced);
+        Assert.Null(state.Redo);
+    }
+
+    [Fact]
+    public void ApplyKeepers_rejects_when_regular_picks_exist()
+    {
+        var state = StartedState();
+        DraftEngine.DraftPlayer(state, new DraftPlayerCommand(state.Draft.DraftId, PlayerId.New()));
+        state.Keepers =
+        [
+            new Keeper
+            {
+                KeeperId = KeeperId.New(),
+                DraftId = state.Draft.DraftId,
+                TeamId = state.Teams[0].TeamId,
+                PlayerId = PlayerId.New(),
+                RoundCost = 2
+            }
+        ];
+
+        var applied = DraftEngine.ApplyKeepers(state);
+        Assert.False(applied.Succeeded);
+        Assert.Contains("regular picks", applied.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ApplyKeepers_after_undoing_regular_picks_replaces_board()
+    {
+        var state = StartedState();
+        var first = PlayerId.New();
+        var second = PlayerId.New();
+        var keeperPlayer = PlayerId.New();
+        DraftEngine.DraftPlayer(state, new DraftPlayerCommand(state.Draft.DraftId, first));
+        DraftEngine.DraftPlayer(state, new DraftPlayerCommand(state.Draft.DraftId, second));
+        var undone = DraftEngine.Rollback(state, new RollbackDraftCommand(state.Draft.DraftId, 0));
+        Assert.True(undone.Succeeded, undone.Error);
+        Assert.Empty(state.ActiveSelections);
+        Assert.NotNull(state.Redo);
+
+        state.Keepers =
+        [
+            new Keeper
+            {
+                KeeperId = KeeperId.New(),
+                DraftId = state.Draft.DraftId,
+                TeamId = state.Teams[0].TeamId,
+                PlayerId = keeperPlayer,
+                RoundCost = 3
+            }
+        ];
+
+        var applied = DraftEngine.ApplyKeepers(state);
+        Assert.True(applied.Succeeded, applied.Error);
+        var selection = Assert.Single(state.ActiveSelections.Values);
+        Assert.Equal(PickSource.Keeper, selection.Source);
+        Assert.Equal(3, selection.Round);
+        Assert.Equal(keeperPlayer, selection.PlayerId);
+        Assert.Null(state.Redo);
+
+        var events = state.NewEvents.ToList();
+        state.ActiveSelections.Clear();
+        state.UnavailablePlayers.Clear();
+        state.Redo = null;
+        DraftEngine.RebuildActiveTimeline(state, events);
+
+        var rebuilt = Assert.Single(state.ActiveSelections.Values);
+        Assert.Equal(keeperPlayer, rebuilt.PlayerId);
+        Assert.Equal(PickSource.Keeper, rebuilt.Source);
+        Assert.Null(state.Redo);
+    }
+
+    [Fact]
     public void One_keeper_per_team_is_enforced()
     {
         var team = TeamId.New();

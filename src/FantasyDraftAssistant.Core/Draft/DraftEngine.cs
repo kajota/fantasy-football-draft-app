@@ -37,6 +37,62 @@ public static class DraftEngine
         return DraftCommitResult.Ok(state, state.NewEvents);
     }
 
+    public static DraftCommitResult ApplyKeepers(DraftWorkingState state, string createdBy = "user")
+    {
+        if (state.Draft.Status == DraftStatus.NotStarted)
+            return DraftCommitResult.Ok(state, state.NewEvents);
+
+        var editCheck = KeeperRules.ValidateCanEditKeepers(state.Draft.Status, state.ActiveSelections.Values);
+        if (!editCheck.IsValid)
+            return DraftCommitResult.Fail(editCheck.Error!);
+
+        var keeperSpecs = state.Keepers.Select(keeper => new KeeperSpec
+        {
+            TeamId = keeper.TeamId,
+            PlayerId = keeper.PlayerId,
+            RoundCost = keeper.RoundCost,
+            Notes = keeper.Notes
+        }).ToList();
+        var keeperValidation = KeeperRules.Validate(keeperSpecs);
+        if (!keeperValidation.IsValid)
+            return DraftCommitResult.Fail(keeperValidation.Error!);
+
+        var resolved = new List<(Keeper Keeper, DraftSlot Slot)>();
+        foreach (var keeper in state.Keepers)
+        {
+            var slot = KeeperRules.ResolveSlot(state.Slots, keeper);
+            if (slot is null)
+                return DraftCommitResult.Fail($"Keeper for team {keeper.TeamId} has no matching draft slot in round {keeper.RoundCost}.");
+            resolved.Add((keeper, slot));
+        }
+
+        IncrementVersion(state);
+        var removed = state.ActiveSelections.Values
+            .Where(selection => selection.Source == PickSource.Keeper)
+            .OrderBy(selection => selection.OverallPick)
+            .ToList();
+        foreach (var selection in removed)
+            Deactivate(state, selection.OverallPick);
+
+        foreach (var slot in state.Slots)
+            slot.IsKeeperSlot = false;
+
+        AppendEvent(state, DraftEventType.KeepersReplaced, createdBy, new KeepersReplacedPayload
+        {
+            DeactivatedOverallPicks = removed.Select(selection => selection.OverallPick).ToArray()
+        });
+
+        var appliedAt = DateTimeOffset.UtcNow;
+        foreach (var (keeper, slot) in resolved)
+        {
+            slot.IsKeeperSlot = true;
+            ApplySelection(state, slot, keeper.PlayerId, PickSource.Keeper, null, appliedAt, createdBy);
+        }
+
+        state.Redo = null;
+        return DraftCommitResult.Ok(state, state.NewEvents);
+    }
+
     public static DraftCommitResult DraftPlayer(DraftWorkingState state, DraftPlayerCommand command)
     {
         var validation = DraftValidator.CanDraftPlayer(state, command.PlayerId);
@@ -268,6 +324,16 @@ public static class DraftEngine
                     };
                     break;
                 case DraftEventType.DraftRedone:
+                    state.Redo = null;
+                    break;
+                case DraftEventType.KeepersReplaced:
+                    var replaced = DraftJson.Deserialize<KeepersReplacedPayload>(evt.PayloadJson);
+                    foreach (var pick in replaced.DeactivatedOverallPicks)
+                    {
+                        if (state.ActiveSelections.Remove(pick, out var removedKeeper))
+                            state.UnavailablePlayers.Remove(removedKeeper.PlayerId);
+                    }
+
                     state.Redo = null;
                     break;
             }

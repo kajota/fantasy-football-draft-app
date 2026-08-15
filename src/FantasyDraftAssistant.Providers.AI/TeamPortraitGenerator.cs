@@ -14,20 +14,39 @@ public sealed class TeamPortraitGenerator(
     public async Task<TeamPortraitResult> GenerateAsync(TeamPortraitRequest request, CancellationToken cancellationToken = default)
     {
         var prompt = TeamPortraitPrompt.Build(request.TeamName, request.OwnerName, request.Tone, request.TeamId);
-        var xai = await credentials.GetSecretAsync("ai", AiProviderCatalog.Xai, cancellationToken);
-        if (!string.IsNullOrWhiteSpace(xai))
-            return await GenerateXaiAsync(xai, prompt, request, cancellationToken);
+        var provider = string.IsNullOrWhiteSpace(request.ProviderKey)
+            ? AiProviderCatalog.Xai
+            : request.ProviderKey.Trim();
 
-        var openai = await credentials.GetSecretAsync("ai", AiProviderCatalog.OpenAi, cancellationToken);
-        if (!string.IsNullOrWhiteSpace(openai))
-            return await GenerateOpenAiAsync(openai, prompt, request, cancellationToken);
+        if (provider.Equals(AiProviderCatalog.Xai, StringComparison.OrdinalIgnoreCase))
+        {
+            var key = await credentials.GetSecretAsync("ai", AiProviderCatalog.Xai, cancellationToken);
+            if (string.IsNullOrWhiteSpace(key))
+                return MissingKey("Grok", "console.x.ai");
+            return await GenerateXaiAsync(key, prompt, request, cancellationToken);
+        }
+
+        if (provider.Equals(AiProviderCatalog.OpenAi, StringComparison.OrdinalIgnoreCase))
+        {
+            var key = await credentials.GetSecretAsync("ai", AiProviderCatalog.OpenAi, cancellationToken);
+            if (string.IsNullOrWhiteSpace(key))
+                return MissingKey("ChatGPT", "platform.openai.com");
+            return await GenerateOpenAiAsync(key, prompt, request, cancellationToken);
+        }
 
         return new TeamPortraitResult
         {
             Succeeded = false,
-            Error = "Add a Grok or ChatGPT API key under AI Providers. Images are billed to that API account."
+            Error = "Pick Grok or ChatGPT for team images. Claude does not generate pictures."
         };
     }
+
+    private static TeamPortraitResult MissingKey(string product, string where) =>
+        new()
+        {
+            Succeeded = false,
+            Error = $"Add a {product} API key under AI Providers ({where}). Images are billed to that API account."
+        };
 
     private async Task<TeamPortraitResult> GenerateXaiAsync(
         string apiKey,

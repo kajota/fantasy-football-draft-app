@@ -8,7 +8,9 @@ internal static class DraftAnalystPrompt
     public static string Build(AiAnalysisRequest request, string decisionContext) =>
         string.Equals(request.PromptKind, TauntStyles.PromptKind, StringComparison.OrdinalIgnoreCase)
             ? BuildTaunt(request, decisionContext)
-            : BuildAdvice(request, decisionContext);
+            : string.Equals(request.PromptKind, DraftWatcherTrigger.PromptKind, StringComparison.OrdinalIgnoreCase)
+                ? BuildWatch(request, decisionContext)
+                : BuildAdvice(request, decisionContext);
 
     private static string BuildAdvice(AiAnalysisRequest request, string decisionContext) =>
         $"""
@@ -81,5 +83,23 @@ internal static class DraftAnalystPrompt
 
         User request:
         {request.Prompt}
+        """;
+
+    private static string BuildWatch(AiAnalysisRequest request, string decisionContext) =>
+        $"""
+        You are a draft-board watcher, not a pick advisor.
+        The local engine already found these NEW events. That is the job.
+
+        {request.Prompt}
+
+        Write a very short alert:
+        - First line: a short TITLE IN CAPS (RB ALERT, QB SCARCITY, VALUE, RUN, ON DECK).
+        - Then one or two sentences. Use names and counts from the events and JSON only.
+        Do not write a shortlist. Do not write Recommendation. Do not tell the user who to pick.
+
+        No preamble. State version: {request.StateVersion}.
+
+        Decision context JSON:
+        {decisionContext}
         """;
 }

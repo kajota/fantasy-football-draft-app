@@ -107,40 +107,59 @@
           <TextBlock Text="Teams" Classes="h2" />
           <TextBlock Text="This list is the number of teams. Draft position, team name, and owner. Hover a name for that team's portrait. Unchecked rivals get roasted; check Normal image for the same over-the-top hero treatment as you. You always look great."
                      Classes="muted" TextWrapping="Wrap" />
-          <Button Content="Generate team images" Classes="ghost" HorizontalAlignment="Left"
-                  Command="{Binding GenerateAllPortraitsCommand}"
-                  IsEnabled="{Binding !IsGeneratingPortraits}"
-                  ToolTip.Tip="Calls the Grok Imagine API (or ChatGPT images if Grok has no key). Honors each row's Normal image checkbox. You stay handsome. Billed per image." />
-          <Grid ColumnDefinitions="60,*,*,100,Auto,Auto" ColumnSpacing="8">
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <Button Content="Generate team images" Classes="ghost"
+                    Command="{Binding GenerateAllPortraitsCommand}"
+                    IsEnabled="{Binding !IsGeneratingPortraits}"
+                    ToolTip.Tip="Generate every team with the selected image AI. Honors each row's Normal image checkbox. Billed per image." />
+            <TextBlock Text="Image AI" VerticalAlignment="Center" Classes="muted" />
+            <ComboBox ItemsSource="{Binding PortraitProviders}"
+                      SelectedItem="{Binding SelectedPortraitProvider}"
+                      MinWidth="120" MaxWidth="160"
+                      ToolTip.Tip="Grok Imagine or ChatGPT Images. Claude cannot generate pictures. Needs that provider's API key.">
+              <ComboBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:PortraitAiOption">
+                  <TextBlock Text="{Binding Label}" Foreground="{StaticResource TextBrush}" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </StackPanel>
+          <Grid ColumnDefinitions="32,200,140,56,Auto,Auto,*" ColumnSpacing="8">
             <TextBlock Text="#" Classes="muted" />
             <TextBlock Grid.Column="1" Text="Team name" Classes="muted" />
             <TextBlock Grid.Column="2" Text="Owner" Classes="muted" />
-            <TextBlock Grid.Column="3" Text="Normal image" Classes="muted" />
+            <TextBlock Grid.Column="3" Text="Normal" Classes="muted" />
           </Grid>
           <ItemsControl ItemsSource="{Binding Teams}">
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:TeamRow">
-                <Grid ColumnDefinitions="60,*,*,100,Auto,Auto" ColumnSpacing="8" Margin="0,4">
+                <Grid ColumnDefinitions="32,200,140,56,Auto,Auto,*" ColumnSpacing="8" Margin="0,4">
                   <TextBlock Text="{Binding DraftPosition}" VerticalAlignment="Center"
                              ToolTip.Tip="Draft slot in round 1 for this team." />
-                  <TextBox Grid.Column="1" Text="{Binding Name}">
+                  <TextBox Grid.Column="1" Text="{Binding Name}" MaxWidth="200">
                     <ToolTip.Tip>
                       <views:TeamPortraitTip TeamKey="{Binding TeamKey}" />
                     </ToolTip.Tip>
                   </TextBox>
-                  <TextBox Grid.Column="2" Text="{Binding OwnerName}" PlaceholderText="Owner"
+                  <TextBox Grid.Column="2" Text="{Binding OwnerName}" PlaceholderText="Owner" MaxWidth="140"
                            ToolTip.Tip="Person who owns this team. Optional." />
                   <CheckBox Grid.Column="3" IsChecked="{Binding NormalImage}"
                             IsVisible="{Binding CanChoosePortraitStyle}"
-                            VerticalAlignment="Center"
+                            HorizontalAlignment="Center" VerticalAlignment="Center"
                             ToolTip.Tip="On: over-the-top handsome genius, same energy as your portrait. Off: the roast. Your team has no checkbox and always looks great." />
                   <Button Grid.Column="4" Content="New image" Classes="ghost compact"
                           Command="{Binding $parent[ItemsControl].((vm:LeagueSetupViewModel)DataContext).GenerateOnePortraitCommand}"
                           CommandParameter="{Binding}"
                           IsEnabled="{Binding !IsGenerating}"
                           ToolTip.Tip="Generate a new portrait for this team only." />
-                  <TextBlock Grid.Column="5" Text="{Binding PortraitStatus}" Classes="muted"
-                             VerticalAlignment="Center" MinWidth="80" />
+                  <Button Grid.Column="5" Content="Export" Classes="ghost compact"
+                          Command="{Binding $parent[ItemsControl].((vm:LeagueSetupViewModel)DataContext).ExportPortraitCommand}"
+                          CommandParameter="{Binding}"
+                          IsEnabled="{Binding HasPortrait}"
+                          ToolTip.Tip="Save this team's image to a file you pick." />
+                  <TextBlock Grid.Column="6" Text="{Binding PortraitStatus}" Classes="muted"
+                             VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                             ToolTip.Tip="{Binding PortraitStatus}" />
                 </Grid>
               </DataTemplate>
             </ItemsControl.ItemTemplate>

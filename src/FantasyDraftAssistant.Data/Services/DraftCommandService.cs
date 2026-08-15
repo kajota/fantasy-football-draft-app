@@ -85,7 +85,7 @@ public sealed class DraftCommandService(
         return Task.FromResult(result);
     }
 
-    private static void Persist(SqliteConnection db, SqliteTransaction tx, DraftWorkingState state)
+    internal static void Persist(SqliteConnection db, SqliteTransaction tx, DraftWorkingState state)
     {
         using (var cmd = db.Cmd("""
             UPDATE Drafts

@@ -1,4 +1,5 @@
 using FantasyDraftAssistant.Core.Commands;
+using FantasyDraftAssistant.Core.Enums;
 using FantasyDraftAssistant.Core.Models;
 using FantasyDraftAssistant.Core.Results;
 
@@ -7,6 +8,30 @@ namespace FantasyDraftAssistant.Core.Engine;
 public static class KeeperRules
 {
     public const int MaxKeepersPerTeam = 1;
+
+    public const string LockedAfterPicksMessage =
+        "Keepers lock once regular picks are on the board. Undo every non-keeper pick first.";
+
+    public const string LockedAfterCompleteMessage =
+        "Keepers can only be changed before the draft starts.";
+
+    public static bool CanEditKeepers(DraftStatus status, IEnumerable<ActiveSelection> selections)
+    {
+        if (status == DraftStatus.NotStarted)
+            return true;
+        if (status != DraftStatus.InProgress)
+            return false;
+        return selections.All(selection => selection.Source == PickSource.Keeper);
+    }
+
+    public static ValidationResult ValidateCanEditKeepers(DraftStatus status, IEnumerable<ActiveSelection> selections)
+    {
+        if (CanEditKeepers(status, selections))
+            return ValidationResult.Ok();
+        return ValidationResult.Fail(status == DraftStatus.Completed
+            ? LockedAfterCompleteMessage
+            : LockedAfterPicksMessage);
+    }
 
     public static ValidationResult Validate(IReadOnlyList<KeeperSpec> keepers)
     {

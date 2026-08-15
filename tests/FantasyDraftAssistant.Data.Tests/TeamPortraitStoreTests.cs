@@ -1,4 +1,5 @@
 using FantasyDraftAssistant.Core.Ids;
+using FantasyDraftAssistant.Core.Interfaces;
 using FantasyDraftAssistant.Data.Database;
 using FantasyDraftAssistant.Data.Services;
 
@@ -18,6 +19,10 @@ public class TeamPortraitStoreTests
             await store.SaveAsync(id, [0xFF, 0xD8, 0xFF, 0x00, 0x01]);
             Assert.True(store.Exists(id));
             Assert.EndsWith(".jpg", store.ExistingPath(id));
+            var dest = Path.Combine(root, "export", TeamPortraitFiles.SuggestedFileName("Blue Steel", store.ExistingPath(id)!));
+            Assert.Equal("Blue Steel.jpg", Path.GetFileName(dest));
+            Assert.NotNull(store.CopyTo(id, dest));
+            Assert.True(File.Exists(dest));
         }
         finally
         {

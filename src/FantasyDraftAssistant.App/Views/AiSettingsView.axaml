@@ -49,8 +49,8 @@
                 <StackPanel Spacing="4">
                   <TextBlock Text="Role" FontWeight="SemiBold" />
                   <ComboBox ItemsSource="{Binding Roles}" SelectedItem="{Binding Role}"
-                            ToolTip.Tip="Fast Advisor uses the short Ask. Deep Advisor always uses Deep even if Ask is set to Fast. Watcher and Secondary Opinion are not wired yet." />
-                  <TextBlock Text="Deep Advisor always runs Deep. Fast Advisor follows the Fast/Deep buttons in the Draft Room."
+                            ToolTip.Tip="Fast Advisor follows Fast/Deep in the Draft Room. Deep Advisor always uses Deep. Draft Watcher only speaks on board events (runs, value, your pick approaching). Secondary Opinion is not wired yet." />
+                  <TextBlock Text="Deep Advisor always runs Deep. Fast Advisor follows the Fast/Deep buttons. Draft Watcher does not answer Ask — it fires when the board changes."
                              Classes="muted" TextWrapping="Wrap" />
                 </StackPanel>
 

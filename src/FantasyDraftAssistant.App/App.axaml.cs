@@ -76,6 +76,7 @@ public partial class App : Application
                 "User-Agent",
                 "FantasyDraftAssistant/0.1 (local draft assistant)");
         });
+        services.AddSingleton<IFileSavePicker, DesktopFileSavePicker>();
         services.AddSingleton<ITeamPortraitGenerator>(sp => new TeamPortraitGenerator(
             sp.GetRequiredService<ICredentialStore>(),
             sp.GetRequiredService<ITeamPortraitStore>(),

@@ -30,4 +30,11 @@ public static class AdpConverter
             throw new ArgumentOutOfRangeException();
         return ((round - 1) * teamCount) + pick;
     }
+
+    public static double ScaleToLeague(double overallAdp, int teamCount, int referenceTeamCount = 12)
+    {
+        if (overallAdp <= 0 || teamCount < 1 || referenceTeamCount < 1)
+            return overallAdp;
+        return overallAdp * teamCount / referenceTeamCount;
+    }
 }

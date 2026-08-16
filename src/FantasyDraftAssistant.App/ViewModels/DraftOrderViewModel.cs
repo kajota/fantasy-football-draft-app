@@ -23,6 +23,7 @@ public partial class DraftSeatRow : ObservableObject
 public partial class DraftOrderViewModel(
     ILeagueService leagues,
     IDraftCommandService commands,
+    IDraftStateService drafts,
     SessionState session) : PageViewModel
 {
     public ObservableCollection<DraftSeatRow> Seats { get; } = [];
@@ -143,6 +144,7 @@ public partial class DraftOrderViewModel(
             return;
         }
 
+        await SessionDraft.AttachLeagueAsync(session, leagues, leagueId, league.Name);
         SelectedFormat = FormatName(league.DraftType);
         var teams = (await leagues.GetTeamsAsync(leagueId)).OrderBy(t => t.DraftPosition).ToList();
         foreach (var team in teams)
@@ -163,9 +165,16 @@ public partial class DraftOrderViewModel(
             {
                 HasDraft = true;
                 CanStart = draft.Status == DraftStatus.NotStarted;
-                CanEdit = draft.Status == DraftStatus.NotStarted;
-                if (draft.Status != DraftStatus.NotStarted)
-                    StatusMessage ??= $"Draft is {draft.Status.ToString().ToLowerInvariant()}. The order is locked.";
+                var working = await drafts.GetWorkingStateAsync(draftId);
+                var branches = await leagues.GetBranchesAsync(draftId);
+                var liveId = branches.FirstOrDefault(branch => branch.ParentBranchId is null)?.BranchId
+                             ?? draft.ActiveBranchId;
+                var live = await drafts.GetWorkingStateAsync(draftId, liveId) ?? working;
+                CanEdit = live is not null && KeeperRules.CanReorderSeats(draft.Status, live.ActiveSelections.Values);
+                if (!CanEdit)
+                    StatusMessage ??= "Regular picks are on the live board. Undo those picks to change the order.";
+                else if (draft.Status != DraftStatus.NotStarted)
+                    StatusMessage ??= "Live board has no regular picks, so you can still change first-round seats. Save writes a new board.";
             }
         }
 

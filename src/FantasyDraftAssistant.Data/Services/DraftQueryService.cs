@@ -210,12 +210,16 @@ public sealed class DraftQueryService(
         var projections = await LoadPreferredAsync(fantasyData.GetProjectionsAsync, sourceKey, cancellationToken);
         var catalog = (await drafts.GetPlayersAsync(cancellationToken)).ToDictionary(player => player.PlayerId);
         var roster = HandcuffRoster(state, catalog, rankings, adp);
+        var byeRoster = UserByeRoster(state, catalog);
         return players.Select(player =>
         {
             var value = AnalyticsEngine.ValuePlayer(player, rankings, adp, projections, state.ScoringRules, state.League.TeamCount);
             var cuff = HandcuffMatcher.For(
                 new HandcuffPlayer(player.Name, player.NflTeam, player.PrimaryPosition, value.OverallRank, value.OverallAdp),
                 roster);
+            var sharedBye = SharedByeMatcher.For(
+                new RosterByePlayer(player.Name, player.PrimaryPosition, player.ByeWeek),
+                byeRoster);
             return new PlayerSummaryDto
             {
                 PlayerId = player.PlayerId.ToString(),
@@ -240,7 +244,9 @@ public sealed class DraftQueryService(
                 InjuryNotes = player.InjuryNotes,
                 InjuryStartedOn = player.InjuryStartedOn,
                 InjuryLine = string.IsNullOrWhiteSpace(player.InjuryLine) ? null : player.InjuryLine,
-                HandcuffFor = cuff?.StarterName
+                HandcuffFor = cuff?.StarterName,
+                SharedByeWith = sharedBye is null ? null : SharedByeMatcher.Teammates(sharedBye),
+                SharedByeWeek = sharedBye?.ByeWeek
             };
         }).ToList();
     }
@@ -268,6 +274,23 @@ public sealed class DraftQueryService(
                     ranking?.OverallRank,
                     playerAdp?.OverallAdp);
             })
+            .Where(player => player is not null)
+            .Select(player => player!)
+            .ToList();
+    }
+
+    internal static IReadOnlyList<RosterByePlayer> UserByeRoster(
+        DraftWorkingState state,
+        IReadOnlyDictionary<PlayerId, Core.Models.Player> catalog)
+    {
+        if (state.League.UserTeamId is not { } user)
+            return [];
+
+        return state.SelectionsForTeam(user)
+            .Select(selection =>
+                catalog.TryGetValue(selection.PlayerId, out var player)
+                    ? new RosterByePlayer(player.Name, player.PrimaryPosition, player.ByeWeek)
+                    : null)
             .Where(player => player is not null)
             .Select(player => player!)
             .ToList();

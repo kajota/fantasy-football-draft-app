@@ -18,4 +18,11 @@ public class AdpConverterTests
     {
         Assert.Equal(expected, AdpConverter.FormatRoundPick(overall, teams));
     }
+
+    [Fact]
+    public void Scales_twelve_team_adp_to_this_league()
+    {
+        Assert.Equal(20, AdpConverter.ScaleToLeague(24, teamCount: 10), 3);
+        Assert.Equal(24, AdpConverter.ScaleToLeague(24, teamCount: 12), 3);
+    }
 }

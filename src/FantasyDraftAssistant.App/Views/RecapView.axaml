@@ -7,7 +7,7 @@
   <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
     <StackPanel Spacing="16">
       <TextBlock Text="Post-Draft Recap" Classes="h1" />
-      <TextBlock Text="Each team gets a letter grade from ADP value, league-scored starter projections, and leftover starting holes. No AI required."
+      <TextBlock Text="Grades are relative to this league: team count, Superflex vs 1-QB, this league's scoring, ADP value vs the other teams, starter projections, and leftover holes. A typical filled roster lands around B. No AI required."
                  Classes="muted" TextWrapping="Wrap" />
       <TextBlock Text="{Binding StatusMessage}" Classes="muted" TextWrapping="Wrap" />
 

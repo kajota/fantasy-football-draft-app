@@ -4,7 +4,11 @@
              xmlns:views="using:FantasyDraftAssistant.App.Views"
              x:Class="FantasyDraftAssistant.App.Views.LeagueSetupView"
              x:DataType="vm:LeagueSetupViewModel">
-  <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+  <ScrollViewer x:Name="PageScroll"
+                HorizontalScrollBarVisibility="Disabled"
+                VerticalScrollBarVisibility="Auto"
+                Focusable="True"
+                BringIntoViewOnFocusChange="False">
     <StackPanel Spacing="16">
       <TextBlock Text="League Setup" Classes="h1" />
       <TextBlock Text="{Binding StatusMessage}" Classes="muted" />
@@ -153,7 +157,7 @@
       <Border Classes="card">
         <StackPanel Spacing="8">
           <TextBlock Text="Teams" Classes="h2" />
-          <TextBlock Text="This list is the number of teams. Draft position, team name, and owner. Hover a name for that team's portrait. Unchecked rivals get roasted; check Normal image for the same over-the-top hero treatment as you. You always look great."
+          <TextBlock Text="This list is the number of teams. The # box is the first-round seat — type 6 to move this team to pick 6. Drag the handle, or use the arrows. Save writes the new order. The About box is only for portraits. Hover a name for that team's image. Unchecked rivals get roasted; check Normal image for the same over-the-top hero treatment as you."
                      Classes="muted" TextWrapping="Wrap" />
           <StackPanel Orientation="Horizontal" Spacing="10">
             <Button Content="Generate team images" Classes="ghost"
@@ -172,43 +176,73 @@
               </ComboBox.ItemTemplate>
             </ComboBox>
           </StackPanel>
-          <Grid ColumnDefinitions="32,200,140,56,Auto,Auto,*" ColumnSpacing="8">
-            <TextBlock Text="#" Classes="muted" />
-            <TextBlock Grid.Column="1" Text="Team name" Classes="muted" />
-            <TextBlock Grid.Column="2" Text="Owner" Classes="muted" />
-            <TextBlock Grid.Column="3" Text="Normal" Classes="muted" />
+          <Grid ColumnDefinitions="20,48,56,200,140,56,Auto,Auto,*" ColumnSpacing="8">
+            <TextBlock />
+            <TextBlock Grid.Column="1" Text="#" Classes="muted" />
+            <TextBlock Grid.Column="2" />
+            <TextBlock Grid.Column="3" Text="Team name" Classes="muted" />
+            <TextBlock Grid.Column="4" Text="Owner" Classes="muted" />
+            <TextBlock Grid.Column="5" Text="Normal" Classes="muted" />
           </Grid>
-          <ItemsControl ItemsSource="{Binding Teams}">
+          <ItemsControl x:Name="TeamList" ItemsSource="{Binding Teams}">
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:TeamRow">
-                <Grid ColumnDefinitions="32,200,140,56,Auto,Auto,*" ColumnSpacing="8" Margin="0,4">
-                  <TextBlock Text="{Binding DraftPosition}" VerticalAlignment="Center"
-                             ToolTip.Tip="Draft slot in round 1 for this team." />
-                  <TextBox Grid.Column="1" Text="{Binding Name}" MaxWidth="200">
-                    <ToolTip.Tip>
-                      <views:TeamPortraitTip TeamKey="{Binding TeamKey}" />
-                    </ToolTip.Tip>
-                  </TextBox>
-                  <TextBox Grid.Column="2" Text="{Binding OwnerName}" PlaceholderText="Owner" MaxWidth="140"
-                           ToolTip.Tip="Person who owns this team. Optional." />
-                  <CheckBox Grid.Column="3" IsChecked="{Binding NormalImage}"
-                            IsVisible="{Binding CanChoosePortraitStyle}"
-                            HorizontalAlignment="Center" VerticalAlignment="Center"
-                            ToolTip.Tip="On: over-the-top handsome genius, same energy as your portrait. Off: the roast. Your team has no checkbox and always looks great." />
-                  <Button Grid.Column="4" Content="New image" Classes="ghost compact"
-                          Command="{Binding $parent[ItemsControl].((vm:LeagueSetupViewModel)DataContext).GenerateOnePortraitCommand}"
-                          CommandParameter="{Binding}"
-                          IsEnabled="{Binding !IsGenerating}"
-                          ToolTip.Tip="Generate a new portrait for this team only." />
-                  <Button Grid.Column="5" Content="Export" Classes="ghost compact"
-                          Command="{Binding $parent[ItemsControl].((vm:LeagueSetupViewModel)DataContext).ExportPortraitCommand}"
-                          CommandParameter="{Binding}"
-                          IsEnabled="{Binding HasPortrait}"
-                          ToolTip.Tip="Save this team's image to a file you pick." />
-                  <TextBlock Grid.Column="6" Text="{Binding PortraitStatus}" Classes="muted"
-                             VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
-                             ToolTip.Tip="{Binding PortraitStatus}" />
-                </Grid>
+                <StackPanel Margin="0,4,0,8" Spacing="4">
+                  <Grid ColumnDefinitions="20,48,56,200,140,56,Auto,Auto,*" ColumnSpacing="8">
+                    <TextBlock Text="≡" Classes="muted" VerticalAlignment="Center" HorizontalAlignment="Center"
+                               FontWeight="SemiBold" Cursor="SizeNorthSouth"
+                               IsEnabled="{Binding $parent[ItemsControl].((vm:LeagueSetupViewModel)DataContext).CanReorderTeams}"
+                               PointerPressed="OnSeatGripPressed"
+                               ToolTip.Tip="Drag to change the first-round seat." />
+                    <TextBox Grid.Column="1" Classes="seat" Text="{Binding SeatText}"
+                             MinWidth="40" MaxWidth="48"
+                             IsEnabled="{Binding $parent[ItemsControl].((vm:LeagueSetupViewModel)DataContext).CanReorderTeams}"
+                             LostFocus="OnSeatCommit"
+                             ToolTip.Tip="Round-1 seat. Type 6 and press Enter (or leave the box) to move this team to pick 6." />
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                      <Button Content="↑" Classes="ghost compact"
+                              IsEnabled="{Binding CanMoveUp}"
+                              Command="{Binding $parent[ItemsControl].((vm:LeagueSetupViewModel)DataContext).MoveTeamUpCommand}"
+                              CommandParameter="{Binding}"
+                              ToolTip.Tip="Move this team one seat earlier." />
+                      <Button Content="↓" Classes="ghost compact"
+                              IsEnabled="{Binding CanMoveDown}"
+                              Command="{Binding $parent[ItemsControl].((vm:LeagueSetupViewModel)DataContext).MoveTeamDownCommand}"
+                              CommandParameter="{Binding}"
+                              ToolTip.Tip="Move this team one seat later." />
+                    </StackPanel>
+                    <TextBox Grid.Column="3" Text="{Binding Name}" MaxWidth="200">
+                      <ToolTip.Tip>
+                        <views:TeamPortraitTip TeamKey="{Binding TeamKey}" />
+                      </ToolTip.Tip>
+                    </TextBox>
+                    <TextBox Grid.Column="4" Text="{Binding OwnerName}" PlaceholderText="Owner" MaxWidth="140"
+                             ToolTip.Tip="Person who owns this team. Optional." />
+                    <CheckBox Grid.Column="5" IsChecked="{Binding NormalImage}"
+                              IsVisible="{Binding CanChoosePortraitStyle}"
+                              HorizontalAlignment="Center" VerticalAlignment="Center"
+                              ToolTip.Tip="On: over-the-top handsome genius, same energy as your portrait. Off: the roast. Your team has no checkbox and always looks great." />
+                    <Button Grid.Column="6" Content="New image" Classes="ghost compact"
+                            Command="{Binding $parent[ItemsControl].((vm:LeagueSetupViewModel)DataContext).GenerateOnePortraitCommand}"
+                            CommandParameter="{Binding}"
+                            IsEnabled="{Binding !IsGenerating}"
+                            ToolTip.Tip="Generate a new portrait for this team only." />
+                    <Button Grid.Column="7" Content="Export" Classes="ghost compact"
+                            Command="{Binding $parent[ItemsControl].((vm:LeagueSetupViewModel)DataContext).ExportPortraitCommand}"
+                            CommandParameter="{Binding}"
+                            IsEnabled="{Binding HasPortrait}"
+                            ToolTip.Tip="Save this team's image to a file you pick." />
+                    <TextBlock Grid.Column="8" Text="{Binding PortraitStatus}" Classes="muted"
+                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                               ToolTip.Tip="{Binding PortraitStatus}" />
+                  </Grid>
+                  <TextBox Text="{Binding PortraitNotes}"
+                           PlaceholderText="A little about this person for the portrait (age, look, vibe)"
+                           TextWrapping="Wrap"
+                           AcceptsReturn="False"
+                           Margin="132,0,0,0"
+                           ToolTip.Tip="Used only when generating this team's image. Example: Black woman, late 30s, short hair, glasses." />
+                </StackPanel>
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>

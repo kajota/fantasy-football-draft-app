@@ -48,16 +48,30 @@ public class TeamPortraitPromptTests
     }
 
     [Fact]
-    public void Defaults_to_a_white_man_unless_the_name_is_obvious()
+    public void Portrait_notes_override_the_default_look()
+    {
+        var prompt = TeamPortraitPrompt.Build(
+            "Team 6",
+            "Mike",
+            TeamPortraitTone.Hero,
+            TeamId.New(),
+            "Black woman, late 30s, short hair, glasses");
+        Assert.Contains("Black woman, late 30s, short hair, glasses", prompt, StringComparison.Ordinal);
+        Assert.Contains("Honor that description", prompt, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("white man", prompt, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Empty_notes_keep_the_original_default_look()
     {
         Assert.False(TeamPortraitPrompt.SuggestsNotAMan("Mike", "Team 6"));
-        Assert.False(TeamPortraitPrompt.SuggestsNotAMan("Jordan", "Thunder"));
         Assert.True(TeamPortraitPrompt.SuggestsNotAMan("Sarah", "Team 6"));
-        Assert.True(TeamPortraitPrompt.SuggestsNotAMan("Mike", "The Ladies"));
         var mike = TeamPortraitPrompt.Build("Team 6", "Mike", TeamPortraitTone.Hero, TeamId.New());
         Assert.Contains("white man", mike, StringComparison.OrdinalIgnoreCase);
         var sarah = TeamPortraitPrompt.Build("Team 6", "Sarah", TeamPortraitTone.Hero, TeamId.New());
         Assert.Contains("woman", sarah, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("white man", sarah, StringComparison.OrdinalIgnoreCase);
+        var blank = TeamPortraitPrompt.Build("Team 6", "Mike", TeamPortraitTone.Hero, TeamId.New(), "   ");
+        Assert.Contains("white man", blank, StringComparison.OrdinalIgnoreCase);
     }
 }

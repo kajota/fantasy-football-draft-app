@@ -88,6 +88,59 @@ public class MockPickPolicyTests
     }
 
     [Fact]
+    public void Last_rounds_fill_kicker_and_defense_over_extra_skill()
+    {
+        var (state, players, rankings) = Board(
+            P(PlayerPosition.WR, "Leftover", 140),
+            P(PlayerPosition.K, "Tucker", 180),
+            P(PlayerPosition.DEF, "Ravens", 190));
+        FillThroughRound(state, 14);
+
+        var first = MockPickPolicy.Choose(state, players, rankings, None, MockPersonality.BestAvailable);
+        Assert.Equal(players[1].PlayerId, first);
+
+        var teamId = state.CurrentSlot!.TeamId;
+        PickCurrent(state, first!.Value);
+        while (state.CurrentSlot is { } slot && !slot.TeamId.Equals(teamId))
+            PickCurrent(state, PlayerId.FromName($"Skip{slot.OverallPick}", "FA", "WR"));
+
+        var second = MockPickPolicy.Choose(state, players, rankings, None, MockPersonality.BestAvailable);
+        Assert.Equal(players[2].PlayerId, second);
+    }
+
+    private static void FillThroughRound(DraftWorkingState state, int lastFilledRound)
+    {
+        var lastOverall = lastFilledRound * state.League.TeamCount;
+        foreach (var slot in state.Slots.Where(item => item.OverallPick <= lastOverall))
+            PickSlot(state, slot, PlayerId.FromName($"Filler{slot.OverallPick}", "FA", "WR"));
+    }
+
+    private static void PickCurrent(DraftWorkingState state, PlayerId playerId)
+    {
+        var slot = state.CurrentSlot ?? throw new InvalidOperationException("No open slot.");
+        PickSlot(state, slot, playerId);
+    }
+
+    private static void PickSlot(DraftWorkingState state, DraftSlot slot, PlayerId playerId)
+    {
+        state.ActiveSelections[slot.OverallPick] = new ActiveSelection
+        {
+            EventId = EventId.New(),
+            DraftId = state.Draft.DraftId,
+            BranchId = state.ActiveBranch.BranchId,
+            DraftSlotId = slot.DraftSlotId,
+            OverallPick = slot.OverallPick,
+            Round = slot.Round,
+            RoundPick = slot.RoundPick,
+            TeamId = slot.TeamId,
+            PlayerId = playerId,
+            Source = PickSource.Simulation,
+            ObservedAt = DateTimeOffset.UtcNow
+        };
+        state.UnavailablePlayers.Add(playerId);
+    }
+
+    [Fact]
     public void Adp_hunter_follows_adp_not_rank()
     {
         var (state, players, rankings) = Board(

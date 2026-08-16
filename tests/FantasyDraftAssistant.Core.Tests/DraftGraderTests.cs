@@ -67,6 +67,38 @@ public class DraftGraderTests
         Assert.True(weak.AverageValue < 0);
     }
 
+    [Fact]
+    public void Room_wide_adp_bias_does_not_fail_every_team()
+    {
+        var state = LeagueFactory.CreateStandardState(teamCount: 4, roundCount: 4, superflex: true);
+        Assert.True(DraftEngine.StartDraft(state, new StartDraftCommand(state.Draft.DraftId)).Succeeded);
+        var now = DateTimeOffset.UtcNow;
+        var players = new List<Player>();
+        var adp = new Dictionary<PlayerId, PlayerAdp>();
+        var projections = new Dictionary<PlayerId, PlayerProjection>();
+        for (var pick = 1; pick <= 4; pick++)
+        {
+            var player = Player($"QB{pick}", "BUF", PlayerPosition.QB);
+            players.Add(player);
+            Pick(state, pick, player.PlayerId);
+            adp[player.PlayerId] = new PlayerAdp
+            {
+                PlayerId = player.PlayerId,
+                SourceKey = "test",
+                OverallAdp = pick + 30,
+                CachedAt = now
+            };
+            projections[player.PlayerId] = Proj(player.PlayerId, rushYards: 200, rushTd: 2);
+        }
+
+        var grades = DraftGrader.Grade(state, players, new Dictionary<PlayerId, PlayerRanking>(), adp, projections)
+            .Where(grade => grade.Letter != "—")
+            .ToList();
+        Assert.True(grades.Count >= 2);
+        Assert.True(grades.Max(grade => grade.Score) - grades.Min(grade => grade.Score) <= 3,
+            string.Join(", ", grades.Select(grade => $"{grade.TeamName}:{grade.Letter}{grade.Score}")));
+    }
+
     private static void Pick(FantasyDraftAssistant.Core.Results.DraftWorkingState state, int overall, PlayerId playerId)
     {
         var slot = state.Slots.First(item => item.OverallPick == overall);

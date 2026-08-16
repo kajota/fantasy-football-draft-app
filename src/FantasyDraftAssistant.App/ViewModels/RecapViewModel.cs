@@ -23,6 +23,7 @@ public sealed class RecapTeamBlock
 
 public partial class RecapViewModel(
     IAnalyticsService analytics,
+    ILeagueService leagues,
     IDraftStateService drafts,
     IDraftQueryService queries,
     IDraftCommandService commands,
@@ -71,9 +72,12 @@ public partial class RecapViewModel(
         HasTeams = false;
         HasValue = false;
 
+        if (session.LeagueId is { } leagueId)
+            await SessionDraft.AttachLeagueAsync(session, leagues, leagueId, session.LeagueName);
+
         if (session.DraftId is not { } draftId)
         {
-            StatusMessage = "Open a draft first. Recap uses the active timeline.";
+            StatusMessage = "Open a league first. Recap uses that league's active draft.";
             return;
         }
 
@@ -156,7 +160,7 @@ public partial class RecapViewModel(
 
         HasTeams = Teams.Count > 0;
         StatusMessage = state.Draft.Status == DraftStatus.Completed
-            ? "Letter grades use ADP value, projected starters, and leftover holes. Refresh player data if ADP/projections look thin."
+            ? "Letter grades are relative to this league (size, Superflex, scoring). Refresh player data if ADP/projections look thin."
             : CanComplete
                 ? "Every slot is filled. Grades below are live; mark complete when you are done."
                 : "Draft is still open. Grades update as picks land.";

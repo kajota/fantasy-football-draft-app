@@ -204,6 +204,13 @@ public partial class PlayerRow : ObservableObject
         ? $"Same NFL team as {HandcuffFor} on your roster. Typical handcuff: the backup if your starter misses time."
         : "";
     public IBrush HandcuffFill => IsHandcuff ? DraftBoardPalette.CurrentEmpty : Brushes.Transparent;
+    public string? SharedByeWith { get; init; }
+    public int? SharedByeWeek { get; init; }
+    public bool HasSharedBye => SharedByeWeek is > 0 && !string.IsNullOrWhiteSpace(SharedByeWith);
+    public string SharedByeLabel => HasSharedBye ? $"Bye {SharedByeWeek} · {SharedByeWith}" : "";
+    public string SharedByeDetail => HasSharedBye
+        ? $"Same {Position} bye week ({SharedByeWeek}) as {SharedByeWith} on your roster. Those {Position}s would both be idle that week."
+        : "";
 
     private static Uri? ToUri(string? url) =>
         url is not null && Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri : null;
@@ -212,6 +219,7 @@ public partial class PlayerRow : ObservableObject
 public partial class DraftRoomViewModel : PageViewModel
 {
     private readonly IDraftCommandService _commands;
+    private readonly ILeagueService _leagues;
     private readonly IDraftStateService _drafts;
     private readonly IDraftQueryService _queries;
     private readonly IAnalyticsService _analytics;
@@ -241,6 +249,7 @@ public partial class DraftRoomViewModel : PageViewModel
 
     public DraftRoomViewModel(
         IDraftCommandService commands,
+        ILeagueService leagues,
         IDraftStateService drafts,
         IDraftQueryService queries,
         IAnalyticsService analytics,
@@ -256,6 +265,7 @@ public partial class DraftRoomViewModel : PageViewModel
         SessionState session)
     {
         _commands = commands;
+        _leagues = leagues;
         _drafts = drafts;
         _queries = queries;
         _analytics = analytics;
@@ -313,7 +323,10 @@ public partial class DraftRoomViewModel : PageViewModel
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AiModeHint))]
     private bool _aiDeepMode;
-    [ObservableProperty] private bool _autoAskEnabled = true;
+    [ObservableProperty] private bool _autoAskEnabled;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PlayMockLabel))]
+    private bool _hasRemainingUserPick = true;
     [ObservableProperty] private bool _hasMockSession;
     [ObservableProperty] private bool _isMockPlaying;
     [ObservableProperty] private bool _canPlayMock;
@@ -326,6 +339,7 @@ public partial class DraftRoomViewModel : PageViewModel
 
     public bool AiTileHorizontal => !AiStackVertically;
     public bool AiTileVertical => AiStackVertically;
+    public string PlayMockLabel => HasRemainingUserPick ? "Play until my pick" : "Finish remaining picks";
 
     public string AiModeHint =>
         AiDeepMode
@@ -374,14 +388,17 @@ public partial class DraftRoomViewModel : PageViewModel
     [RelayCommand]
     private async Task ReloadAsync()
     {
+        if (_session.LeagueId is { })
+            await SessionDraft.EnsureDraftAsync(_session, _leagues, _commands, startIfNeeded: true);
+
         if (_session.DraftId is not { } draftId)
         {
             HasDraft = false;
             CanUndo = false;
             CanRedo = false;
             LeagueName = "No draft open";
-            LocationLine = "Create a draft from Draft Order, or start a mock draft from Leagues.";
-            StatusMessage = "Start or open a draft first.";
+            LocationLine = "Open a league first. Draft Room will create that league's draft if it does not have one yet.";
+            StatusMessage = "Open a league from Leagues first.";
             CurrentBoardRow = null;
             BoardTeams = [];
             BoardRounds = [];
@@ -446,8 +463,9 @@ public partial class DraftRoomViewModel : PageViewModel
             : snapshot.PicksUntilUser == 0
                 ? "This is your pick"
                 : $"Your next pick is {snapshot.UserNextRoundPick} · {snapshot.PicksUntilUser} pick(s) away";
-        var userOnClock = snapshot.PicksUntilUser == 0 && currentSlot is not null;
-        CanPlayMock = HasMockSession && !IsMockPlaying && !userOnClock && currentSlot is not null;
+        var userOnClock = PracticeClock.UserIsOnClock(snapshot.UserNextRoundPick, snapshot.PicksUntilUser);
+        HasRemainingUserPick = snapshot.UserNextRoundPick is not null;
+        CanPlayMock = PracticeClock.CpuCanPlay(HasMockSession, IsMockPlaying, userOnClock, currentSlot is not null);
         MockStatusLine = !HasMockSession
             ? ""
             : IsMockPlaying
@@ -456,7 +474,9 @@ public partial class DraftRoomViewModel : PageViewModel
                     ? "Practice draft complete. Live draft returns to the real board. Practice from here starts a new run."
                     : userOnClock
                         ? "Practice · your pick. Draft, then Play until my pick."
-                        : $"Practice · {team} is on the clock.";
+                        : HasRemainingUserPick
+                            ? $"Practice · {team} is on the clock."
+                            : "Practice · you are done. Play remaining CPU picks to finish the board.";
 
         Board.Clear();
         var context = new QueryContext { DraftId = draftId, BranchId = state.ActiveBranch.BranchId };
@@ -582,6 +602,8 @@ public partial class DraftRoomViewModel : PageViewModel
                 IsInjured = !string.Equals(player.Status, "Active", StringComparison.OrdinalIgnoreCase),
                 Tier = player.Tier,
                 HandcuffFor = player.HandcuffFor,
+                SharedByeWith = player.SharedByeWith,
+                SharedByeWeek = player.SharedByeWeek,
                 FantasyProsUrl = links.FantasyPros,
                 SleeperUrl = links.Sleeper,
                 YahooUrl = links.Yahoo
@@ -593,10 +615,24 @@ public partial class DraftRoomViewModel : PageViewModel
 
         Queue.Clear();
         var queueItems = await _drafts.GetQueueAsync(draftId, state.ActiveBranch.BranchId);
+        var byeRoster = userTeam is { } byeUser
+            ? state.SelectionsForTeam(byeUser)
+                .Select(selection => playersById.TryGetValue(selection.PlayerId, out var owned)
+                    ? new RosterByePlayer(owned.Name, owned.PrimaryPosition, owned.ByeWeek)
+                    : null)
+                .Where(owned => owned is not null)
+                .Select(owned => owned!)
+                .ToList()
+            : [];
         for (var i = 0; i < queueItems.Count; i++)
         {
             var item = queueItems[i];
             playersById.TryGetValue(item.PlayerId, out var queuedPlayer);
+            var queuedBye = queuedPlayer is null
+                ? null
+                : SharedByeMatcher.For(
+                    new RosterByePlayer(queuedPlayer.Name, queuedPlayer.PrimaryPosition, queuedPlayer.ByeWeek),
+                    byeRoster);
             Queue.Add(new PlayerRow
             {
                 PlayerId = item.PlayerId,
@@ -605,6 +641,8 @@ public partial class DraftRoomViewModel : PageViewModel
                 Name = queuedPlayer?.Name ?? item.PlayerId.ToString(),
                 Position = queuedPlayer?.PrimaryPosition.ToString() ?? "",
                 NflTeam = queuedPlayer?.NflTeam ?? "",
+                SharedByeWith = queuedBye is null ? null : SharedByeMatcher.Teammates(queuedBye),
+                SharedByeWeek = queuedBye?.ByeWeek,
                 CanMoveUp = i > 0,
                 CanMoveDown = i < queueItems.Count - 1
             });
@@ -713,7 +751,9 @@ public partial class DraftRoomViewModel : PageViewModel
             {
                 SlotCode = slot.SlotCode,
                 DisplayName = slot.DisplayName,
-                Player = slot.IsFilled ? FilledRosterName(slot) : "Need",
+                Player = slot.IsFilled
+                    ? FilledRosterName(slot)
+                    : slot.Kind is SlotKind.Required or SlotKind.Flex ? "Need" : "Open",
                 Detail = slot.IsFilled
                     ? slot.RoundPick ?? ""
                     : slot.Kind == SlotKind.Bench || slot.Kind == SlotKind.Inactive ? "open" : "empty",
@@ -823,6 +863,16 @@ public partial class DraftRoomViewModel : PageViewModel
         await ReloadAsync();
     }
 
+    private async Task FinishPracticeIfUserIsDoneAsync()
+    {
+        if (!CanPlayMock || HasRemainingUserPick || IsMockPlaying)
+            return;
+        if (!PracticeClock.ShouldFinishRemaining(HasMockSession, null, draftOpen: true))
+            return;
+
+        await PlayMockAsync();
+    }
+
     [RelayCommand]
     private async Task PlayMockAsync()
     {
@@ -916,6 +966,7 @@ public partial class DraftRoomViewModel : PageViewModel
             if (result.Succeeded && Search.Length > 0)
                 Search = "";
         });
+        await FinishPracticeIfUserIsDoneAsync();
     }
 
     [RelayCommand]
@@ -934,6 +985,7 @@ public partial class DraftRoomViewModel : PageViewModel
                 ? $"Drafted {playerName} from the queue for {team}."
                 : result.Error;
         });
+        await FinishPracticeIfUserIsDoneAsync();
     }
 
     [RelayCommand]

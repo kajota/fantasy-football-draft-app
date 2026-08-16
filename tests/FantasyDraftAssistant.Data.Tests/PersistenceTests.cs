@@ -118,6 +118,128 @@ public class PersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Create_league_honors_ten_team_count()
+    {
+        var leagues = _services.GetRequiredService<ILeagueService>();
+        var league = await leagues.CreateLeagueAsync(new CreateLeagueRequest
+        {
+            Name = "Ten Team",
+            Season = 2026,
+            TeamCount = 10,
+            DraftType = DraftType.Snake,
+            RoundCount = 15,
+            UserTeamName = "My Team"
+        });
+
+        Assert.Equal(10, league.TeamCount);
+        var teams = await leagues.GetTeamsAsync(league.LeagueId);
+        Assert.Equal(10, teams.Count);
+        Assert.Equal(Enumerable.Range(1, 10), teams.Select(team => team.DraftPosition));
+        var listed = Assert.Single(await leagues.ListLeaguesAsync());
+        Assert.Equal(10, listed.TeamCount);
+        Assert.Equal("10 teams · Season 2026", listed.DetailLine);
+    }
+
+    [Fact]
+    public async Task Saving_teams_can_move_first_seat_to_sixth()
+    {
+        var leagues = _services.GetRequiredService<ILeagueService>();
+        var league = await leagues.CreateLeagueAsync(new CreateLeagueRequest
+        {
+            Name = "Reorder",
+            Season = 2026,
+            TeamCount = 10,
+            DraftType = DraftType.Snake,
+            RoundCount = 15,
+            UserTeamName = "My Team"
+        });
+        var teams = (await leagues.GetTeamsAsync(league.LeagueId)).ToList();
+        var mine = teams[0];
+        teams.RemoveAt(0);
+        teams.Insert(5, mine);
+        await leagues.SaveTeamsAsync(new SaveTeamsRequest
+        {
+            LeagueId = league.LeagueId,
+            Teams = teams.Select((team, index) => new TeamDraftPosition
+            {
+                TeamId = team.TeamId,
+                Name = team.Name,
+                OwnerName = team.OwnerName,
+                DraftPosition = index + 1
+            }).ToList()
+        });
+
+        var reloaded = await leagues.GetTeamsAsync(league.LeagueId);
+        Assert.Equal(mine.TeamId, reloaded[5].TeamId);
+        Assert.Equal(6, reloaded[5].DraftPosition);
+        Assert.Equal("My Team", reloaded[5].Name);
+        Assert.Equal(Enumerable.Range(1, 10), reloaded.Select(team => team.DraftPosition));
+    }
+
+    [Fact]
+    public async Task Working_state_ignores_a_branch_from_another_draft()
+    {
+        var (firstDraftId, _) = await CreateStartedDraftAsync();
+        var first = await _services.GetRequiredService<IDraftStateService>().GetWorkingStateAsync(firstDraftId);
+        Assert.NotNull(first);
+
+        var leagues = _services.GetRequiredService<ILeagueService>();
+        var secondLeague = await leagues.CreateLeagueAsync(new CreateLeagueRequest
+        {
+            Name = "Second",
+            Season = 2026,
+            TeamCount = 4,
+            DraftType = DraftType.Snake,
+            RoundCount = 4,
+            UserTeamName = "My Team"
+        });
+        var secondDraft = await leagues.CreateDraftAsync(new CreateDraftRequest
+        {
+            LeagueId = secondLeague.LeagueId,
+            Name = "Second Draft"
+        });
+
+        var loaded = await _services.GetRequiredService<IDraftStateService>()
+            .GetWorkingStateAsync(secondDraft.DraftId, first.ActiveBranch.BranchId);
+        Assert.NotNull(loaded);
+        Assert.Equal(secondLeague.LeagueId, loaded.League.LeagueId);
+        Assert.Equal(secondDraft.DraftId, loaded.Draft.DraftId);
+        Assert.Equal(secondDraft.ActiveBranchId, loaded.ActiveBranch.BranchId);
+    }
+
+    [Fact]
+    public async Task Team_portrait_notes_round_trip()
+    {
+        var leagues = _services.GetRequiredService<ILeagueService>();
+        var league = await leagues.CreateLeagueAsync(new CreateLeagueRequest
+        {
+            Name = "Looks",
+            Season = 2026,
+            TeamCount = 2,
+            DraftType = DraftType.Snake,
+            RoundCount = 4
+        });
+        var teams = await leagues.GetTeamsAsync(league.LeagueId);
+        await leagues.SaveTeamsAsync(new SaveTeamsRequest
+        {
+            LeagueId = league.LeagueId,
+            UserTeamId = teams[0].TeamId,
+            Teams = teams.Select((team, index) => new TeamDraftPosition
+            {
+                TeamId = team.TeamId,
+                Name = team.Name,
+                OwnerName = team.OwnerName,
+                PortraitNotes = index == 0 ? "Black woman, late 30s, glasses" : null,
+                DraftPosition = team.DraftPosition
+            }).ToList()
+        });
+
+        var reloaded = await leagues.GetTeamsAsync(league.LeagueId);
+        Assert.Equal("Black woman, late 30s, glasses", reloaded[0].PortraitNotes);
+        Assert.Null(reloaded[1].PortraitNotes);
+    }
+
+    [Fact]
     public async Task Permanent_delete_removes_league_and_draft_history()
     {
         var (draftId, player) = await CreateStartedDraftAsync();
@@ -340,6 +462,72 @@ public class PersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Practice_cpu_keeps_picking_after_the_users_last_seat()
+    {
+        var seed = _services.GetRequiredService<IFantasyDataProvider>();
+        await seed.RefreshAsync(new FantasyDraftAssistant.Core.Results.FantasyDataRefreshRequest(), CancellationToken.None);
+        var leagues = _services.GetRequiredService<ILeagueService>();
+        var commands = _services.GetRequiredService<IDraftCommandService>();
+        var states = _services.GetRequiredService<IDraftStateService>();
+        var mock = _services.GetRequiredService<IMockDraftService>();
+        var league = await leagues.CreateLeagueAsync(new CreateLeagueRequest
+        {
+            Name = "Short Snake",
+            Season = 2026,
+            TeamCount = 2,
+            DraftType = DraftType.Snake,
+            RoundCount = 3,
+            UserTeamName = "My Team"
+        });
+        var draft = await leagues.CreateDraftAsync(new CreateDraftRequest
+        {
+            LeagueId = league.LeagueId,
+            Name = "Short"
+        });
+        Assert.True((await commands.StartDraftAsync(new StartDraftCommand(draft.DraftId))).Succeeded);
+        var practice = await mock.StartPracticeAsync(draft.DraftId);
+        Assert.True(practice.Succeeded, practice.Error);
+
+        var available = (await states.GetPlayersAsync())
+            .Where(player => player.PrimaryPosition == PlayerPosition.RB)
+            .ToList();
+        var used = 0;
+        while (true)
+        {
+            var next = await mock.SimulateNextAsync(draft.DraftId, practice.BranchId);
+            Assert.False(next.IsComplete);
+            if (!next.IsUserPick)
+            {
+                Assert.True(next.Succeeded, next.Error);
+                continue;
+            }
+
+            Assert.True(used < available.Count);
+            Assert.True((await commands.DraftPlayerAsync(
+                new DraftPlayerCommand(draft.DraftId, available[used++].PlayerId))).Succeeded);
+
+            var mid = await states.GetWorkingStateAsync(draft.DraftId, practice.BranchId);
+            Assert.NotNull(mid);
+            if (mid.League.UserTeamId is not { } user
+                || mid.Slots.All(slot => mid.ActiveSelections.ContainsKey(slot.OverallPick) || !slot.TeamId.Equals(user)))
+                break;
+        }
+
+        var afterUser = await states.GetWorkingStateAsync(draft.DraftId, practice.BranchId);
+        Assert.NotNull(afterUser);
+        Assert.NotNull(afterUser.CurrentSlot);
+        Assert.False(afterUser.League.UserTeamId is { } lastUser && afterUser.CurrentSlot.TeamId.Equals(lastUser));
+
+        var tail = await mock.SimulateNextAsync(draft.DraftId, practice.BranchId);
+        Assert.True(tail.Succeeded, tail.Error);
+        Assert.False(tail.IsUserPick);
+        Assert.False(tail.IsComplete);
+
+        var done = await mock.SimulateNextAsync(draft.DraftId, practice.BranchId);
+        Assert.True(done.IsComplete);
+    }
+
+    [Fact]
     public async Task Switch_branch_keeps_independent_timelines()
     {
         var (draftId, first) = await CreateStartedDraftAsync();
@@ -461,15 +649,31 @@ public class PersistenceTests : IDisposable
         var started = await commands.StartDraftAsync(new StartDraftCommand(draftId));
         Assert.True(started.Succeeded, started.Error);
 
+        await leagues.SaveDraftOrderAsync(new SaveDraftOrderRequest
+        {
+            LeagueId = working.League.LeagueId,
+            DraftId = draftId,
+            DraftType = DraftType.Linear,
+            Teams = swapped
+        });
+
+        var afterStart = await states.GetWorkingStateAsync(draftId);
+        Assert.NotNull(afterStart);
+        Assert.Equal(newFirst, afterStart.Slots[0].TeamId);
+        Assert.Equal(newFirst, afterStart.Slots.First(slot => slot.Round == 2).TeamId);
+
+        var player = (await states.GetPlayersAsync()).First(item => item.PrimaryPosition == PlayerPosition.RB);
+        Assert.True((await commands.DraftPlayerAsync(new DraftPlayerCommand(draftId, player.PlayerId))).Succeeded);
+
         var locked = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             leagues.SaveDraftOrderAsync(new SaveDraftOrderRequest
             {
                 LeagueId = working.League.LeagueId,
                 DraftId = draftId,
-                DraftType = DraftType.Linear,
+                DraftType = DraftType.Snake,
                 Teams = swapped
             }));
-        Assert.Contains("before the draft starts", locked.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("regular picks", locked.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -769,6 +973,34 @@ public class PersistenceTests : IDisposable
         var context = await _services.GetRequiredService<IDraftQueryService>().GetDecisionContextAsync(
             new QueryContext { DraftId = draftId, BranchId = state.ActiveBranch.BranchId });
         Assert.Equal("Don't suggest a K or DEF until the last two rounds.", context.League.DraftGuidelines);
+    }
+
+    [Fact]
+    public async Task Available_player_flags_same_position_bye_as_user_roster()
+    {
+        var (draftId, _) = await CreateStartedDraftAsync();
+        var commands = _services.GetRequiredService<IDraftCommandService>();
+        var queries = _services.GetRequiredService<IDraftQueryService>();
+        var states = _services.GetRequiredService<IDraftStateService>();
+        var players = await states.GetPlayersAsync();
+        var gibbs = players.Single(player => player.Name == "Jahmyr Gibbs");
+        var drafted = await commands.DraftPlayerAsync(new DraftPlayerCommand(draftId, gibbs.PlayerId));
+        Assert.True(drafted.Succeeded, drafted.Error);
+
+        var state = await states.GetWorkingStateAsync(draftId);
+        Assert.NotNull(state);
+        var context = await queries.GetDecisionContextAsync(new QueryContext
+        {
+            DraftId = draftId,
+            BranchId = state.ActiveBranch.BranchId
+        });
+
+        var jeanty = context.TopAvailable.Single(player => player.Name == "Ashton Jeanty");
+        Assert.Equal(8, jeanty.SharedByeWeek);
+        Assert.Equal("Jahmyr Gibbs", jeanty.SharedByeWith);
+        var barkley = context.TopAvailable.Single(player => player.Name == "Saquon Barkley");
+        Assert.Null(barkley.SharedByeWith);
+        Assert.Null(barkley.SharedByeWeek);
     }
 
     [Fact]

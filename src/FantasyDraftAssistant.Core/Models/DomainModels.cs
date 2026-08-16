@@ -28,6 +28,7 @@ public sealed class Team
     public required string Name { get; set; }
     public string? OwnerName { get; set; }
     public string? DisplayLabel { get; set; }
+    public string? PortraitNotes { get; set; }
     public int DraftPosition { get; set; }
     public string? ExternalTeamId { get; set; }
 

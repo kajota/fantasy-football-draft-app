@@ -84,6 +84,7 @@ public sealed record TeamDraftPosition
     public required string Name { get; init; }
     public string? OwnerName { get; init; }
     public string? DisplayLabel { get; init; }
+    public string? PortraitNotes { get; init; }
     public required int DraftPosition { get; init; }
     public string? ExternalTeamId { get; init; }
 }

@@ -15,6 +15,30 @@ public static class KeeperRules
     public const string LockedAfterCompleteMessage =
         "Keepers can only be changed before the draft starts.";
 
+    public const string OrderLockedAfterPicksMessage =
+        "Draft order locks once regular picks are on the live board. Undo those picks in the Draft Room, or stay on the live timeline.";
+
+    public const string OrderLockedAfterCompleteMessage =
+        "Draft order can only be changed before the draft is complete.";
+
+    public static bool CanReorderSeats(DraftStatus status, IEnumerable<ActiveSelection> liveSelections)
+    {
+        if (status == DraftStatus.NotStarted)
+            return true;
+        if (status != DraftStatus.InProgress)
+            return false;
+        return liveSelections.All(selection => selection.Source == PickSource.Keeper);
+    }
+
+    public static ValidationResult ValidateCanReorderSeats(DraftStatus status, IEnumerable<ActiveSelection> liveSelections)
+    {
+        if (CanReorderSeats(status, liveSelections))
+            return ValidationResult.Ok();
+        return ValidationResult.Fail(status == DraftStatus.Completed
+            ? OrderLockedAfterCompleteMessage
+            : OrderLockedAfterPicksMessage);
+    }
+
     public static bool CanEditKeepers(DraftStatus status, IEnumerable<ActiveSelection> selections)
     {
         if (status == DraftStatus.NotStarted)

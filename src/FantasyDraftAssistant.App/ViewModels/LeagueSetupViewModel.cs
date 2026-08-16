@@ -16,12 +16,18 @@ public partial class TeamRow : ObservableObject
 {
     [ObservableProperty] private string _name = "";
     [ObservableProperty] private string? _ownerName;
+    [ObservableProperty] private string _portraitNotes = "";
     [ObservableProperty] private int _draftPosition;
+    [ObservableProperty] private string _seatText = "1";
     [ObservableProperty] private string _portraitStatus = "";
     [ObservableProperty] private bool _isGenerating;
     [ObservableProperty] private bool _normalImage;
     [ObservableProperty] private bool _canChoosePortraitStyle;
     [ObservableProperty] private bool _hasPortrait;
+    [ObservableProperty] private bool _canMoveUp;
+    [ObservableProperty] private bool _canMoveDown;
+
+    public void SyncSeatText() => SeatText = DraftPosition.ToString(CultureInfo.InvariantCulture);
     public Core.Ids.TeamId TeamId { get; init; }
     public string TeamKey => TeamId.ToString();
     public string? ExternalTeamId { get; init; }
@@ -136,6 +142,7 @@ public sealed class PortraitAiOption
 
 public partial class LeagueSetupViewModel(
     ILeagueService leagues,
+    IDraftStateService drafts,
     SessionState session,
     ITeamPortraitGenerator portraits,
     ITeamPortraitStore portraitStore,
@@ -164,6 +171,7 @@ public partial class LeagueSetupViewModel(
     [NotifyPropertyChangedFor(nameof(HasSaveNotice))]
     private string _saveNotice = "";
     [ObservableProperty] private bool _isGeneratingPortraits;
+    [ObservableProperty] private bool _canReorderTeams = true;
     [ObservableProperty] private PortraitAiOption? _selectedPortraitProvider;
 
     public bool HasSaveNotice => !string.IsNullOrWhiteSpace(SaveNotice);
@@ -191,21 +199,43 @@ public partial class LeagueSetupViewModel(
         {
             StatusMessage = "Imported from Yahoo. Verify team names, first-round seats, and keepers before you start. A later Yahoo refresh will not overwrite draft order or keepers unless you ask it to.";
         }
+        var listed = await leagues.ListDraftsAsync(id);
+        var current = SessionDraft.SelectDraft(session.DraftId, listed);
+        if (current is null || current.Status == DraftStatus.NotStarted)
+        {
+            CanReorderTeams = true;
+        }
+        else
+        {
+            var branches = await leagues.GetBranchesAsync(current.DraftId);
+            var liveId = branches.FirstOrDefault(branch => branch.ParentBranchId is null)?.BranchId
+                         ?? current.ActiveBranchId;
+            var live = await drafts.GetWorkingStateAsync(current.DraftId, liveId);
+            CanReorderTeams = live is not null
+                              && KeeperRules.CanReorderSeats(current.Status, live.ActiveSelections.Values);
+        }
+
+        if (!CanReorderTeams)
+            StatusMessage = "Regular picks are on the live board, so first-round seats are locked. Undo those picks or stay on the live timeline to change order.";
         var userTeam = league.UserTeamId;
         foreach (var team in await leagues.GetTeamsAsync(id))
         {
             var isMine = userTeam is { } mine && team.TeamId.Equals(mine);
-            Teams.Add(new TeamRow
+            var row = new TeamRow
             {
                 TeamId = team.TeamId,
                 Name = team.Name,
                 OwnerName = team.OwnerName,
+                PortraitNotes = team.PortraitNotes ?? "",
                 DraftPosition = team.DraftPosition,
                 ExternalTeamId = team.ExternalTeamId,
                 CanChoosePortraitStyle = !isMine,
                 HasPortrait = portraitStore.Exists(team.TeamId)
-            });
+            };
+            row.SyncSeatText();
+            Teams.Add(row);
         }
+        RefreshSeats();
 
         _loading = true;
         try
@@ -277,19 +307,7 @@ public partial class LeagueSetupViewModel(
         }
 
         await leagues.SaveLeagueDetailsAsync(id, LeagueName, Season, RoundCount, DraftGuidelines);
-        await leagues.SaveTeamsAsync(new SaveTeamsRequest
-        {
-            LeagueId = id,
-            UserTeamId = Teams.FirstOrDefault()?.TeamId,
-            Teams = Teams.Select(t => new TeamDraftPosition
-            {
-                TeamId = t.TeamId,
-                Name = t.Name,
-                OwnerName = t.OwnerName,
-                DraftPosition = t.DraftPosition,
-                ExternalTeamId = t.ExternalTeamId
-            }).ToList()
-        });
+        await PersistTeamsAsync();
         await leagues.SaveRosterAsync(new SaveRosterRequest
         {
             LeagueId = id,
@@ -313,9 +331,120 @@ public partial class LeagueSetupViewModel(
         });
 
         session.LeagueName = LeagueName;
-        SaveNotice = "Saved. League settings are stored.";
+        SaveNotice = CanReorderTeams
+            ? "Saved. First-round seats and the Draft Room board were updated."
+            : "Saved. League settings are stored.";
         StatusMessage = SaveNotice;
     }
+
+    [RelayCommand]
+    private void MoveTeamUp(TeamRow? row) => MoveTeam(row, -1);
+
+    [RelayCommand]
+    private void MoveTeamDown(TeamRow? row) => MoveTeam(row, 1);
+
+    public void ApplySeat(TeamRow? row)
+    {
+        if (row is null)
+            return;
+        if (!CanReorderTeams
+            || !int.TryParse(row.SeatText.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var seat))
+        {
+            row.SyncSeatText();
+            return;
+        }
+
+        var from = Teams.IndexOf(row);
+        var to = TeamSeatOrder.TargetIndex(seat, Teams.Count);
+        if (from < 0 || !TeamSeatOrder.Move(Teams, from, to))
+        {
+            row.SyncSeatText();
+            return;
+        }
+
+        RefreshSeats();
+        StatusMessage = $"Moved {DisplayName(row)} to seat {row.DraftPosition}. Save to keep it.";
+    }
+
+    public void MoveTeamToIndex(TeamRow? row, int toIndex)
+    {
+        if (row is null || !CanReorderTeams)
+            return;
+        var from = Teams.IndexOf(row);
+        if (from < 0 || !TeamSeatOrder.Move(Teams, from, toIndex))
+            return;
+        RefreshSeats();
+        StatusMessage = $"Moved {DisplayName(row)} to seat {row.DraftPosition}. Save to keep it.";
+    }
+
+    private async Task PersistTeamsAsync()
+    {
+        if (session.LeagueId is not { } id)
+            return;
+
+        var seats = Teams.Select((t, index) => new TeamDraftPosition
+        {
+            TeamId = t.TeamId,
+            Name = t.Name,
+            OwnerName = t.OwnerName,
+            PortraitNotes = string.IsNullOrWhiteSpace(t.PortraitNotes) ? null : t.PortraitNotes.Trim(),
+            DraftPosition = index + 1,
+            ExternalTeamId = t.ExternalTeamId
+        }).ToList();
+        await leagues.SaveTeamsAsync(new SaveTeamsRequest
+        {
+            LeagueId = id,
+            Teams = seats
+        });
+
+        if (!CanReorderTeams)
+            return;
+
+        var league = await leagues.GetLeagueAsync(id);
+        if (league is null)
+            return;
+        foreach (var draft in await leagues.ListDraftsAsync(id))
+        {
+            if (draft.Status == DraftStatus.Completed)
+                continue;
+            var branches = await leagues.GetBranchesAsync(draft.DraftId);
+            var liveId = branches.FirstOrDefault(branch => branch.ParentBranchId is null)?.BranchId
+                         ?? draft.ActiveBranchId;
+            var live = await drafts.GetWorkingStateAsync(draft.DraftId, liveId);
+            if (live is null || !KeeperRules.CanReorderSeats(draft.Status, live.ActiveSelections.Values))
+                continue;
+
+            await leagues.SaveDraftOrderAsync(new SaveDraftOrderRequest
+            {
+                LeagueId = id,
+                DraftId = draft.DraftId,
+                DraftType = league.DraftType,
+                Teams = seats
+            });
+        }
+    }
+
+    private void MoveTeam(TeamRow? row, int delta)
+    {
+        if (row is null || !CanReorderTeams)
+            return;
+        var from = Teams.IndexOf(row);
+        MoveTeamToIndex(row, from + delta);
+    }
+
+    private void RefreshSeats()
+    {
+        for (var i = 0; i < Teams.Count; i++)
+        {
+            Teams[i].DraftPosition = i + 1;
+            Teams[i].SyncSeatText();
+            Teams[i].CanMoveUp = CanReorderTeams && i > 0;
+            Teams[i].CanMoveDown = CanReorderTeams && i < Teams.Count - 1;
+        }
+    }
+
+    private static string DisplayName(TeamRow row) =>
+        string.IsNullOrWhiteSpace(row.Name) ? $"Team {row.DraftPosition}" : row.Name;
 
     [RelayCommand]
     private Task GenerateAllPortraitsAsync() => GeneratePortraitsAsync(Teams.ToList());
@@ -352,6 +481,8 @@ public partial class LeagueSetupViewModel(
         if (IsGeneratingPortraits)
             return;
 
+        await PersistTeamsAsync();
+
         var league = await leagues.GetLeagueAsync(leagueId);
         var userTeam = league?.UserTeamId ?? Teams.FirstOrDefault()?.TeamId;
         IsGeneratingPortraits = true;
@@ -369,6 +500,7 @@ public partial class LeagueSetupViewModel(
                     TeamId = row.TeamId,
                     TeamName = string.IsNullOrWhiteSpace(row.Name) ? $"Team {row.DraftPosition}" : row.Name,
                     OwnerName = row.OwnerName,
+                    PortraitNotes = string.IsNullOrWhiteSpace(row.PortraitNotes) ? null : row.PortraitNotes.Trim(),
                     IsUserTeam = isMine,
                     NormalImage = !isMine && row.NormalImage,
                     ProviderKey = SelectedPortraitProvider?.ProviderKey

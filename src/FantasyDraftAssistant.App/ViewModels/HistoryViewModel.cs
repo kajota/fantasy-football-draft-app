@@ -18,6 +18,7 @@ public sealed class HistoryPickRow
 }
 
 public partial class HistoryViewModel(
+    ILeagueService leagues,
     IDraftStateService drafts,
     IDraftQueryService queries,
     SessionState session,
@@ -37,9 +38,12 @@ public partial class HistoryViewModel(
         HasPicks = false;
         Summary = "";
 
+        if (session.LeagueId is { } leagueId)
+            await SessionDraft.AttachLeagueAsync(session, leagues, leagueId, session.LeagueName);
+
         if (session.DraftId is not { } draftId)
         {
-            StatusMessage = "Open a draft first. History lists the active timeline for that draft.";
+            StatusMessage = "Open a league first. History lists that league's active draft.";
             return;
         }
 

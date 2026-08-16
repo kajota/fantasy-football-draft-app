@@ -216,15 +216,23 @@ public static class TeamPortraitPrompt
         "scratchy zine drawing"
     ];
 
-    public static string Build(string teamName, string? ownerName, TeamPortraitTone tone, TeamId teamId)
+    public static string Build(
+        string teamName,
+        string? ownerName,
+        TeamPortraitTone tone,
+        TeamId teamId,
+        string? portraitNotes = null)
     {
         var who = string.IsNullOrWhiteSpace(ownerName) || ownerName == teamName
             ? $"the fantasy football manager of the team \"{teamName}\""
             : $"the fantasy football manager {ownerName}, who runs the team \"{teamName}\"";
+        var notes = portraitNotes?.Trim();
         var notAMan = SuggestsNotAMan(ownerName, teamName);
-        var subject = notAMan
-            ? $"{Pick(WomanSubjects, teamId, 0)} in their {Pick(Ages, teamId, 1)}, {Pick(Features, teamId, 2)}"
-            : $"{Pick(WhiteManSubjects, teamId, 0)} in their {Pick(Ages, teamId, 1)}, {Pick(WhiteManFeatures, teamId, 2)}";
+        var subject = string.IsNullOrWhiteSpace(notes)
+            ? notAMan
+                ? $"{Pick(WomanSubjects, teamId, 0)} in their {Pick(Ages, teamId, 1)}, {Pick(Features, teamId, 2)}"
+                : $"{Pick(WhiteManSubjects, teamId, 0)} in their {Pick(Ages, teamId, 1)}, {Pick(WhiteManFeatures, teamId, 2)}"
+            : $"described here: {notes}. Honor that description for age, gender, race, hair, and build. Do not invent a different person";
         var roastFaces = notAMan ? RoastFacesWoman : RoastFacesMan;
 
         if (tone is TeamPortraitTone.Hero or TeamPortraitTone.Normal)

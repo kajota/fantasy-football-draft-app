@@ -38,6 +38,12 @@ public class FantasyDataSourcePickerTests
     }
 
     [Fact]
+    public void Superflex_falls_back_to_sleeper_not_one_qb_fantasypros()
+    {
+        Assert.Equal("sleeper", FantasyDataSourcePicker.Pick(["fantasypros", "sleeper", "fantasypros-half"], SuperflexHalf));
+    }
+
+    [Fact]
     public void Falls_back_to_generic_fantasypros_then_sleeper()
     {
         Assert.Equal("fantasypros", FantasyDataSourcePicker.Pick(["sleeper", "fantasypros"], OneQbHalf));

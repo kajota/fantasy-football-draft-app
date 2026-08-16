@@ -22,4 +22,11 @@ public class AutoAskTriggerTests
         Assert.True(AutoAskTrigger.ShouldAsk(true, true, second, 24, first, 24));
         Assert.False(AutoAskTrigger.ShouldAsk(true, false, second, 24, second, -1));
     }
+
+    [Fact]
+    public void Disabled_never_asks_even_on_the_clock()
+    {
+        var branch = BranchId.New();
+        Assert.False(AutoAskTrigger.ShouldAsk(false, true, branch, 1, null, -1));
+    }
 }

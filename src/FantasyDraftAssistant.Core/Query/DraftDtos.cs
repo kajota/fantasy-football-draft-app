@@ -84,6 +84,8 @@ public sealed class PlayerSummaryDto
     public string? InjuryStartedOn { get; init; }
     public string? InjuryLine { get; init; }
     public string? HandcuffFor { get; init; }
+    public string? SharedByeWith { get; init; }
+    public int? SharedByeWeek { get; init; }
 }
 
 public sealed class PlayerDetailsDto
@@ -188,6 +190,10 @@ public sealed class LeagueSummary
     public DateTimeOffset? ArchivedAt { get; init; }
     public bool IsArchived => ArchivedAt is not null;
     public bool IsYahoo => Platform == FantasyPlatform.Yahoo;
+    public string DetailLine => ActiveDraftStatus is { } status
+        ? $"{TeamCount} teams · Season {Season} · {status}"
+        : $"{TeamCount} teams · Season {Season}";
+    public string ArchivedDetailLine => $"Archived · {DetailLine}";
 }
 
 public sealed class IntegrityReport

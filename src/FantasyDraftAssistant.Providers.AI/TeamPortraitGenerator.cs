@@ -13,7 +13,12 @@ public sealed class TeamPortraitGenerator(
 {
     public async Task<TeamPortraitResult> GenerateAsync(TeamPortraitRequest request, CancellationToken cancellationToken = default)
     {
-        var prompt = TeamPortraitPrompt.Build(request.TeamName, request.OwnerName, request.Tone, request.TeamId);
+        var prompt = TeamPortraitPrompt.Build(
+            request.TeamName,
+            request.OwnerName,
+            request.Tone,
+            request.TeamId,
+            request.PortraitNotes);
         var provider = string.IsNullOrWhiteSpace(request.ProviderKey)
             ? AiProviderCatalog.Xai
             : request.ProviderKey.Trim();

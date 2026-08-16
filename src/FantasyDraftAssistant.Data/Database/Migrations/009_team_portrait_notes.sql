@@ -1,0 +1,1 @@
+ALTER TABLE Teams ADD COLUMN PortraitNotes TEXT;

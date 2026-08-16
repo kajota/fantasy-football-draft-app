@@ -30,6 +30,7 @@ internal static class DraftAnalystPrompt
         - availableRookies, topAvailable.isRookie, yearsExp: from the local player cache. yearsExp 0 is a rookie in league.season.
         - injuredAvailable, status, injuryLine, injuryBodyPart, injuryNotes: Sleeper snapshot at last refresh. Not a news feed.
         - handcuffFor: this available RB or QB is the same-NFL-team backup to that name on the USER roster. Not a vendor handcuff list — same team + worse rank/ADP. Mention it when relevant.
+        - sharedByeWeek / sharedByeWith: this available player has the same NFL bye as that same-position player already on the USER roster. Mention it when the user is considering that player.
 
         Rookies:
         - A rookie is a first-year NFL player in league.season only.

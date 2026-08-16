@@ -41,6 +41,7 @@ public sealed class TeamPortraitRequest
     public required TeamId TeamId { get; init; }
     public required string TeamName { get; init; }
     public string? OwnerName { get; init; }
+    public string? PortraitNotes { get; init; }
     public required bool IsUserTeam { get; init; }
     public bool NormalImage { get; init; }
     public string? ProviderKey { get; init; }

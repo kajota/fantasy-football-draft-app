@@ -185,9 +185,7 @@ public partial class YahooViewModel(
 
             session.LeagueId = leagueId;
             session.LeagueName = result.LeagueName;
-            session.DraftId = null;
-            session.BranchId = null;
-            session.DraftName = null;
+            SessionDraft.BindDraft(session, null);
 
             ReviewItems.Clear();
             foreach (var item in result.ReviewItems)

@@ -15,9 +15,13 @@ internal static class DraftStateLoader
                     ?? throw new InvalidOperationException("Draft not found.");
         var league = LeagueService.LoadLeague(db, tx, draft.LeagueId)
                      ?? throw new InvalidOperationException("League not found.");
-        var activeBranchId = branchId ?? draft.ActiveBranchId;
-        var branch = LeagueService.LoadBranch(db, tx, activeBranchId)
-                     ?? throw new InvalidOperationException("Draft branch not found.");
+        var requested = branchId ?? draft.ActiveBranchId;
+        var branch = LeagueService.LoadBranch(db, tx, requested);
+        if (branch is null || !branch.DraftId.Equals(draftId))
+            branch = LeagueService.LoadBranch(db, tx, draft.ActiveBranchId);
+        if (branch is null)
+            throw new InvalidOperationException("Draft branch not found.");
+        var activeBranchId = branch.BranchId;
 
         var state = new DraftWorkingState
         {

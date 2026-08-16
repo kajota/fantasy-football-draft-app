@@ -24,6 +24,11 @@
                    IsVisible="{Binding IsHandcuff}"
                    TextTrimming="CharacterEllipsis"
                    ToolTip.Tip="{Binding HandcuffDetail}" />
+        <TextBlock Text="{Binding SharedByeLabel}" FontSize="11" FontWeight="SemiBold"
+                   Foreground="{StaticResource DangerBrush}"
+                   IsVisible="{Binding HasSharedBye}"
+                   TextTrimming="CharacterEllipsis"
+                   ToolTip.Tip="{Binding SharedByeDetail}" />
         <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasExternalLinks}">
           <HyperlinkButton Content="FPros" NavigateUri="{Binding FantasyProsUri}"
                            IsVisible="{Binding HasFantasyProsLink}"
@@ -115,11 +120,11 @@
                       IsEnabled="{Binding !IsMockPlaying}"
                       Command="{Binding ReturnToLiveCommand}"
                       ToolTip.Tip="Leave this practice branch and return to the real draft. Practice picks stay saved on the practice timeline." />
-              <Button Content="Play until my pick" Classes="primary"
+              <Button Content="{Binding PlayMockLabel}" Classes="primary"
                       IsVisible="{Binding HasMockSession}"
                       IsEnabled="{Binding CanPlayMock}"
                       Command="{Binding PlayMockCommand}"
-                      ToolTip.Tip="CPU seats pick from rankings and their personality until you are on the clock." />
+                      ToolTip.Tip="CPU seats pick from rankings and their personality. Stops on your pick, or finishes the board if you have no pick left." />
               <Button Content="Step" Classes="ghost"
                       IsVisible="{Binding HasMockSession}"
                       IsEnabled="{Binding CanPlayMock}"
@@ -256,8 +261,14 @@
                     <DataTemplate x:DataType="vm:PlayerRow">
                       <Grid ColumnDefinitions="20,*,36,28,28,28" ColumnSpacing="4" MinWidth="0">
                         <TextBlock Text="{Binding Rank}" Classes="muted" VerticalAlignment="Center" />
-                        <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="SemiBold"
-                                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                          <TextBlock Text="{Binding Name}" FontWeight="SemiBold"
+                                     TextTrimming="CharacterEllipsis" />
+                          <TextBlock Text="{Binding SharedByeLabel}" Classes="danger" FontSize="11"
+                                     IsVisible="{Binding HasSharedBye}"
+                                     TextTrimming="CharacterEllipsis"
+                                     ToolTip.Tip="{Binding SharedByeDetail}" />
+                        </StackPanel>
                         <TextBlock Grid.Column="2" Text="{Binding Position}" Classes="muted" VerticalAlignment="Center" />
                         <Button Grid.Column="3" Content="↑" Classes="ghost compact"
                                 IsEnabled="{Binding CanMoveUp}"
@@ -319,7 +330,7 @@
                   <Button Content="Ask" Classes="primary" Command="{Binding AskAiCommand}" />
                 </StackPanel>
                 <CheckBox Content="Auto-ask when I'm on the clock" IsChecked="{Binding AutoAskEnabled}"
-                          ToolTip.Tip="When it becomes your pick, Fast/Deep advisors are asked automatically. Draft Watchers still only speak on board events." />
+                          ToolTip.Tip="Off until you check it. Opening Draft Room does not spend. When on, Fast/Deep advisors are asked automatically when it becomes your pick." />
                 <ItemsControl ItemsSource="{Binding Alerts}" IsVisible="{Binding HasAlerts}">
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="x:String">
@@ -546,7 +557,13 @@
                 <DataTemplate x:DataType="vm:PlayerRow">
                   <Grid ColumnDefinitions="28,*,50,36,36,36" ColumnSpacing="8" MinWidth="0" Margin="0,4">
                     <TextBlock Text="{Binding Rank}" Classes="muted" VerticalAlignment="Center" />
-                    <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                      <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Text="{Binding SharedByeLabel}" Classes="danger" FontSize="11"
+                                 IsVisible="{Binding HasSharedBye}"
+                                 TextTrimming="CharacterEllipsis"
+                                 ToolTip.Tip="{Binding SharedByeDetail}" />
+                    </StackPanel>
                     <TextBlock Grid.Column="2" Text="{Binding Position}" Classes="muted" VerticalAlignment="Center" />
                     <Button Grid.Column="3" Content="↑" Classes="ghost compact"
                             IsEnabled="{Binding CanMoveUp}"
@@ -571,7 +588,7 @@
         <Border Classes="card" Padding="10" Margin="0,4,0,0" ClipToBounds="True">
           <DockPanel>
             <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8" Spacing="6">
-              <TextBlock Text="Starting slots first, then flex, bench, and IR. Players land in the tightest slot that fits. Empty starters are needs."
+              <TextBlock Text="Starting slots first, then flex, bench, and IR. Players land in the tightest slot that fits. Empty starters are needs. Empty bench and IR are open, not needs."
                          Classes="muted" TextWrapping="Wrap" />
               <StackPanel Orientation="Horizontal" Spacing="12">
                 <StackPanel Spacing="6" IsVisible="{Binding HasSelectedRosterPortrait}">
@@ -643,7 +660,7 @@
                 </StackPanel>
               </Grid>
               <CheckBox Content="Auto-ask when I'm on the clock" IsChecked="{Binding AutoAskEnabled}"
-                        ToolTip.Tip="When it becomes your pick, Fast/Deep advisors are asked automatically. Draft Watchers still only speak on board events." />
+                        ToolTip.Tip="Off until you check it. Opening Draft Room does not spend. When on, Fast/Deep advisors are asked automatically when it becomes your pick." />
               <ItemsControl ItemsSource="{Binding Alerts}" IsVisible="{Binding HasAlerts}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="x:String">

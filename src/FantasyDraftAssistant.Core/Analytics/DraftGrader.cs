@@ -37,10 +37,16 @@ public static class DraftGrader
             return teams;
 
         var withPoints = teams.Where(team => team.StarterPoints > 0).Select(team => team.StarterPoints).ToList();
-        var median = withPoints.Count == 0 ? 0m : Median(withPoints);
+        var medianPoints = withPoints.Count == 0 ? 0m : Median(withPoints);
+        var valued = teams.Where(team => team.Letter != "—").Select(team => team.AverageValue).ToList();
+        var medianValue = valued.Count == 0 ? 0 : valued.Average();
 
         return teams
-            .Select(team => Relativize(team, median, teams.Count(item => item.StarterPoints > team.StarterPoints) + 1))
+            .Select(team => Relativize(
+                team,
+                medianValue,
+                medianPoints,
+                teams.Count(item => item.StarterPoints > team.StarterPoints) + 1))
             .OrderByDescending(team => team.Score)
             .ThenBy(team => team.TeamName, StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -117,31 +123,34 @@ public static class DraftGrader
         var starterPoints = picks
             .Where(pick => starterKeys.Contains((pick.Name, pick.RoundPick)))
             .Sum(pick => pick.ProjectedPoints ?? 0);
-        var values = picks.Where(pick => pick.Adp is not null).Select(pick => pick.OverallPick - pick.Adp!.Value).ToList();
+        var teamCount = Math.Max(1, state.League.TeamCount);
+        var values = picks
+            .Where(pick => pick.Adp is not null)
+            .Select(pick => pick.OverallPick - AdpConverter.ScaleToLeague(pick.Adp!.Value, teamCount))
+            .ToList();
         var averageValue = values.Count == 0 ? 0 : values.Average();
         var openStarters = board.OpenNeeds.Count;
         var notes = new List<string>();
-
-        var score = 75d;
-        score += Math.Clamp(averageValue, -18, 18) * 0.7;
-        score -= openStarters * 7;
+        var superflex = RosterRules.IsSuperflexOrMultiQb(state.RosterSlots);
 
         if (values.Count > 0)
         {
             var best = picks
                 .Where(pick => pick.Adp is not null)
-                .OrderByDescending(pick => pick.OverallPick - pick.Adp!.Value)
+                .OrderByDescending(pick => pick.OverallPick - AdpConverter.ScaleToLeague(pick.Adp!.Value, teamCount))
                 .First();
             var worst = picks
                 .Where(pick => pick.Adp is not null)
-                .OrderBy(pick => pick.OverallPick - pick.Adp!.Value)
+                .OrderBy(pick => pick.OverallPick - AdpConverter.ScaleToLeague(pick.Adp!.Value, teamCount))
                 .First();
-            var bestDelta = best.OverallPick - best.Adp!.Value;
-            var worstDelta = worst.OverallPick - worst.Adp!.Value;
+            var bestExpected = AdpConverter.ScaleToLeague(best.Adp!.Value, teamCount);
+            var worstExpected = AdpConverter.ScaleToLeague(worst.Adp!.Value, teamCount);
+            var bestDelta = best.OverallPick - bestExpected;
+            var worstDelta = worst.OverallPick - worstExpected;
             if (bestDelta >= 4)
-                notes.Add($"Best value: {best.Name} at {best.RoundPick} (ADP {AdpConverter.FormatRoundPick(best.Adp.Value, state.League.TeamCount)}).");
+                notes.Add($"Best value: {best.Name} at {best.RoundPick} (ADP {AdpConverter.FormatRoundPick(bestExpected, teamCount)}).");
             if (worstDelta <= -6)
-                notes.Add($"Biggest reach: {worst.Name} at {worst.RoundPick} (ADP {AdpConverter.FormatRoundPick(worst.Adp.Value, state.League.TeamCount)}).");
+                notes.Add($"Biggest reach: {worst.Name} at {worst.RoundPick} (ADP {AdpConverter.FormatRoundPick(worstExpected, teamCount)}).");
             notes.Add(averageValue >= 1.5
                 ? $"Averaged {averageValue:0.0} picks of ADP value."
                 : averageValue <= -1.5
@@ -158,41 +167,49 @@ public static class DraftGrader
         if (openStarters > 0)
             notes.Add(board.NeedsLine);
         else
-            notes.Add("Starting lineup is filled.");
+            notes.Add(superflex
+                ? "Starting lineup is filled, including Superflex."
+                : "Starting lineup is filled.");
 
-        var letter = Letter((int)Math.Round(Math.Clamp(score, 0, 100), MidpointRounding.AwayFromZero));
         return new DraftTeamGrade(
             team.TeamId,
             team.Label,
             isUser,
-            letter,
-            (int)Math.Round(Math.Clamp(score, 0, 100), MidpointRounding.AwayFromZero),
-            $"{letter} · {picks.Count} pick(s)",
+            "C",
+            75,
+            $"{picks.Count} pick(s)",
             starterPoints,
             averageValue,
             openStarters,
             notes);
     }
 
-    private static DraftTeamGrade Relativize(DraftTeamGrade team, decimal medianStarterPoints, int projRank)
+    private static DraftTeamGrade Relativize(
+        DraftTeamGrade team,
+        double medianValue,
+        decimal medianStarterPoints,
+        int projRank)
     {
-        if (team.Score == 0 && team.Letter == "—")
+        if (team.Letter == "—" && team.Score == 0)
             return team;
 
         var notes = team.Notes.ToList();
-        var score = (double)team.Score;
+        var score = 82d;
+        score += Math.Clamp(team.AverageValue - medianValue, -16, 16) * 0.75;
+        score -= team.OpenStarters * 6;
         if (medianStarterPoints > 0 && team.StarterPoints > 0)
         {
             var gap = (double)(team.StarterPoints - medianStarterPoints);
-            var bump = Math.Clamp(gap / Math.Max(20d, (double)medianStarterPoints * 0.08), -12, 12);
-            score = Math.Clamp(score + bump, 0, 100);
+            var bump = Math.Clamp(gap / Math.Max(20d, (double)medianStarterPoints * 0.08), -10, 10);
+            score += bump;
             notes.Add(gap >= 15
-                ? $"Starters rank #{projRank} and sit {gap:0} pts above the room median."
+                ? $"Starters rank #{projRank} and sit {gap:0} pts above this league's median."
                 : gap <= -15
-                    ? $"Starters rank #{projRank} and sit {Math.Abs(gap):0} pts below the room median."
-                    : $"Starters rank #{projRank} in projected points.");
+                    ? $"Starters rank #{projRank} and sit {Math.Abs(gap):0} pts below this league's median."
+                    : $"Starters rank #{projRank} in this league's projected points.");
         }
 
+        score = Math.Clamp(score, 0, 100);
         var letter = Letter((int)Math.Round(score, MidpointRounding.AwayFromZero));
         var headline = team.OpenStarters > 0
             ? $"{letter} · {team.OpenStarters} starting hole(s)"

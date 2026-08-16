@@ -76,6 +76,12 @@ public static class MockPickPolicy
         var score = personality == MockPersonality.AdpHunter ? adpValue : rank;
         var position = player.PrimaryPosition;
         var need = needs.GetValueOrDefault(position);
+        var destNeeded = (needs.GetValueOrDefault(PlayerPosition.K) > 0 ? 1 : 0)
+                         + (needs.GetValueOrDefault(PlayerPosition.DEF) > 0 ? 1 : 0);
+        var picksLeft = Math.Max(1, roundCount - slot.Round + 1);
+        var mustFillDest = destNeeded > 0 && picksLeft <= destNeeded + 1;
+        var lateRound = Math.Max(1, roundCount - 1);
+
         if (need > 0)
             score -= 6;
         else if (position is PlayerPosition.RB or PlayerPosition.WR
@@ -84,9 +90,19 @@ public static class MockPickPolicy
             score += 12;
         }
 
-        var lateRound = Math.Max(1, roundCount - 1);
-        if (position is PlayerPosition.K or PlayerPosition.DEF && slot.Round < lateRound)
-            score += 50;
+        if (position is PlayerPosition.K or PlayerPosition.DEF)
+        {
+            if (need <= 0)
+                score += 40;
+            else if (mustFillDest || slot.Round >= lateRound)
+                score -= 80;
+            else
+                score += 50;
+        }
+        else if (mustFillDest)
+        {
+            score += 40;
+        }
 
         switch (personality)
         {

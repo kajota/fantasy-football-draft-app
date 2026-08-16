@@ -198,6 +198,7 @@ public sealed class LeagueService(SqliteConnectionFactory factory, IBackupServic
                 Name = spec.Name,
                 OwnerName = spec.OwnerName,
                 DisplayLabel = spec.DisplayLabel,
+                PortraitNotes = spec.PortraitNotes,
                 DraftPosition = spec.DraftPosition,
                 ExternalTeamId = spec.ExternalTeamId
             });
@@ -311,8 +312,13 @@ public sealed class LeagueService(SqliteConnectionFactory factory, IBackupServic
                         ?? throw new InvalidOperationException("Draft not found.");
             if (!draft.LeagueId.Equals(request.LeagueId))
                 throw new InvalidOperationException("That draft does not belong to this league.");
-            if (draft.Status != DraftStatus.NotStarted)
-                throw new InvalidOperationException("Draft order can only be changed before the draft starts.");
+            var live = LiveBranch(db, tx, draftId) ?? LoadBranch(db, tx, draft.ActiveBranchId);
+            var selections = live is null
+                ? []
+                : LoadSelections(db, tx, draftId, live.BranchId);
+            var check = KeeperRules.ValidateCanReorderSeats(draft.Status, selections);
+            if (!check.IsValid)
+                throw new InvalidOperationException(check.Error);
 
             ReplaceSlots(db, tx, draftId, request.DraftType, ordered, league.RoundCount);
         }
@@ -737,6 +743,7 @@ public sealed class LeagueService(SqliteConnectionFactory factory, IBackupServic
                 Name = reader.GetString(reader.GetOrdinal("Name")),
                 OwnerName = reader.GetNullString(reader.GetOrdinal("OwnerName")),
                 DisplayLabel = reader.GetNullString(reader.GetOrdinal("DisplayLabel")),
+                PortraitNotes = reader.GetNullString(reader.GetOrdinal("PortraitNotes")),
                 DraftPosition = reader.GetInt32(reader.GetOrdinal("DraftPosition")),
                 ExternalTeamId = reader.GetNullString(reader.GetOrdinal("ExternalTeamId"))
             });
@@ -827,6 +834,13 @@ public sealed class LeagueService(SqliteConnectionFactory factory, IBackupServic
         StartedAt = reader.GetNullTime(reader.GetOrdinal("StartedAt")),
         CompletedAt = reader.GetNullTime(reader.GetOrdinal("CompletedAt"))
     };
+
+    internal static DraftBranch? LiveBranch(SqliteConnection db, SqliteTransaction? tx, DraftId draftId)
+    {
+        var branches = LoadBranches(db, tx, draftId);
+        return branches.FirstOrDefault(branch => branch.ParentBranchId is null)
+               ?? branches.OrderBy(branch => branch.CreatedAt).FirstOrDefault();
+    }
 
     internal static List<DraftBranch> LoadBranches(SqliteConnection db, SqliteTransaction? tx, DraftId draftId)
     {
@@ -1158,14 +1172,15 @@ public sealed class LeagueService(SqliteConnectionFactory factory, IBackupServic
     private static void InsertTeam(SqliteConnection db, SqliteTransaction tx, Team team)
     {
         using var cmd = db.Cmd("""
-            INSERT INTO Teams(TeamId, LeagueId, Name, OwnerName, DisplayLabel, DraftPosition, ExternalTeamId)
-            VALUES ($id, $league, $name, $owner, $label, $pos, $ext);
+            INSERT INTO Teams(TeamId, LeagueId, Name, OwnerName, DisplayLabel, PortraitNotes, DraftPosition, ExternalTeamId)
+            VALUES ($id, $league, $name, $owner, $label, $notes, $pos, $ext);
             """, tx)
             .Bind("$id", team.TeamId.ToString())
             .Bind("$league", team.LeagueId.ToString())
             .Bind("$name", team.Name)
             .Bind("$owner", team.OwnerName)
             .Bind("$label", team.DisplayLabel)
+            .Bind("$notes", team.PortraitNotes)
             .Bind("$pos", team.DraftPosition)
             .Bind("$ext", team.ExternalTeamId);
         cmd.ExecuteNonQuery();

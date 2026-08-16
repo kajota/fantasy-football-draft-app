@@ -19,7 +19,10 @@ public partial class LeaguesViewModel(
     public ObservableCollection<LeagueSummary> Leagues { get; } = [];
     public ObservableCollection<LeagueSummary> ArchivedLeagues { get; } = [];
 
+    public IReadOnlyList<int> TeamCountOptions { get; } = [8, 10, 12, 14, 16];
+
     [ObservableProperty] private string _newLeagueName = "Sunday League";
+    [ObservableProperty] private int _newLeagueTeamCount = 12;
     [ObservableProperty] private bool _newLeagueSuperflex;
     [ObservableProperty] private bool _hasArchived;
     [ObservableProperty] private bool _hasRemovalDialog;
@@ -43,15 +46,15 @@ public partial class LeaguesViewModel(
         {
             Name = string.IsNullOrWhiteSpace(NewLeagueName) ? "New League" : NewLeagueName.Trim(),
             Season = 2026,
-            TeamCount = 12,
+            TeamCount = TeamCountOptions.Contains(NewLeagueTeamCount) ? NewLeagueTeamCount : 12,
             DraftType = DraftType.Snake,
             Superflex = NewLeagueSuperflex,
             RoundCount = NewLeagueSuperflex ? 16 : 15,
             UserTeamName = "My Team"
         });
+        SessionDraft.BindDraft(session, null);
         session.LeagueId = league.LeagueId;
         session.LeagueName = league.Name;
-        session.DraftId = null;
         await OnNavigatedToAsync();
         await navigator.GoSetupAsync();
     }
@@ -61,9 +64,7 @@ public partial class LeaguesViewModel(
     {
         if (summary is null)
             return;
-        session.LeagueId = summary.LeagueId;
-        session.LeagueName = summary.Name;
-        session.DraftId = summary.ActiveDraftId;
+        await SessionDraft.AttachLeagueAsync(session, leagues, summary.LeagueId, summary.Name);
         await navigator.GoSetupAsync();
     }
 
@@ -108,9 +109,7 @@ public partial class LeaguesViewModel(
 
         session.LeagueId = league.LeagueId;
         session.LeagueName = league.Name;
-        session.DraftId = draft.DraftId;
-        session.DraftName = draft.Name;
-        session.BranchId = draft.ActiveBranchId;
+        SessionDraft.BindDraft(session, draft);
         await mock.SeedPoliciesAsync(draft.DraftId, draft.ActiveBranchId);
         await navigator.GoRoomAsync();
     }

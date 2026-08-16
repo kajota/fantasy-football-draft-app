@@ -124,9 +124,12 @@ public partial class BranchesViewModel(
         ActiveSummary = "";
         HasInvalidBranchPoint = !TryParseBranchPoint(out _);
 
+        if (session.LeagueId is { } leagueId)
+            await SessionDraft.AttachLeagueAsync(session, leagues, leagueId, session.LeagueName);
+
         if (session.DraftId is not { } id)
         {
-            StatusMessage ??= "Open or start a draft first. Branches are what-if timelines of that draft.";
+            StatusMessage ??= "Open a league first. Branches are what-if timelines of that league's draft.";
             return;
         }
 

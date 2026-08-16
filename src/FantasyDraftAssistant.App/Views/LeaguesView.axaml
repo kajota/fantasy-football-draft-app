@@ -24,13 +24,24 @@
             <StackPanel Spacing="4">
               <TextBlock Text="League name" FontWeight="SemiBold" />
               <TextBox Text="{Binding NewLeagueName}"
-                       ToolTip.Tip="Display name for the new league. Team count is 12 by default and can be reviewed on League Setup." />
+                       ToolTip.Tip="Display name for the new league." />
+              <TextBlock Text="Teams" FontWeight="SemiBold" Margin="0,8,0,0" />
+              <ComboBox ItemsSource="{Binding TeamCountOptions}"
+                        SelectedItem="{Binding NewLeagueTeamCount}"
+                        MaxWidth="160" HorizontalAlignment="Left"
+                        ToolTip.Tip="How many teams draft. This is not the number of rounds.">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock Text="{Binding StringFormat='{}{0} teams'}" />
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
               <Button Content="Create league" Classes="primary" Command="{Binding CreateLeagueCommand}"
                       HorizontalAlignment="Left" Margin="0,4,0,0" />
             </StackPanel>
             <CheckBox Content="Superflex / 2-QB (leave unchecked for a standard 1-QB league)"
                       IsChecked="{Binding NewLeagueSuperflex}" />
-            <TextBlock Text="A 12-team standard league uses QB/2RB/2WR/TE/FLEX/K/DEF/6 BENCH and 15 rounds. Check Superflex only if QB is flex-eligible."
+            <TextBlock Text="Creates that many seats. Roster is still QB/2RB/2WR/TE/FLEX/K/DEF/6 BENCH and 15 rounds (16 if Superflex). Check Superflex only if QB is flex-eligible."
                        Classes="muted" TextWrapping="Wrap" />
           </StackPanel>
         </Border>
@@ -50,7 +61,7 @@
                   </StackPanel>
                   <StackPanel>
                     <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap" />
-                    <TextBlock Classes="muted" Text="{Binding Season, StringFormat='Season {0}'}" />
+                    <TextBlock Classes="muted" Text="{Binding DetailLine}" />
                     <TextBlock Classes="accent" Text="Yahoo" IsVisible="{Binding IsYahoo}" />
                   </StackPanel>
                 </DockPanel>
@@ -78,7 +89,7 @@
                     </StackPanel>
                     <StackPanel>
                       <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap" />
-                      <TextBlock Classes="muted" Text="{Binding Season, StringFormat='Archived · Season {0}'}" />
+                      <TextBlock Classes="muted" Text="{Binding ArchivedDetailLine}" />
                     </StackPanel>
                   </DockPanel>
                 </Border>

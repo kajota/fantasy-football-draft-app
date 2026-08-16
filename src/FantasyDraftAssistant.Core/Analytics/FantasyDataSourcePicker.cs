@@ -15,6 +15,14 @@ public static class FantasyDataSourcePicker
         if (exact is not null)
             return exact;
 
+        if (leagueFormat.Superflex)
+        {
+            return Find(keys, "sleeper")
+                   ?? Find(keys, "fantasypros")
+                   ?? Find(keys, "seed")
+                   ?? keys[0];
+        }
+
         return Find(keys, "fantasypros")
                ?? Find(keys, "sleeper")
                ?? Find(keys, "seed")

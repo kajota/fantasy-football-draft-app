@@ -21,6 +21,9 @@ public class FantasyProsCatalogTests
                   "rank_ecr": 1,
                   "pos_rank": "RB1",
                   "tier": 1,
+                  "rank_min": "1",
+                  "rank_max": "3",
+                  "rank_std": "0.53",
                   "adp": 1.4,
                   "yahoo_id": "31002"
                 },
@@ -45,6 +48,9 @@ public class FantasyProsCatalogTests
         Assert.Equal(1, bijan.OverallRank);
         Assert.Equal(1, bijan.PositionRank);
         Assert.Equal(1, bijan.Tier);
+        Assert.Equal(1, bijan.RankMin);
+        Assert.Equal(3, bijan.RankMax);
+        Assert.Equal(0.53, bijan.RankStd);
         Assert.Equal(1.4, bijan.Adp);
         Assert.Equal("31002", bijan.YahooId);
         Assert.Equal(1, players[1].PositionRank);

@@ -7,7 +7,7 @@
   <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
     <StackPanel Spacing="16">
       <TextBlock Text="Post-Draft Recap" Classes="h1" />
-      <TextBlock Text="Deterministic totals from the local cache. AI is optional and does not block this page."
+      <TextBlock Text="Each team gets a letter grade from ADP value, league-scored starter projections, and leftover starting holes. No AI required."
                  Classes="muted" TextWrapping="Wrap" />
       <TextBlock Text="{Binding StatusMessage}" Classes="muted" TextWrapping="Wrap" />
 
@@ -52,21 +52,37 @@
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="vm:RecapTeamBlock">
             <Border Classes="card" Margin="0,0,0,10">
-              <StackPanel Spacing="6">
-                <TextBlock Text="{Binding Title}" Classes="h2" TextWrapping="Wrap">
-                  <ToolTip.Tip>
-                    <views:TeamPortraitTip TeamKey="{Binding TeamKey}" />
-                  </ToolTip.Tip>
-                </TextBlock>
-                <TextBlock Text="{Binding Detail}" Classes="muted" />
-                <ItemsControl ItemsSource="{Binding Players}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                      <TextBlock Text="{Binding}" Margin="0,2" />
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-              </StackPanel>
+              <DockPanel LastChildFill="True">
+                <StackPanel DockPanel.Dock="Right" Width="64" Margin="12,0,0,0" VerticalAlignment="Top">
+                  <TextBlock Text="{Binding Grade}" FontSize="28" FontWeight="Bold"
+                             Foreground="{StaticResource AccentBrush}"
+                             HorizontalAlignment="Center"
+                             ToolTip.Tip="{Binding Headline}" />
+                </StackPanel>
+                <StackPanel Spacing="6">
+                  <TextBlock Text="{Binding Title}" Classes="h2" TextWrapping="Wrap">
+                    <ToolTip.Tip>
+                      <views:TeamPortraitTip TeamKey="{Binding TeamKey}" />
+                    </ToolTip.Tip>
+                  </TextBlock>
+                  <TextBlock Text="{Binding Headline}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding Detail}" Classes="muted" />
+                  <ItemsControl ItemsSource="{Binding Notes}" IsVisible="{Binding HasNotes}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <TextBlock Text="{Binding}" Classes="muted" TextWrapping="Wrap" Margin="0,2" />
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <ItemsControl ItemsSource="{Binding Players}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <TextBlock Text="{Binding}" Margin="0,2" />
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+              </DockPanel>
             </Border>
           </DataTemplate>
         </ItemsControl.ItemTemplate>

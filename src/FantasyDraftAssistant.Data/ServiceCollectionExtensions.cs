@@ -17,6 +17,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ILeagueService, LeagueService>();
         services.AddSingleton<IDraftCommandService, DraftCommandService>();
         services.AddSingleton<IDraftStateService, DraftStateService>();
+        services.AddSingleton<IMockDraftService, MockDraftService>();
         services.AddSingleton<IFantasyDataWriter, FantasyDataWriter>();
         services.AddSingleton<IAnalyticsService, AnalyticsService>();
         services.AddSingleton<IDraftQueryService, DraftQueryService>();

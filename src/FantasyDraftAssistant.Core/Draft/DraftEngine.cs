@@ -253,6 +253,17 @@ public static class DraftEngine
         state.Draft.ActiveBranchId = branch.BranchId;
         state.ActiveBranch = branch;
         state.Redo = null;
+        if (state.CurrentSlot is null)
+        {
+            state.Draft.Status = DraftStatus.Completed;
+            state.Draft.CompletedAt ??= DateTimeOffset.UtcNow;
+        }
+        else
+        {
+            state.Draft.Status = DraftStatus.InProgress;
+            state.Draft.CompletedAt = null;
+        }
+
         IncrementVersion(state);
         return DraftCommitResult.Ok(state, state.NewEvents);
     }
@@ -346,17 +357,13 @@ public static class DraftEngine
     private static void SwitchToBranch(DraftWorkingState state, DraftBranch branch, int branchPointOverallPick)
     {
         var inherited = state.ActiveSelections.Values
-            .Where(s => s.OverallPick < branchPointOverallPick)
+            .Where(s => s.OverallPick < branchPointOverallPick || s.Source == PickSource.Keeper)
             .ToList();
 
         state.ActiveSelections.Clear();
         state.UnavailablePlayers.Clear();
-        foreach (var keeper in state.Keepers.Where(k =>
-                     inherited.Any(s => s.PlayerId.Equals(k.PlayerId)) ||
-                     (KeeperRules.ResolveSlot(state.Slots, k)?.OverallPick ?? int.MaxValue) < branchPointOverallPick))
-        {
+        foreach (var keeper in state.Keepers)
             state.UnavailablePlayers.Add(keeper.PlayerId);
-        }
 
         foreach (var selection in inherited)
         {

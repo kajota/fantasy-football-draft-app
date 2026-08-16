@@ -24,6 +24,7 @@ public sealed class LeagueSettingsDto
     public required IReadOnlyDictionary<string, decimal> Scoring { get; init; }
     public required string ScoringProfile { get; init; }
     public required IReadOnlyList<string> ScoringLines { get; init; }
+    public string? DraftGuidelines { get; init; }
 }
 
 public sealed class DraftStatusDto
@@ -69,6 +70,10 @@ public sealed class PlayerSummaryDto
     public int? OverallRank { get; init; }
     public int? PositionRank { get; init; }
     public int? Tier { get; init; }
+    public int? RankMin { get; init; }
+    public int? RankMax { get; init; }
+    public double? RankStd { get; init; }
+    public string? RankRange { get; init; }
     public double? OverallAdp { get; init; }
     public string? AdpRoundPick { get; init; }
     public decimal? ProjectedPoints { get; init; }
@@ -78,6 +83,7 @@ public sealed class PlayerSummaryDto
     public string? InjuryNotes { get; init; }
     public string? InjuryStartedOn { get; init; }
     public string? InjuryLine { get; init; }
+    public string? HandcuffFor { get; init; }
 }
 
 public sealed class PlayerDetailsDto

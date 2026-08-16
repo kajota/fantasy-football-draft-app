@@ -40,6 +40,9 @@ public class FantasyProsProviderTests
                   "rank_ecr": 1,
                   "pos_rank": "RB1",
                   "tier": 1,
+                  "rank_min": "1",
+                  "rank_max": "4",
+                  "rank_std": "0.8",
                   "adp": 1.3
                 }
               ]
@@ -75,6 +78,9 @@ public class FantasyProsProviderTests
         Assert.Equal(PlayerStatus.Questionable, player.Status);
         Assert.Equal(7, player.ByeWeek);
         Assert.Equal(1, writer.Rankings[0].OverallRank);
+        Assert.Equal(1, writer.Rankings[0].RankMin);
+        Assert.Equal(4, writer.Rankings[0].RankMax);
+        Assert.Equal(0.8, writer.Rankings[0].RankStd);
         Assert.Contains(writer.Rankings, r => r.SourceKey == "fantasypros-half");
         Assert.Contains(writer.Rankings, r => r.SourceKey == "fantasypros");
         Assert.Equal(1.8, writer.Adp[0].OverallAdp);
@@ -189,5 +195,10 @@ public class FantasyProsProviderTests
 
         public Task<IReadOnlyList<string>> GetSourceKeysAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<string>>([]);
+
+        public Task<IReadOnlyDictionary<PlayerId, IReadOnlyDictionary<string, string>>> GetProviderIdsAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyDictionary<PlayerId, IReadOnlyDictionary<string, string>>>(
+                new Dictionary<PlayerId, IReadOnlyDictionary<string, string>>());
     }
 }

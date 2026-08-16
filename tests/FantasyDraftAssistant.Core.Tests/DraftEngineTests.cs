@@ -238,6 +238,72 @@ public class DraftEngineTests
     }
 
     [Fact]
+    public void Switching_back_from_a_finished_branch_reopens_the_live_draft()
+    {
+        var state = StartedState();
+        var first = PlayerId.New();
+        Assert.True(DraftEngine.DraftPlayer(state, new DraftPlayerCommand(state.Draft.DraftId, first)).Succeeded);
+        var created = DraftEngine.CreateBranch(state, new CreateDraftBranchCommand(state.Draft.DraftId, "Practice", 2));
+        Assert.True(created.Succeeded, created.Error);
+        var practice = state.ActiveBranch;
+        while (state.CurrentSlot is not null)
+            Assert.True(DraftEngine.DraftPlayer(state, new DraftPlayerCommand(state.Draft.DraftId, PlayerId.New())).Succeeded);
+        Assert.Equal(DraftStatus.Completed, state.Draft.Status);
+
+        var live = new DraftBranch
+        {
+            BranchId = practice.ParentBranchId!.Value,
+            DraftId = state.Draft.DraftId,
+            Name = "Main Draft"
+        };
+        state.ActiveSelections.Clear();
+        state.ActiveSelections[1] = new ActiveSelection
+        {
+            EventId = EventId.New(),
+            DraftId = state.Draft.DraftId,
+            BranchId = live.BranchId,
+            DraftSlotId = state.Slots[0].DraftSlotId,
+            OverallPick = 1,
+            Round = 1,
+            RoundPick = 1,
+            TeamId = state.Slots[0].TeamId,
+            PlayerId = first,
+            Source = PickSource.Manual,
+            ObservedAt = DateTimeOffset.UtcNow
+        };
+        var switched = DraftEngine.SwitchBranch(state, live);
+        Assert.True(switched.Succeeded, switched.Error);
+        Assert.Equal(DraftStatus.InProgress, state.Draft.Status);
+        Assert.NotNull(state.CurrentSlot);
+    }
+
+    [Fact]
+    public void Branch_from_pick_one_keeps_later_round_keepers()
+    {
+        var state = LeagueFactory.CreateStandardState(teamCount: 4, roundCount: 4);
+        var keeperPlayer = PlayerId.New();
+        state.Keepers =
+        [
+            new Keeper
+            {
+                KeeperId = KeeperId.New(),
+                DraftId = state.Draft.DraftId,
+                TeamId = state.Teams[0].TeamId,
+                PlayerId = keeperPlayer,
+                RoundCost = 2
+            }
+        ];
+
+        Assert.True(DraftEngine.StartDraft(state, new StartDraftCommand(state.Draft.DraftId)).Succeeded);
+        var created = DraftEngine.CreateBranch(state, new CreateDraftBranchCommand(state.Draft.DraftId, "Practice", 1));
+        Assert.True(created.Succeeded, created.Error);
+        var keeper = Assert.Single(state.ActiveSelections.Values);
+        Assert.Equal(PickSource.Keeper, keeper.Source);
+        Assert.Equal(keeperPlayer, keeper.PlayerId);
+        Assert.True(state.UnavailablePlayers.Contains(keeperPlayer));
+    }
+
+    [Fact]
     public void One_keeper_per_team_is_enforced()
     {
         var team = TeamId.New();

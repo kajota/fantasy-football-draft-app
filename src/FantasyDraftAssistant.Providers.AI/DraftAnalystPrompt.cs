@@ -24,9 +24,12 @@ internal static class DraftAnalystPrompt
         - myRoster / myRemainingNeeds / queue: the USER's team only.
         - interveningTeamNeeds: other teams and their holes. Use this when the user asks what another team will do.
         - league.scoringProfile / scoringLines: honor these. Do not assume PPR or Superflex unless they say so.
+        - league.draftGuidelines: the user's own drafting rules for THIS league. Honor them when recommending a pick for the user.
         - ranksSource, OverallRank, ADP, ProjectedPoints: already league-scored. Do not rescore.
+        - rankMin / rankMax / rankStd / rankRange: FantasyPros expert spread on this sheet when present. Wide range or high std means experts disagree (uncertain / volatile), not a fantasy-point floor or ceiling. Sleeper rows usually omit these.
         - availableRookies, topAvailable.isRookie, yearsExp: from the local player cache. yearsExp 0 is a rookie in league.season.
         - injuredAvailable, status, injuryLine, injuryBodyPart, injuryNotes: Sleeper snapshot at last refresh. Not a news feed.
+        - handcuffFor: this available RB or QB is the same-NFL-team backup to that name on the USER roster. Not a vendor handcuff list — same team + worse rank/ADP. Mention it when relevant.
 
         Rookies:
         - A rookie is a first-year NFL player in league.season only.
@@ -43,6 +46,12 @@ internal static class DraftAnalystPrompt
         - Predict THAT team's pick from their remaining needs and topAvailable.
         - Do not recommend a player for the user's roster.
         - Do not write "Recommendation:" for the user.
+
+        User draft guidelines:
+        - If league.draftGuidelines has text, treat it as how this user wants to draft in this league.
+        - Honor it for USER pick advice. It beats generic "best player available" instincts when they conflict.
+        - Typical notes: no K/DEF until the last two rounds; no backup QB/TE unless the value is clearly too good.
+        - If the field is missing or empty, do not invent guidelines.
 
         If they asked who the user should take (or the question is empty / "who should I take"):
         1. Up to 3 candidates (name, pos, rank/ADP)

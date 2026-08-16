@@ -16,6 +16,7 @@ public sealed class League
     public int RoundCount { get; set; }
     public int RosterSize { get; set; }
     public DraftSourcePreference DraftSourcePreference { get; set; } = DraftSourcePreference.Manual;
+    public string? DraftGuidelines { get; set; }
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? ArchivedAt { get; set; }
 }
@@ -137,6 +138,46 @@ public sealed class DraftSlot
     public bool IsKeeperSlot { get; set; }
 }
 
+public sealed class MockSeatPolicy
+{
+    public required TeamId TeamId { get; init; }
+    public required MockPersonality Personality { get; init; }
+    public required bool IsCpu { get; init; }
+}
+
+public sealed class MockPickResult
+{
+    public required bool Succeeded { get; init; }
+    public string? Error { get; init; }
+    public bool IsUserPick { get; init; }
+    public bool IsComplete { get; init; }
+    public int PicksMade { get; init; }
+    public string? PlayerName { get; init; }
+    public string? TeamName { get; init; }
+    public string? Personality { get; init; }
+    public BranchId? BranchId { get; init; }
+
+    public static MockPickResult Fail(string error) => new()
+    {
+        Succeeded = false,
+        Error = error
+    };
+
+    public static MockPickResult UserPick() => new()
+    {
+        Succeeded = true,
+        IsUserPick = true,
+        Error = "It's your pick."
+    };
+
+    public static MockPickResult Complete() => new()
+    {
+        Succeeded = true,
+        IsComplete = true,
+        Error = "The draft is complete."
+    };
+}
+
 public sealed class Keeper
 {
     public required KeeperId KeeperId { get; init; }
@@ -202,6 +243,9 @@ public sealed class PlayerRanking
     public int OverallRank { get; init; }
     public int? PositionRank { get; init; }
     public int? Tier { get; init; }
+    public int? RankMin { get; init; }
+    public int? RankMax { get; init; }
+    public double? RankStd { get; init; }
     public DateTimeOffset? SourceTimestamp { get; init; }
     public DateTimeOffset CachedAt { get; init; }
 }

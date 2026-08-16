@@ -208,9 +208,14 @@ public sealed class DraftQueryService(
         var rankings = await LoadPreferredAsync(fantasyData.GetRankingsAsync, sourceKey, cancellationToken);
         var adp = await LoadPreferredAsync(fantasyData.GetAdpAsync, sourceKey, cancellationToken);
         var projections = await LoadPreferredAsync(fantasyData.GetProjectionsAsync, sourceKey, cancellationToken);
+        var catalog = (await drafts.GetPlayersAsync(cancellationToken)).ToDictionary(player => player.PlayerId);
+        var roster = HandcuffRoster(state, catalog, rankings, adp);
         return players.Select(player =>
         {
             var value = AnalyticsEngine.ValuePlayer(player, rankings, adp, projections, state.ScoringRules, state.League.TeamCount);
+            var cuff = HandcuffMatcher.For(
+                new HandcuffPlayer(player.Name, player.NflTeam, player.PrimaryPosition, value.OverallRank, value.OverallAdp),
+                roster);
             return new PlayerSummaryDto
             {
                 PlayerId = player.PlayerId.ToString(),
@@ -222,6 +227,10 @@ public sealed class DraftQueryService(
                 OverallRank = value.OverallRank,
                 PositionRank = value.PositionRank,
                 Tier = value.Tier,
+                RankMin = value.RankMin,
+                RankMax = value.RankMax,
+                RankStd = value.RankStd,
+                RankRange = value.RankRange,
                 OverallAdp = value.OverallAdp,
                 AdpRoundPick = value.AdpRoundPick,
                 ProjectedPoints = value.ProjectedPoints,
@@ -230,9 +239,38 @@ public sealed class DraftQueryService(
                 InjuryBodyPart = player.InjuryBodyPart,
                 InjuryNotes = player.InjuryNotes,
                 InjuryStartedOn = player.InjuryStartedOn,
-                InjuryLine = string.IsNullOrWhiteSpace(player.InjuryLine) ? null : player.InjuryLine
+                InjuryLine = string.IsNullOrWhiteSpace(player.InjuryLine) ? null : player.InjuryLine,
+                HandcuffFor = cuff?.StarterName
             };
         }).ToList();
+    }
+
+    internal static IReadOnlyList<HandcuffPlayer> HandcuffRoster(
+        DraftWorkingState state,
+        IReadOnlyDictionary<PlayerId, Core.Models.Player> catalog,
+        IReadOnlyDictionary<PlayerId, Core.Models.PlayerRanking> rankings,
+        IReadOnlyDictionary<PlayerId, Core.Models.PlayerAdp> adp)
+    {
+        if (state.League.UserTeamId is not { } user)
+            return [];
+
+        return state.SelectionsForTeam(user)
+            .Select(selection =>
+            {
+                if (!catalog.TryGetValue(selection.PlayerId, out var player))
+                    return null;
+                rankings.TryGetValue(player.PlayerId, out var ranking);
+                adp.TryGetValue(player.PlayerId, out var playerAdp);
+                return new HandcuffPlayer(
+                    player.Name,
+                    player.NflTeam,
+                    player.PrimaryPosition,
+                    ranking?.OverallRank,
+                    playerAdp?.OverallAdp);
+            })
+            .Where(player => player is not null)
+            .Select(player => player!)
+            .ToList();
     }
 
     private static async Task<IReadOnlyDictionary<PlayerId, T>> LoadPreferredAsync<T>(
@@ -284,7 +322,10 @@ public sealed class DraftQueryService(
         ScoringLines = state.ScoringRules
             .OrderBy(rule => (int)rule.Category)
             .Select(rule => ScoringCatalog.Line(rule.Category, rule.Points))
-            .ToList()
+            .ToList(),
+        DraftGuidelines = string.IsNullOrWhiteSpace(state.League.DraftGuidelines)
+            ? null
+            : state.League.DraftGuidelines.Trim()
     };
 
     private static DraftStatusDto MapStatus(DraftWorkingState state, AnalyticsSnapshot snapshot)

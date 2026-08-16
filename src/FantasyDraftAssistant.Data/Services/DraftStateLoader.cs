@@ -1,4 +1,5 @@
 using FantasyDraftAssistant.Core.Engine;
+using FantasyDraftAssistant.Core.Enums;
 using FantasyDraftAssistant.Core.Ids;
 using FantasyDraftAssistant.Core.Results;
 using FantasyDraftAssistant.Data.Database;
@@ -38,7 +39,7 @@ internal static class DraftStateLoader
         if (selections.Count == 0 && branch.ParentBranchId is { } parentId)
         {
             selections = LeagueService.LoadSelections(db, tx, draftId, parentId)
-                .Where(s => s.OverallPick < branch.BranchPointOverallPick)
+                .Where(s => s.OverallPick < branch.BranchPointOverallPick || s.Source == PickSource.Keeper)
                 .ToList();
         }
 

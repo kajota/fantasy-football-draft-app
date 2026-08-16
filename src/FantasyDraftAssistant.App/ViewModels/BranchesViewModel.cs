@@ -23,6 +23,7 @@ public partial class BranchesViewModel(
     ILeagueService leagues,
     IDraftCommandService commands,
     IDraftStateService drafts,
+    IMockDraftService mock,
     SessionState session,
     Navigator navigator) : PageViewModel
 {
@@ -89,6 +90,24 @@ public partial class BranchesViewModel(
 
         session.BranchId = row.BranchId;
         StatusMessage = $"Switched to \"{row.Name}\". Open Draft Room to see that timeline.";
+        await ReloadAsync();
+    }
+
+    [RelayCommand]
+    private async Task PracticeFromHereAsync()
+    {
+        if (session.DraftId is not { } id)
+        {
+            StatusMessage = "Open or start a draft first.";
+            return;
+        }
+
+        var result = await mock.StartPracticeAsync(id);
+        if (result.BranchId is { } branchId)
+            session.BranchId = branchId;
+        StatusMessage = result.Succeeded
+            ? "Started a practice branch. Open Draft Room and use Play until my pick."
+            : result.Error;
         await ReloadAsync();
     }
 

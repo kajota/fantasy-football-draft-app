@@ -89,12 +89,15 @@ public sealed class FantasyDataWriter(SqliteConnectionFactory factory) : IFantas
                        .Bind("$k", ranking.SourceKey).Bind("$n", ranking.SourceKey))
                 src.ExecuteNonQuery();
             using var cmd = db.Cmd("""
-                INSERT INTO PlayerRankings(PlayerId, SourceKey, OverallRank, PositionRank, Tier, SourceTimestamp, CachedAt)
-                VALUES ($p, $s, $r, $pr, $t, $src, $c)
+                INSERT INTO PlayerRankings(PlayerId, SourceKey, OverallRank, PositionRank, Tier, RankMin, RankMax, RankStd, SourceTimestamp, CachedAt)
+                VALUES ($p, $s, $r, $pr, $t, $min, $max, $std, $src, $c)
                 ON CONFLICT(PlayerId, SourceKey) DO UPDATE SET
                     OverallRank = excluded.OverallRank,
                     PositionRank = excluded.PositionRank,
                     Tier = excluded.Tier,
+                    RankMin = excluded.RankMin,
+                    RankMax = excluded.RankMax,
+                    RankStd = excluded.RankStd,
                     SourceTimestamp = excluded.SourceTimestamp,
                     CachedAt = excluded.CachedAt;
                 """, tx)
@@ -103,6 +106,9 @@ public sealed class FantasyDataWriter(SqliteConnectionFactory factory) : IFantas
                 .Bind("$r", ranking.OverallRank)
                 .Bind("$pr", ranking.PositionRank)
                 .Bind("$t", ranking.Tier)
+                .Bind("$min", ranking.RankMin)
+                .Bind("$max", ranking.RankMax)
+                .Bind("$std", ranking.RankStd)
                 .Bind("$src", ranking.SourceTimestamp?.ToString("O"))
                 .Bind("$c", ranking.CachedAt.ToString("O"));
             cmd.ExecuteNonQuery();
@@ -209,6 +215,9 @@ public sealed class FantasyDataWriter(SqliteConnectionFactory factory) : IFantas
                 OverallRank = reader.GetInt32(reader.GetOrdinal("OverallRank")),
                 PositionRank = reader.GetNullInt(reader.GetOrdinal("PositionRank")),
                 Tier = reader.GetNullInt(reader.GetOrdinal("Tier")),
+                RankMin = reader.GetNullInt(reader.GetOrdinal("RankMin")),
+                RankMax = reader.GetNullInt(reader.GetOrdinal("RankMax")),
+                RankStd = reader.GetNullDouble(reader.GetOrdinal("RankStd")),
                 SourceTimestamp = reader.GetNullTime(reader.GetOrdinal("SourceTimestamp")),
                 CachedAt = reader.GetTime(reader.GetOrdinal("CachedAt"))
             };
@@ -316,6 +325,33 @@ public sealed class FantasyDataWriter(SqliteConnectionFactory factory) : IFantas
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(SourcePreference)
             .ToList());
+    }
+
+    public Task<IReadOnlyDictionary<PlayerId, IReadOnlyDictionary<string, string>>> GetProviderIdsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        using var db = factory.Open();
+        using var cmd = db.Cmd("SELECT PlayerId, ProviderKey, ExternalId FROM PlayerProviderIds;");
+        using var reader = cmd.ExecuteReader();
+        var map = new Dictionary<PlayerId, Dictionary<string, string>>();
+        while (reader.Read())
+        {
+            var playerId = PlayerId.Parse(reader.GetString(0));
+            var provider = reader.GetString(1);
+            var externalId = reader.GetString(2);
+            if (!map.TryGetValue(playerId, out var byProvider))
+            {
+                byProvider = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                map[playerId] = byProvider;
+            }
+
+            byProvider[provider] = externalId;
+        }
+
+        return Task.FromResult<IReadOnlyDictionary<PlayerId, IReadOnlyDictionary<string, string>>>(
+            map.ToDictionary(
+                pair => pair.Key,
+                pair => (IReadOnlyDictionary<string, string>)pair.Value));
     }
 
     private static void Prefer<T>(Dictionary<PlayerId, T> map, PlayerId playerId, T row, string sourceKey)

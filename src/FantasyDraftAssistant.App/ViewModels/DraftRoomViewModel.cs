@@ -187,6 +187,26 @@ public partial class PlayerRow : ObservableObject
     [ObservableProperty] private int? _tier;
     [ObservableProperty] private bool _canMoveUp;
     [ObservableProperty] private bool _canMoveDown;
+    public string? FantasyProsUrl { get; init; }
+    public string? SleeperUrl { get; init; }
+    public string? YahooUrl { get; init; }
+    public bool HasFantasyProsLink => FantasyProsUrl is not null;
+    public bool HasSleeperLink => SleeperUrl is not null;
+    public bool HasYahooLink => YahooUrl is not null;
+    public bool HasExternalLinks => HasFantasyProsLink || HasSleeperLink || HasYahooLink;
+    public Uri? FantasyProsUri => ToUri(FantasyProsUrl);
+    public Uri? SleeperUri => ToUri(SleeperUrl);
+    public Uri? YahooUri => ToUri(YahooUrl);
+    public string? HandcuffFor { get; init; }
+    public bool IsHandcuff => !string.IsNullOrWhiteSpace(HandcuffFor);
+    public string HandcuffLabel => IsHandcuff ? $"Cuff · {HandcuffFor}" : "";
+    public string HandcuffDetail => IsHandcuff
+        ? $"Same NFL team as {HandcuffFor} on your roster. Typical handcuff: the backup if your starter misses time."
+        : "";
+    public IBrush HandcuffFill => IsHandcuff ? DraftBoardPalette.CurrentEmpty : Brushes.Transparent;
+
+    private static Uri? ToUri(string? url) =>
+        url is not null && Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri : null;
 }
 
 public partial class DraftRoomViewModel : PageViewModel
@@ -203,6 +223,7 @@ public partial class DraftRoomViewModel : PageViewModel
     private readonly IFantasyDataWriter _fantasyData;
     private readonly ITeamPortraitStore _portraits;
     private readonly IFileSavePicker _files;
+    private readonly IMockDraftService _mock;
     private readonly SessionState _session;
     private bool _muteExternalReload;
     private bool _suppressSourceReload;
@@ -211,8 +232,12 @@ public partial class DraftRoomViewModel : PageViewModel
     private bool _suppressRosterTeamChange;
     private readonly HashSet<string> _seenWatchKeys = new(StringComparer.Ordinal);
     private bool _watchSeeded;
+    private BranchId? _autoAskBranch;
     private int _lastAutoAskOverall = -1;
     private bool _boardReactionBusy;
+    private bool _suppressBoardReaction;
+    private AnalyticsSnapshot? _pendingBoardReaction;
+    private bool _pauseMock;
 
     public DraftRoomViewModel(
         IDraftCommandService commands,
@@ -227,6 +252,7 @@ public partial class DraftRoomViewModel : PageViewModel
         IFantasyDataWriter fantasyData,
         ITeamPortraitStore portraits,
         IFileSavePicker files,
+        IMockDraftService mock,
         SessionState session)
     {
         _commands = commands;
@@ -241,6 +267,7 @@ public partial class DraftRoomViewModel : PageViewModel
         _fantasyData = fantasyData;
         _portraits = portraits;
         _files = files;
+        _mock = mock;
         _session = session;
         _notifier.DraftChanged += OnDraftChanged;
     }
@@ -287,6 +314,11 @@ public partial class DraftRoomViewModel : PageViewModel
     [NotifyPropertyChangedFor(nameof(AiModeHint))]
     private bool _aiDeepMode;
     [ObservableProperty] private bool _autoAskEnabled = true;
+    [ObservableProperty] private bool _hasMockSession;
+    [ObservableProperty] private bool _isMockPlaying;
+    [ObservableProperty] private bool _canPlayMock;
+    [ObservableProperty] private bool _canReturnToLive;
+    [ObservableProperty] private string _mockStatusLine = "";
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AiTileHorizontal))]
     [NotifyPropertyChangedFor(nameof(AiTileVertical))]
@@ -365,6 +397,10 @@ public partial class DraftRoomViewModel : PageViewModel
             SelectedTauntTarget = null;
             SelectingTeamKey = null;
             SetSelectedRosterPortrait(null);
+            HasMockSession = false;
+            CanPlayMock = false;
+            CanReturnToLive = false;
+            MockStatusLine = "";
             return;
         }
 
@@ -379,6 +415,10 @@ public partial class DraftRoomViewModel : PageViewModel
 
         HasDraft = true;
         _session.BranchId = state.ActiveBranch.BranchId;
+        var policies = await _mock.GetPoliciesAsync(draftId, state.ActiveBranch.BranchId);
+        var policyByTeam = policies.ToDictionary(policy => policy.TeamId);
+        HasMockSession = policies.Any(policy => policy.IsCpu);
+        CanReturnToLive = state.ActiveBranch.ParentBranchId is not null;
         StateVersion = state.Draft.CurrentStateVersion;
         SourceMode = state.Draft.SourceMode.ToString();
         CanUndo = state.ActiveSelections.Values.Any(selection => selection.Source != PickSource.Keeper);
@@ -386,9 +426,15 @@ public partial class DraftRoomViewModel : PageViewModel
         var snapshot = await _analytics.GetSnapshotAsync(draftId, state.ActiveBranch.BranchId);
         LeagueName = state.League.Name;
         RoundPick = snapshot.CurrentRoundPick;
-        var team = snapshot.CurrentTeamId is { } teamId
-            ? state.Teams.FirstOrDefault(t => t.TeamId.Equals(teamId))?.Label
+        var onClockTeam = snapshot.CurrentTeamId is { } teamId
+            ? state.Teams.FirstOrDefault(t => t.TeamId.Equals(teamId))
             : null;
+        MockSeatPolicy? onClockPolicy = null;
+        if (onClockTeam is not null)
+            policyByTeam.TryGetValue(onClockTeam.TeamId, out onClockPolicy);
+        var team = onClockTeam is null
+            ? null
+            : MockPersonalityCatalog.LabelWithPersonality(onClockTeam.Label, onClockPolicy);
         SelectingTeam = team ?? "—";
         SelectingTeamKey = snapshot.CurrentTeamId?.ToString();
         var currentSlot = state.CurrentSlot;
@@ -400,6 +446,17 @@ public partial class DraftRoomViewModel : PageViewModel
             : snapshot.PicksUntilUser == 0
                 ? "This is your pick"
                 : $"Your next pick is {snapshot.UserNextRoundPick} · {snapshot.PicksUntilUser} pick(s) away";
+        var userOnClock = snapshot.PicksUntilUser == 0 && currentSlot is not null;
+        CanPlayMock = HasMockSession && !IsMockPlaying && !userOnClock && currentSlot is not null;
+        MockStatusLine = !HasMockSession
+            ? ""
+            : IsMockPlaying
+                ? "Playing CPU seats…"
+                : currentSlot is null
+                    ? "Practice draft complete. Live draft returns to the real board. Practice from here starts a new run."
+                    : userOnClock
+                        ? "Practice · your pick. Draft, then Play until my pick."
+                        : $"Practice · {team} is on the clock.";
 
         Board.Clear();
         var context = new QueryContext { DraftId = draftId, BranchId = state.ActiveBranch.BranchId };
@@ -409,6 +466,7 @@ public partial class DraftRoomViewModel : PageViewModel
         {
             state.ActiveSelections.TryGetValue(slot.OverallPick, out var selection);
             var slotTeam = state.Teams.FirstOrDefault(t => t.TeamId.Equals(slot.TeamId));
+            policyByTeam.TryGetValue(slot.TeamId, out var slotPolicy);
             var isCurrent = currentSlot is not null && slot.OverallPick == currentSlot.OverallPick;
             string playerName;
             string position;
@@ -432,7 +490,9 @@ public partial class DraftRoomViewModel : PageViewModel
             Board.Add(new BoardRow
             {
                 RoundPick = $"{slot.Round}.{slot.RoundPick:00}",
-                Team = slotTeam?.Label ?? "",
+                Team = slotTeam is null
+                    ? ""
+                    : MockPersonalityCatalog.LabelWithPersonality(slotTeam.Label, slotPolicy),
                 TeamId = slot.TeamId,
                 Player = playerName,
                 Position = position,
@@ -463,11 +523,15 @@ public partial class DraftRoomViewModel : PageViewModel
             currentSlot?.OverallPick,
             userTeam);
         BoardTeams = grid.Teams
-            .Select(header => new DraftBoardTeamHeader
+            .Select(header =>
             {
-                TeamId = header.TeamId,
-                Label = header.Label,
-                IsMine = header.IsMine
+                policyByTeam.TryGetValue(header.TeamId, out var headerPolicy);
+                return new DraftBoardTeamHeader
+                {
+                    TeamId = header.TeamId,
+                    Label = MockPersonalityCatalog.LabelWithPersonality(header.Label, headerPolicy),
+                    IsMine = header.IsMine
+                };
             })
             .ToList();
         BoardRounds = grid.Rounds
@@ -479,6 +543,7 @@ public partial class DraftRoomViewModel : PageViewModel
             .ToList();
 
         await EnsureDataSourcesAsync(FantasyDataFormat.FromLeague(state.ScoringRules, state.RosterSlots));
+        var providerIds = await _fantasyData.GetProviderIdsAsync();
         var available = await _queries.GetAvailablePlayersAsync(context, new PlayerFilter
         {
             Search = string.IsNullOrWhiteSpace(Search) ? null : Search,
@@ -491,9 +556,19 @@ public partial class DraftRoomViewModel : PageViewModel
         Available.Clear();
         foreach (var player in available.Players)
         {
+            var playerId = PlayerId.Parse(player.PlayerId);
+            string? sleeperId = null;
+            string? yahooId = null;
+            if (providerIds.TryGetValue(playerId, out var ids))
+            {
+                ids.TryGetValue("sleeper", out sleeperId);
+                ids.TryGetValue("yahoo", out yahooId);
+            }
+
+            var links = PlayerExternalLinks.Build(player.Name, player.Position, sleeperId, yahooId);
             Available.Add(new PlayerRow
             {
-                PlayerId = PlayerId.Parse(player.PlayerId),
+                PlayerId = playerId,
                 Rank = player.OverallRank,
                 Name = player.Name,
                 Position = player.Position,
@@ -505,7 +580,11 @@ public partial class DraftRoomViewModel : PageViewModel
                 StatusLabel = StatusCode(player.Status),
                 InjuryDetail = player.InjuryLine ?? "",
                 IsInjured = !string.Equals(player.Status, "Active", StringComparison.OrdinalIgnoreCase),
-                Tier = player.Tier
+                Tier = player.Tier,
+                HandcuffFor = player.HandcuffFor,
+                FantasyProsUrl = links.FantasyPros,
+                SleeperUrl = links.Sleeper,
+                YahooUrl = links.Yahoo
             });
         }
 
@@ -537,10 +616,12 @@ public partial class DraftRoomViewModel : PageViewModel
         foreach (var rosterTeam in state.Teams.OrderBy(item => item.DraftPosition).ThenBy(item => item.Label))
         {
             var isMine = userTeam is { } mine && rosterTeam.TeamId.Equals(mine);
+            policyByTeam.TryGetValue(rosterTeam.TeamId, out var rosterPolicy);
+            var rosterLabel = MockPersonalityCatalog.LabelWithPersonality(rosterTeam.Label, rosterPolicy);
             RosterTeams.Add(new TauntTargetOption
             {
                 TeamId = rosterTeam.TeamId,
-                Label = isMine ? $"{rosterTeam.Label} (you)" : rosterTeam.Label
+                Label = isMine ? $"{rosterLabel} (you)" : rosterLabel
             });
         }
 
@@ -554,7 +635,14 @@ public partial class DraftRoomViewModel : PageViewModel
         var previousTarget = SelectedTauntTarget?.TeamId;
         TauntTargets.Clear();
         foreach (var other in state.Teams.Where(team => userTeam is not { } mine || !team.TeamId.Equals(mine)))
-            TauntTargets.Add(new TauntTargetOption { TeamId = other.TeamId, Label = other.Label });
+        {
+            policyByTeam.TryGetValue(other.TeamId, out var tauntPolicy);
+            TauntTargets.Add(new TauntTargetOption
+            {
+                TeamId = other.TeamId,
+                Label = MockPersonalityCatalog.LabelWithPersonality(other.Label, tauntPolicy)
+            });
+        }
         SelectedTauntTarget = TauntTargets.FirstOrDefault(target => previousTarget is { } id && target.TeamId.Equals(id))
             ?? TauntTargets.FirstOrDefault(target => currentSlot is not null && target.TeamId.Equals(currentSlot.TeamId))
             ?? TauntTargets.FirstOrDefault();
@@ -625,9 +713,9 @@ public partial class DraftRoomViewModel : PageViewModel
             {
                 SlotCode = slot.SlotCode,
                 DisplayName = slot.DisplayName,
-                Player = slot.IsFilled ? slot.Player ?? "" : "Need",
+                Player = slot.IsFilled ? FilledRosterName(slot) : "Need",
                 Detail = slot.IsFilled
-                    ? $"{slot.RoundPick} · {slot.NflTeam}"
+                    ? slot.RoundPick ?? ""
                     : slot.Kind == SlotKind.Bench || slot.Kind == SlotKind.Inactive ? "open" : "empty",
                 Position = slot.Position ?? "",
                 IsFilled = slot.IsFilled,
@@ -642,6 +730,17 @@ public partial class DraftRoomViewModel : PageViewModel
         HasRosterBoard = true;
         RosterNeedsLine = board.NeedsLine;
         SetSelectedRosterPortrait(teamId);
+    }
+
+    private static string FilledRosterName(RosterBoardSlot slot)
+    {
+        var name = slot.Player ?? "";
+        var bits = new List<string>();
+        if (!string.IsNullOrWhiteSpace(slot.Position))
+            bits.Add(slot.Position);
+        if (!string.IsNullOrWhiteSpace(slot.NflTeam))
+            bits.Add(slot.NflTeam);
+        return bits.Count == 0 ? name : $"{name} · {string.Join(" · ", bits)}";
     }
 
     private void SetSelectedRosterPortrait(TeamId? teamId)
@@ -672,6 +771,134 @@ public partial class DraftRoomViewModel : PageViewModel
             return;
         _portraits.CopyTo(team.TeamId, dest);
         StatusMessage = $"Saved {team.Label} to {dest}.";
+    }
+
+    [RelayCommand]
+    private async Task PracticeFromHereAsync()
+    {
+        if (_session.DraftId is not { } draftId || IsMockPlaying)
+            return;
+
+        ResetAutoAsk();
+        _muteExternalReload = true;
+        try
+        {
+            var result = await _mock.StartPracticeAsync(draftId);
+            if (result.BranchId is { } branchId)
+                _session.BranchId = branchId;
+            StatusMessage = result.Succeeded
+                ? "Started a practice branch from the live draft. Play until your pick, or Step. Live draft takes you back."
+                : result.Error;
+        }
+        finally
+        {
+            _muteExternalReload = false;
+        }
+
+        await ReloadAsync();
+    }
+
+    [RelayCommand]
+    private async Task ReturnToLiveAsync()
+    {
+        if (_session.DraftId is not { } draftId || IsMockPlaying)
+            return;
+
+        ResetAutoAsk();
+        _muteExternalReload = true;
+        try
+        {
+            var result = await _mock.ReturnToLiveAsync(draftId);
+            if (result.BranchId is { } branchId)
+                _session.BranchId = branchId;
+            StatusMessage = result.Succeeded
+                ? "Back on the live draft. Practice picks stay on that practice branch."
+                : result.Error;
+        }
+        finally
+        {
+            _muteExternalReload = false;
+        }
+
+        await ReloadAsync();
+    }
+
+    [RelayCommand]
+    private async Task PlayMockAsync()
+    {
+        if (_session.DraftId is not { } draftId || IsMockPlaying)
+            return;
+
+        IsMockPlaying = true;
+        CanPlayMock = false;
+        _pauseMock = false;
+        _pendingBoardReaction = null;
+        _suppressBoardReaction = true;
+        _muteExternalReload = true;
+        var made = 0;
+        string? last = null;
+        try
+        {
+            while (!_pauseMock)
+            {
+                var result = await _mock.SimulateNextAsync(draftId, _session.BranchId);
+                if (result.IsUserPick)
+                {
+                    StatusMessage = made == 0
+                        ? "This is your pick. Draft, then Play until my pick."
+                        : $"CPU made {made} pick(s). This is your pick.";
+                    break;
+                }
+
+                if (result.IsComplete)
+                {
+                    StatusMessage = made == 0 ? "The draft is complete." : $"CPU made {made} pick(s). Draft complete.";
+                    break;
+                }
+
+                if (!result.Succeeded)
+                {
+                    StatusMessage = result.Error;
+                    break;
+                }
+
+                made += result.PicksMade;
+                last = $"{result.TeamName} ({result.Personality}) took {result.PlayerName}.";
+                StatusMessage = last;
+                await ReloadAsync();
+            }
+
+            if (_pauseMock)
+                StatusMessage = last is null ? "Paused." : $"Paused after {made} pick(s). {last}";
+        }
+        finally
+        {
+            _pauseMock = false;
+            _suppressBoardReaction = false;
+            _muteExternalReload = false;
+            IsMockPlaying = false;
+            await ReloadAsync();
+        }
+    }
+
+    [RelayCommand]
+    private void PauseMock() => _pauseMock = true;
+
+    [RelayCommand]
+    private async Task StepMockAsync()
+    {
+        if (_session.DraftId is not { } draftId || IsMockPlaying)
+            return;
+
+        var result = await _mock.SimulateNextAsync(draftId, _session.BranchId);
+        StatusMessage = result.IsUserPick
+            ? "This is your pick. Draft, then Play or Step the CPU."
+            : result.IsComplete
+                ? "The draft is complete."
+                : result.Succeeded
+                    ? $"{result.TeamName} ({result.Personality}) took {result.PlayerName}."
+                    : result.Error;
+        await ReloadAsync();
     }
 
     [RelayCommand]
@@ -982,7 +1209,7 @@ public partial class DraftRoomViewModel : PageViewModel
                 _conversationBranch = branchId;
                 _watchSeeded = false;
                 _seenWatchKeys.Clear();
-                _lastAutoAskOverall = -1;
+                ResetAutoAsk();
             }
 
             saved = await _responses.ListAsync(draftId, branchId);
@@ -1025,7 +1252,9 @@ public partial class DraftRoomViewModel : PageViewModel
                 Role = string.IsNullOrWhiteSpace(config?.Role) ? AiAnalysisMode.FastAdvisor : config.Role,
                 SpendLimit = config?.PerDraftSpendLimit,
                 IncludeInAsk = prior?.IncludeInAsk ?? true,
-                Status = config?.Enabled == true ? prior?.Status ?? (last is null ? "Idle" : "Saved") : "Disabled",
+                Status = config?.Enabled == true
+                    ? CopiedAnalystStatus(prior?.Status, last is null ? "Idle" : "Saved")
+                    : "Disabled",
                 Response = response ?? placeholder,
                 SpendLabel = spent > 0 ? AiCostEstimate.Label(spent) : ""
             });
@@ -1036,8 +1265,13 @@ public partial class DraftRoomViewModel : PageViewModel
 
     private async Task ReactToBoardAsync(AnalyticsSnapshot snapshot)
     {
-        if (_boardReactionBusy)
+        if (_suppressBoardReaction)
             return;
+        if (_boardReactionBusy)
+        {
+            _pendingBoardReaction = snapshot;
+            return;
+        }
         if (_session.DraftId is not { } draftId || _session.BranchId is not { } branchId)
             return;
 
@@ -1062,20 +1296,29 @@ public partial class DraftRoomViewModel : PageViewModel
             var watchTask = fresh.Count > 0
                 ? WatchAsync(draftId, branchId, fresh)
                 : Task.CompletedTask;
-            var askTask = AutoAskEnabled && onClock && snapshot.CurrentOverallPick != _lastAutoAskOverall
-                ? AskAdvisorsAsync(draftId, branchId, "Who should I take here?", auto: true)
+            var askTask = AutoAskTrigger.ShouldAsk(
+                    AutoAskEnabled,
+                    onClock,
+                    branchId,
+                    snapshot.CurrentOverallPick,
+                    _autoAskBranch,
+                    _lastAutoAskOverall)
+                ? AskAdvisorsAsync(draftId, branchId, "Who should I take here?", auto: true, snapshot.CurrentOverallPick)
                 : Task.CompletedTask;
-            if (AutoAskEnabled && onClock)
-                _lastAutoAskOverall = snapshot.CurrentOverallPick;
             await Task.WhenAll(watchTask, askTask);
         }
         finally
         {
             _boardReactionBusy = false;
+            if (_pendingBoardReaction is { } pending && !_suppressBoardReaction)
+            {
+                _pendingBoardReaction = null;
+                await ReactToBoardAsync(pending);
+            }
         }
     }
 
-    private async Task AskAdvisorsAsync(DraftId draftId, BranchId branchId, string prompt, bool auto)
+    private async Task AskAdvisorsAsync(DraftId draftId, BranchId branchId, string prompt, bool auto, int? overallPick = null)
     {
         if (Analysts.Count == 0)
             await RefreshAnalystsAsync();
@@ -1097,7 +1340,15 @@ public partial class DraftRoomViewModel : PageViewModel
             return;
 
         if (auto)
+        {
+            if (overallPick is { } pick)
+            {
+                _autoAskBranch = branchId;
+                _lastAutoAskOverall = pick;
+            }
+
             StatusMessage = "On the clock — asking advisors.";
+        }
         var version = StateVersion;
         await Task.WhenAll(advisors.Select(panel => AskOneAsync(panel, draftId, branchId, version, prompt)));
     }
@@ -1127,6 +1378,20 @@ public partial class DraftRoomViewModel : PageViewModel
         if (Analysts.Any(panel => panel.Enabled && AiAnalysisMode.IsWatcher(panel.Role)))
             return core + " Draft Watcher is on: it speaks when the board changes, not on Ask.";
         return core;
+    }
+
+    private void ResetAutoAsk()
+    {
+        _autoAskBranch = null;
+        _lastAutoAskOverall = -1;
+        _pendingBoardReaction = null;
+    }
+
+    private static string CopiedAnalystStatus(string? prior, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(prior) || prior.StartsWith("Generating", StringComparison.Ordinal))
+            return fallback;
+        return prior;
     }
 
     private static bool IsBusy(AiAnalystPanel panel) =>

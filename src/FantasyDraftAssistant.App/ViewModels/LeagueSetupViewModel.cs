@@ -146,6 +146,8 @@ public partial class LeagueSetupViewModel(
     public ObservableCollection<TeamRow> Teams { get; } = [];
     public ObservableCollection<RosterSlotEditor> Roster { get; } = [];
     public ObservableCollection<ScoringGroup> ScoringGroups { get; } = [];
+    public IReadOnlyList<DraftGuidelinePreset> GuidelinePresets { get; } = DraftGuidelinePresets.All;
+
     public IReadOnlyList<PortraitAiOption> PortraitProviders { get; } =
     [
         new() { Label = "Grok", ProviderKey = AiProviderCatalog.Xai },
@@ -155,6 +157,7 @@ public partial class LeagueSetupViewModel(
     [ObservableProperty] private string _leagueName = "";
     [ObservableProperty] private int _season = 2026;
     [ObservableProperty] private int _roundCount = 15;
+    [ObservableProperty] private string _draftGuidelines = "";
     [ObservableProperty] private string _rosterSummary = "";
     [ObservableProperty] private string _scoringSummary = "";
     [ObservableProperty]
@@ -183,6 +186,7 @@ public partial class LeagueSetupViewModel(
         LeagueName = league.Name;
         Season = league.Season;
         RoundCount = league.RoundCount;
+        DraftGuidelines = league.DraftGuidelines ?? "";
         if (league.Platform == FantasyPlatform.Yahoo)
         {
             StatusMessage = "Imported from Yahoo. Verify team names, first-round seats, and keepers before you start. A later Yahoo refresh will not overwrite draft order or keepers unless you ask it to.";
@@ -217,6 +221,22 @@ public partial class LeagueSetupViewModel(
         {
             _loading = false;
         }
+    }
+
+    [RelayCommand]
+    private void ApplyGuidelinePreset(DraftGuidelinePreset? preset)
+    {
+        if (preset is null)
+            return;
+        DraftGuidelines = preset.Body.Trim();
+        StatusMessage = $"Filled draft guidelines with {preset.Title}. Edit the text if you want, then Save.";
+    }
+
+    [RelayCommand]
+    private void ClearGuidelines()
+    {
+        DraftGuidelines = "";
+        StatusMessage = "Cleared draft guidelines. Save to store the empty notes.";
     }
 
     [RelayCommand]
@@ -256,7 +276,7 @@ public partial class LeagueSetupViewModel(
             return;
         }
 
-        await leagues.SaveLeagueDetailsAsync(id, LeagueName, Season, RoundCount);
+        await leagues.SaveLeagueDetailsAsync(id, LeagueName, Season, RoundCount, DraftGuidelines);
         await leagues.SaveTeamsAsync(new SaveTeamsRequest
         {
             LeagueId = id,

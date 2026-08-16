@@ -6,7 +6,7 @@
   <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
     <StackPanel Spacing="16">
       <TextBlock Text="Scenario Branches" Classes="h1" />
-      <TextBlock Text="A branch is a what-if timeline. It keeps picks before a chosen overall pick and lets you replay from there without changing the main draft."
+      <TextBlock Text="A branch is a what-if timeline. Practice drafts are branches. Switch to the main timeline to return to the live draft. Practice from here always starts a new run from the live pick."
                  Classes="muted" TextWrapping="Wrap" />
       <TextBlock Text="{Binding StatusMessage}" Classes="muted" TextWrapping="Wrap" />
       <TextBlock Text="{Binding ActiveSummary}" Classes="accent" TextWrapping="Wrap"
@@ -60,9 +60,13 @@
         </ItemsControl.ItemTemplate>
       </ItemsControl>
 
-      <Button Content="Open Draft Room" Classes="primary" HorizontalAlignment="Left"
-              IsVisible="{Binding HasDraft}"
-              Command="{Binding OpenRoomCommand}" />
+      <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasDraft}">
+        <Button Content="Practice from here" Classes="primary" HorizontalAlignment="Left"
+                Command="{Binding PracticeFromHereCommand}"
+                ToolTip.Tip="Fork this draft. Keepers stay. Other teams get a personality and pick from rankings." />
+        <Button Content="Open Draft Room" Classes="ghost" HorizontalAlignment="Left"
+                Command="{Binding OpenRoomCommand}" />
+      </StackPanel>
     </StackPanel>
   </ScrollViewer>
 </UserControl>

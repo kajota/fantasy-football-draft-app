@@ -13,8 +13,12 @@ public sealed class RecapTeamBlock
 {
     public required string Title { get; init; }
     public required string TeamKey { get; init; }
+    public required string Grade { get; init; }
+    public required string Headline { get; init; }
     public required string Detail { get; init; }
+    public required IReadOnlyList<string> Notes { get; init; }
     public required IReadOnlyList<string> Players { get; init; }
+    public bool HasNotes => Notes.Count > 0;
 }
 
 public partial class RecapViewModel(
@@ -94,7 +98,14 @@ public partial class RecapViewModel(
         var adp = await fantasyData.GetAdpAsync(sourceKey);
         if (adp.Count == 0)
             adp = await fantasyData.GetAdpAsync();
+        var rankings = await fantasyData.GetRankingsAsync(sourceKey);
+        if (rankings.Count == 0)
+            rankings = await fantasyData.GetRankingsAsync();
+        var projections = await fantasyData.GetProjectionsAsync(sourceKey);
+        if (projections.Count == 0)
+            projections = await fantasyData.GetProjectionsAsync();
         var players = (await drafts.GetPlayersAsync()).ToDictionary(p => p.PlayerId);
+        var playerList = players.Values.ToList();
 
         CanComplete = state.Draft.Status == DraftStatus.InProgress && state.CurrentSlot is null;
         Summary.Add($"{state.League.Name} · {state.Draft.Status} · {state.ActiveBranch.Name}");
@@ -123,17 +134,20 @@ public partial class RecapViewModel(
 
         HasValue = ValueLines.Count > 0;
 
-        foreach (var team in state.Teams.OrderBy(t => t.DraftPosition))
+        var grades = DraftGrader.Grade(state, playerList, rankings, adp, projections);
+        foreach (var grade in grades)
         {
-            var roster = await queries.GetTeamRosterAsync(context, team.TeamId);
-            var isUser = state.League.UserTeamId is { } mine && team.TeamId.Equals(mine);
+            var roster = await queries.GetTeamRosterAsync(context, grade.TeamId);
             Teams.Add(new RecapTeamBlock
             {
-                Title = isUser ? $"{team.Label} (you)" : team.Label,
-                TeamKey = team.TeamId.ToString(),
+                Title = grade.IsUser ? $"{grade.TeamName} (you)" : grade.TeamName,
+                TeamKey = grade.TeamId.ToString(),
+                Grade = grade.Letter,
+                Headline = grade.Headline,
                 Detail = roster.Players.Count == 0
                     ? "No picks yet."
-                    : $"{roster.Players.Count} player(s)",
+                    : $"{roster.Players.Count} player(s) · {grade.StarterPoints:0} starter pts",
+                Notes = grade.Notes,
                 Players = roster.Players
                     .Select(p => $"{p.RoundPick}  {p.Position}  {p.NflTeam}  {p.Name}")
                     .ToList()
@@ -142,9 +156,9 @@ public partial class RecapViewModel(
 
         HasTeams = Teams.Count > 0;
         StatusMessage = state.Draft.Status == DraftStatus.Completed
-            ? "Deterministic recap. Ask an AI provider in Draft Room if you want a narrative grade."
+            ? "Letter grades use ADP value, projected starters, and leftover holes. Refresh player data if ADP/projections look thin."
             : CanComplete
-                ? "Every slot is filled. Mark the draft complete when you are done."
-                : "Draft is still open. Names and totals below update as picks land.";
+                ? "Every slot is filled. Grades below are live; mark complete when you are done."
+                : "Draft is still open. Grades update as picks land.";
     }
 }

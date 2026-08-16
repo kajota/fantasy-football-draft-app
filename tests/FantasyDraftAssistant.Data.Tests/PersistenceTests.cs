@@ -287,6 +287,59 @@ public class PersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Practice_forks_keepers_and_cpu_picks_until_user()
+    {
+        var (draftId, player, teamId) = await CreateUnstartedDraftAsync();
+        var leagues = _services.GetRequiredService<ILeagueService>();
+        var commands = _services.GetRequiredService<IDraftCommandService>();
+        var states = _services.GetRequiredService<IDraftStateService>();
+        var mock = _services.GetRequiredService<IMockDraftService>();
+        var other = PlayerId.FromName("Saquon Barkley", "PHI", "RB");
+
+        await leagues.SaveKeepersAsync(new SaveKeepersRequest
+        {
+            DraftId = draftId,
+            Keepers = [new KeeperSpec { TeamId = teamId, PlayerId = other, RoundCost = 2 }]
+        });
+
+        var practice = await mock.StartPracticeAsync(draftId);
+        Assert.True(practice.Succeeded, practice.Error);
+        Assert.NotNull(practice.BranchId);
+
+        var policies = await mock.GetPoliciesAsync(draftId, practice.BranchId.Value);
+        Assert.Equal(4, policies.Count);
+        Assert.Contains(policies, policy => !policy.IsCpu && policy.TeamId.Equals(teamId));
+        Assert.Equal(3, policies.Count(policy => policy.IsCpu));
+
+        var forked = await states.GetWorkingStateAsync(draftId, practice.BranchId);
+        Assert.NotNull(forked);
+        var keeper = Assert.Single(forked.ActiveSelections.Values, selection => selection.Source == PickSource.Keeper);
+        Assert.Equal(other, keeper.PlayerId);
+
+        var onClock = await mock.SimulateNextAsync(draftId, practice.BranchId);
+        Assert.True(onClock.IsUserPick);
+
+        Assert.True((await commands.DraftPlayerAsync(new DraftPlayerCommand(draftId, player))).Succeeded);
+
+        var cpu = await mock.SimulateNextAsync(draftId, practice.BranchId);
+        Assert.True(cpu.Succeeded, cpu.Error);
+        Assert.False(cpu.IsUserPick);
+        Assert.False(string.IsNullOrWhiteSpace(cpu.PlayerName));
+
+        var after = await states.GetWorkingStateAsync(draftId, practice.BranchId);
+        Assert.NotNull(after);
+        Assert.Contains(after.ActiveSelections.Values, selection => selection.Source == PickSource.Simulation);
+        Assert.Contains(after.ActiveSelections.Values, selection => selection.Source == PickSource.Keeper);
+
+        var home = await mock.ReturnToLiveAsync(draftId);
+        Assert.True(home.Succeeded, home.Error);
+        var live = await states.GetWorkingStateAsync(draftId, home.BranchId);
+        Assert.NotNull(live);
+        Assert.True(live.ActiveBranch.ParentBranchId is null);
+        Assert.Equal(DraftStatus.InProgress, live.Draft.Status);
+    }
+
+    [Fact]
     public async Task Switch_branch_keeps_independent_timelines()
     {
         var (draftId, first) = await CreateStartedDraftAsync();
@@ -557,6 +610,86 @@ public class PersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Provider_ids_round_trip_for_external_links()
+    {
+        var writer = _services.GetRequiredService<IFantasyDataWriter>();
+        var playerId = PlayerId.FromName("Bijan Robinson", "ATL", "RB");
+        var player = new Player
+        {
+            PlayerId = playerId,
+            Name = "Bijan Robinson",
+            NflTeam = "ATL",
+            PrimaryPosition = PlayerPosition.RB,
+            EligiblePositions = [PlayerPosition.RB]
+        };
+        await writer.WriteAsync("sleeper", [player],
+            [new PlayerProviderId { PlayerId = playerId, ProviderKey = "sleeper", ExternalId = "9226" }],
+            [], [], [], CancellationToken.None);
+        await writer.WriteAsync("fantasypros", [player],
+            [
+                new PlayerProviderId { PlayerId = playerId, ProviderKey = "fantasypros", ExternalId = "17298" },
+                new PlayerProviderId { PlayerId = playerId, ProviderKey = "yahoo", ExternalId = "31002" }
+            ],
+            [], [], [], CancellationToken.None);
+
+        var ids = await writer.GetProviderIdsAsync();
+        Assert.Equal("9226", ids[playerId]["sleeper"]);
+        Assert.Equal("31002", ids[playerId]["yahoo"]);
+        Assert.Equal("17298", ids[playerId]["fantasypros"]);
+    }
+
+    [Fact]
+    public async Task Rank_spread_round_trips_into_decision_context()
+    {
+        var (draftId, _) = await CreateStartedDraftAsync();
+        var writer = _services.GetRequiredService<IFantasyDataWriter>();
+        var playerId = PlayerId.FromName("Bijan Robinson", "ATL", "RB");
+        var now = DateTimeOffset.UtcNow;
+        await writer.WriteAsync("fantasypros",
+            [
+                new Player
+                {
+                    PlayerId = playerId,
+                    Name = "Bijan Robinson",
+                    NflTeam = "ATL",
+                    PrimaryPosition = PlayerPosition.RB,
+                    EligiblePositions = [PlayerPosition.RB]
+                }
+            ],
+            [],
+            [
+                new PlayerRanking
+                {
+                    PlayerId = playerId,
+                    SourceKey = "fantasypros-half",
+                    OverallRank = 1,
+                    RankMin = 1,
+                    RankMax = 4,
+                    RankStd = 0.8,
+                    CachedAt = now
+                }
+            ],
+            [],
+            [],
+            CancellationToken.None);
+
+        var stored = await writer.GetRankingsAsync("fantasypros-half");
+        Assert.Equal(1, stored[playerId].RankMin);
+        Assert.Equal(4, stored[playerId].RankMax);
+        Assert.Equal(0.8, stored[playerId].RankStd);
+
+        var state = await _services.GetRequiredService<IDraftStateService>().GetWorkingStateAsync(draftId);
+        Assert.NotNull(state);
+        var context = await _services.GetRequiredService<IDraftQueryService>().GetDecisionContextAsync(
+            new QueryContext { DraftId = draftId, BranchId = state.ActiveBranch.BranchId });
+        var bijan = context.TopAvailable.First(player => player.Name == "Bijan Robinson");
+        Assert.Equal(1, bijan.RankMin);
+        Assert.Equal(4, bijan.RankMax);
+        Assert.Equal(0.8, bijan.RankStd);
+        Assert.Equal("1-4", bijan.RankRange);
+    }
+
+    [Fact]
     public async Task Scoring_can_be_saved_and_reloaded()
     {
         var leagues = _services.GetRequiredService<ILeagueService>();
@@ -615,6 +748,30 @@ public class PersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Draft_guidelines_round_trip_into_decision_context()
+    {
+        var (draftId, _) = await CreateStartedDraftAsync();
+        var leagues = _services.GetRequiredService<ILeagueService>();
+        var states = _services.GetRequiredService<IDraftStateService>();
+        var state = await states.GetWorkingStateAsync(draftId);
+        Assert.NotNull(state);
+
+        await leagues.SaveLeagueDetailsAsync(
+            state.League.LeagueId,
+            state.League.Name,
+            state.League.Season,
+            state.League.RoundCount,
+            "Don't suggest a K or DEF until the last two rounds.");
+
+        var saved = await leagues.GetLeagueAsync(state.League.LeagueId);
+        Assert.Equal("Don't suggest a K or DEF until the last two rounds.", saved?.DraftGuidelines);
+
+        var context = await _services.GetRequiredService<IDraftQueryService>().GetDecisionContextAsync(
+            new QueryContext { DraftId = draftId, BranchId = state.ActiveBranch.BranchId });
+        Assert.Equal("Don't suggest a K or DEF until the last two rounds.", context.League.DraftGuidelines);
+    }
+
+    [Fact]
     public async Task Decision_context_uses_one_qb_sheet_not_superflex()
     {
         var (draftId, _) = await CreateStartedDraftAsync();
@@ -626,6 +783,7 @@ public class PersistenceTests : IDisposable
             new QueryContext { DraftId = draftId, BranchId = state.ActiveBranch.BranchId });
 
         Assert.Equal("Half PPR 1-QB", context.League.ScoringProfile);
+        Assert.Null(context.League.DraftGuidelines);
         Assert.Equal("FantasyPros Half PPR 1-QB", context.RankingsSource);
         Assert.Contains(context.League.ScoringLines, line => line.StartsWith("Reception (PPR):", StringComparison.Ordinal));
         Assert.NotEmpty(context.MyRemainingNeeds);

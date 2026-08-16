@@ -120,5 +120,10 @@ public class SleeperProviderTests
 
         public Task<IReadOnlyList<string>> GetSourceKeysAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<string>>([]);
+
+        public Task<IReadOnlyDictionary<PlayerId, IReadOnlyDictionary<string, string>>> GetProviderIdsAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyDictionary<PlayerId, IReadOnlyDictionary<string, string>>>(
+                new Dictionary<PlayerId, IReadOnlyDictionary<string, string>>());
     }
 }

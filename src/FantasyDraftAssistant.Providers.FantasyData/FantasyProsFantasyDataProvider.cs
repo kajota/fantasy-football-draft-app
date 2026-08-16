@@ -121,6 +121,9 @@ public sealed class FantasyProsFantasyDataProvider(
                         OverallRank = row.OverallRank,
                         PositionRank = row.PositionRank,
                         Tier = row.Tier,
+                        RankMin = row.RankMin,
+                        RankMax = row.RankMax,
+                        RankStd = row.RankStd,
                         CachedAt = now,
                         SourceTimestamp = now
                     });

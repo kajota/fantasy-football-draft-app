@@ -70,6 +70,19 @@ public enum PickSource
     Simulation = 3
 }
 
+public enum MockPersonality
+{
+    BestAvailable = 0,
+    RbFirst = 1,
+    HeroRb = 2,
+    ZeroRb = 3,
+    WrHeavy = 4,
+    QbEarly = 5,
+    LateQb = 6,
+    RookieHunter = 7,
+    AdpHunter = 8
+}
+
 public enum DraftSourceMode
 {
     Manual = 0,
@@ -100,7 +113,8 @@ public enum AlertKind
     DraftRun = 2,
     OpponentNeed = 3,
     QbScarcity = 4,
-    PickApproaching = 5
+    PickApproaching = 5,
+    Handcuff = 6
 }
 
 public enum ScoringCategory

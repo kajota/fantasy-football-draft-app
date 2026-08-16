@@ -7,7 +7,7 @@
     <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
       <StackPanel Spacing="16">
         <TextBlock Text="Leagues" Classes="h1" />
-        <TextBlock Text="Create a league or jump into a mock draft. The mock refresh uses Sleeper when the network is up." Classes="muted" TextWrapping="Wrap" />
+        <TextBlock Text="Create a league or jump into a mock. Other seats pick from rankings with a personality. Sleeper refreshes when the network is up." Classes="muted" TextWrapping="Wrap" />
 
         <Border Classes="card">
           <StackPanel Spacing="12">

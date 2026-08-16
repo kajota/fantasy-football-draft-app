@@ -24,6 +24,9 @@ internal static class SqliteExtensions
     public static int? GetNullInt(this SqliteDataReader reader, int ordinal) =>
         reader.IsDBNull(ordinal) ? null : reader.GetInt32(ordinal);
 
+    public static double? GetNullDouble(this SqliteDataReader reader, int ordinal) =>
+        reader.IsDBNull(ordinal) ? null : reader.GetDouble(ordinal);
+
     public static DateTimeOffset? GetNullTime(this SqliteDataReader reader, int ordinal) =>
         reader.IsDBNull(ordinal) ? null : DateTimeOffset.Parse(reader.GetString(ordinal));
 

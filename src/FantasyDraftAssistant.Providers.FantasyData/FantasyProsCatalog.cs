@@ -16,6 +16,9 @@ public sealed class FantasyProsRankedPlayer
     public required int OverallRank { get; init; }
     public int? PositionRank { get; init; }
     public int? Tier { get; init; }
+    public int? RankMin { get; init; }
+    public int? RankMax { get; init; }
+    public double? RankStd { get; init; }
     public double? Adp { get; init; }
     public double? AverageRank { get; init; }
     public string? YahooId { get; init; }
@@ -217,6 +220,9 @@ public static class FantasyProsCatalog
             OverallRank = rank.Value,
             PositionRank = FirstInt(item, "pos_rank", "position_rank") ?? ParsePositionRank(FirstString(item, "pos_rank")),
             Tier = FirstInt(item, "tier", "player_tier", "ecr_tier"),
+            RankMin = FirstInt(item, "rank_min", "min"),
+            RankMax = FirstInt(item, "rank_max", "max"),
+            RankStd = FirstDouble(item, "rank_std", "std", "stdev"),
             Adp = FirstDouble(item, "player_adp", "adp", "rank_adp") is { } adp && adp is > 0 and < 400
                 ? adp
                 : null,

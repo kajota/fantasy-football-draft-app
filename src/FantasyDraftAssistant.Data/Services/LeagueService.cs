@@ -152,17 +152,19 @@ public sealed class LeagueService(SqliteConnectionFactory factory, IBackupServic
         return Task.FromResult(league);
     }
 
-    public Task SaveLeagueDetailsAsync(LeagueId leagueId, string name, int season, int roundCount, CancellationToken cancellationToken = default)
+    public Task SaveLeagueDetailsAsync(LeagueId leagueId, string name, int season, int roundCount, string? draftGuidelines = null, CancellationToken cancellationToken = default)
     {
+        var notes = string.IsNullOrWhiteSpace(draftGuidelines) ? null : draftGuidelines.Trim();
         using var db = factory.Open();
         using var cmd = db.Cmd("""
             UPDATE Leagues
-            SET Name = $name, Season = $season, RoundCount = $rounds
+            SET Name = $name, Season = $season, RoundCount = $rounds, DraftGuidelines = $notes
             WHERE LeagueId = $id;
             """)
             .Bind("$name", name.Trim())
             .Bind("$season", season)
             .Bind("$rounds", roundCount)
+            .Bind("$notes", notes)
             .Bind("$id", leagueId.ToString());
         cmd.ExecuteNonQuery();
         return Task.CompletedTask;
@@ -715,6 +717,7 @@ public sealed class LeagueService(SqliteConnectionFactory factory, IBackupServic
             RoundCount = reader.GetInt32(reader.GetOrdinal("RoundCount")),
             RosterSize = reader.GetInt32(reader.GetOrdinal("RosterSize")),
             DraftSourcePreference = Enum.Parse<DraftSourcePreference>(reader.GetString(reader.GetOrdinal("DraftSourcePreference"))),
+            DraftGuidelines = reader.GetNullString(reader.GetOrdinal("DraftGuidelines")),
             CreatedAt = reader.GetTime(reader.GetOrdinal("CreatedAt")),
             ArchivedAt = reader.GetNullTime(reader.GetOrdinal("ArchivedAt"))
         };

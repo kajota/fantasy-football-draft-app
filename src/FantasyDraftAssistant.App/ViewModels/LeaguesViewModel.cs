@@ -11,6 +11,7 @@ namespace FantasyDraftAssistant.App.ViewModels;
 public partial class LeaguesViewModel(
     ILeagueService leagues,
     IDraftCommandService commands,
+    IMockDraftService mock,
     IFantasyDataProviderRegistry fantasyData,
     SessionState session,
     Navigator navigator) : PageViewModel
@@ -110,6 +111,7 @@ public partial class LeaguesViewModel(
         session.DraftId = draft.DraftId;
         session.DraftName = draft.Name;
         session.BranchId = draft.ActiveBranchId;
+        await mock.SeedPoliciesAsync(draft.DraftId, draft.ActiveBranchId);
         await navigator.GoRoomAsync();
     }
 

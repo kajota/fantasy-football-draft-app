@@ -28,6 +28,54 @@
             <TextBlock Text="How many picks each team makes. This is not the number of teams — that is the list below. Standard 1-QB is usually 15; Superflex is usually 16."
                        Classes="muted" TextWrapping="Wrap" />
           </StackPanel>
+          <StackPanel Spacing="4">
+            <TextBlock Text="Draft guidelines for AI" FontWeight="SemiBold" />
+            <TextBlock Text="Plain-language notes the analysts should follow when advising YOUR picks in this league. They do not change the board or the CPU mock. A preset fills the box; edit it, then Save."
+                       Classes="muted" TextWrapping="Wrap" />
+            <WrapPanel Margin="0,0,0,4">
+              <Button Content="House rules" Classes="ghost" Margin="0,0,8,8"
+                      Command="{Binding ApplyGuidelinePresetCommand}"
+                      CommandParameter="{Binding GuidelinePresets[0]}"
+                      ToolTip.Tip="Wait on K/DEF and skip backup QB/TE unless the value is obvious." />
+              <Button Content="Best available" Classes="ghost" Margin="0,0,8,8"
+                      Command="{Binding ApplyGuidelinePresetCommand}"
+                      CommandParameter="{Binding GuidelinePresets[1]}"
+                      ToolTip.Tip="Take rank/ADP value. Do not reach far for need early." />
+              <Button Content="Zero RB" Classes="ghost" Margin="0,0,8,8"
+                      Command="{Binding ApplyGuidelinePresetCommand}"
+                      CommandParameter="{Binding GuidelinePresets[2]}"
+                      ToolTip.Tip="WR-heavy early. Wait on RB unless an elite one falls." />
+              <Button Content="Hero RB" Classes="ghost" Margin="0,0,8,8"
+                      Command="{Binding ApplyGuidelinePresetCommand}"
+                      CommandParameter="{Binding GuidelinePresets[3]}"
+                      ToolTip.Tip="One early RB, then WR. Do not take RB2 early." />
+              <Button Content="RB first" Classes="ghost" Margin="0,0,8,8"
+                      Command="{Binding ApplyGuidelinePresetCommand}"
+                      CommandParameter="{Binding GuidelinePresets[4]}"
+                      ToolTip.Tip="Secure two starting RBs early, then best available." />
+              <Button Content="Late QB" Classes="ghost" Margin="0,0,8,8"
+                      Command="{Binding ApplyGuidelinePresetCommand}"
+                      CommandParameter="{Binding GuidelinePresets[5]}"
+                      ToolTip.Tip="1-QB plan. Wait on quarterback unless an elite one falls." />
+              <Button Content="Superflex QB" Classes="ghost" Margin="0,0,8,8"
+                      Command="{Binding ApplyGuidelinePresetCommand}"
+                      CommandParameter="{Binding GuidelinePresets[6]}"
+                      ToolTip.Tip="Get a QB early and a second before the cliff." />
+              <Button Content="TE premium" Classes="ghost" Margin="0,0,8,8"
+                      Command="{Binding ApplyGuidelinePresetCommand}"
+                      CommandParameter="{Binding GuidelinePresets[7]}"
+                      ToolTip.Tip="Take a top TE near ADP instead of a replacement-level TE later." />
+              <Button Content="Clear" Classes="ghost" Margin="0,0,8,8"
+                      Command="{Binding ClearGuidelinesCommand}"
+                      ToolTip.Tip="Empty the notes. Analysts then use no extra user rules." />
+            </WrapPanel>
+            <TextBox Text="{Binding DraftGuidelines}"
+                     AcceptsReturn="True"
+                     TextWrapping="Wrap"
+                     MinHeight="110"
+                     PlaceholderText="Don't suggest a K or DEF until the last two rounds.&#x0a;Don't suggest a backup QB or TE unless the value is clearly too good to pass."
+                     ToolTip.Tip="The analysts read this on every Ask. Example: wait on K/DEF; skip backup QB/TE unless the value is obvious." />
+          </StackPanel>
         </StackPanel>
       </Border>
       <Border Classes="card">
@@ -166,7 +214,7 @@
           </ItemsControl>
           <StackPanel Orientation="Horizontal" Spacing="12">
             <Button Content="Save" Classes="primary" Command="{Binding SaveCommand}"
-                    ToolTip.Tip="Save league name, roster, scoring, and teams. Scoring also saves as you edit it." />
+                    ToolTip.Tip="Save league name, draft guidelines, roster, scoring, and teams. Scoring also saves as you edit it." />
             <TextBlock Text="{Binding SaveNotice}" Classes="ready" VerticalAlignment="Center"
                        IsVisible="{Binding HasSaveNotice}" />
           </StackPanel>

@@ -37,6 +37,10 @@ public sealed class PlayerValuation
     public int? OverallRank { get; init; }
     public int? PositionRank { get; init; }
     public int? Tier { get; init; }
+    public int? RankMin { get; init; }
+    public int? RankMax { get; init; }
+    public double? RankStd { get; init; }
+    public string? RankRange { get; init; }
     public double? OverallAdp { get; init; }
     public string? AdpRoundPick { get; init; }
     public decimal? ProjectedPoints { get; init; }
@@ -169,10 +173,25 @@ public static class AnalyticsEngine
             OverallRank = ranking?.OverallRank,
             PositionRank = ranking?.PositionRank,
             Tier = ranking?.Tier,
+            RankMin = ranking?.RankMin,
+            RankMax = ranking?.RankMax,
+            RankStd = ranking?.RankStd,
+            RankRange = FormatRankRange(ranking?.RankMin, ranking?.RankMax),
             OverallAdp = playerAdp?.OverallAdp,
             AdpRoundPick = playerAdp is null ? null : AdpConverter.FormatRoundPick(playerAdp.OverallAdp, teamCount),
             ProjectedPoints = projection is null ? null : ProjectionScorer.Score(projection, scoring)
         };
+    }
+
+    public static string? FormatRankRange(int? min, int? max)
+    {
+        if (min is { } low && max is { } high)
+            return $"{low}-{high}";
+        if (min is { } onlyMin)
+            return $"{onlyMin}-";
+        if (max is { } onlyMax)
+            return $"-{onlyMax}";
+        return null;
     }
 
     private static List<DraftAlert> BuildAlerts(
@@ -293,8 +312,47 @@ public static class AnalyticsEngine
             }
         }
 
+        if (state.League.UserTeamId is { } user)
+        {
+            var roster = state.SelectionsForTeam(user)
+                .Select(selection => players.TryGetValue(selection.PlayerId, out var owned)
+                    ? ToHandcuff(owned, rankings, adp)
+                    : null)
+                .Where(owned => owned is not null)
+                .Select(owned => owned!)
+                .ToList();
+            foreach (var cuff in players.Values
+                         .Where(player => !state.UnavailablePlayers.Contains(player.PlayerId))
+                         .Select(player => (Player: player, Match: HandcuffMatcher.For(ToHandcuff(player, rankings, adp), roster)))
+                         .Where(item => item.Match is not null)
+                         .OrderBy(item => rankings.TryGetValue(item.Player.PlayerId, out var ranking) ? ranking.OverallRank : 999)
+                         .Take(2))
+            {
+                alerts.Add(new DraftAlert
+                {
+                    Kind = AlertKind.Handcuff,
+                    Severity = 2,
+                    Message = $"{cuff.Player.Name} is still available as a {cuff.Match!.StarterName} handcuff."
+                });
+            }
+        }
+
         _ = draftedByPosition;
-        _ = adp;
         return alerts.OrderByDescending(a => a.Severity).Take(5).ToList();
+    }
+
+    private static HandcuffPlayer ToHandcuff(
+        Player player,
+        IReadOnlyDictionary<PlayerId, PlayerRanking> rankings,
+        IReadOnlyDictionary<PlayerId, PlayerAdp> adp)
+    {
+        rankings.TryGetValue(player.PlayerId, out var ranking);
+        adp.TryGetValue(player.PlayerId, out var playerAdp);
+        return new HandcuffPlayer(
+            player.Name,
+            player.NflTeam,
+            player.PrimaryPosition,
+            ranking?.OverallRank,
+            playerAdp?.OverallAdp);
     }
 }

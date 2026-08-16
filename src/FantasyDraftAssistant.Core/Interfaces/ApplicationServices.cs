@@ -8,6 +8,15 @@ using FantasyDraftAssistant.Core.Yahoo;
 
 namespace FantasyDraftAssistant.Core.Interfaces;
 
+public interface IMockDraftService
+{
+    Task<IReadOnlyList<MockSeatPolicy>> GetPoliciesAsync(DraftId draftId, BranchId branchId, CancellationToken cancellationToken = default);
+    Task SeedPoliciesAsync(DraftId draftId, BranchId branchId, CancellationToken cancellationToken = default);
+    Task<MockPickResult> StartPracticeAsync(DraftId draftId, CancellationToken cancellationToken = default);
+    Task<MockPickResult> ReturnToLiveAsync(DraftId draftId, CancellationToken cancellationToken = default);
+    Task<MockPickResult> SimulateNextAsync(DraftId draftId, BranchId? branchId = null, CancellationToken cancellationToken = default);
+}
+
 public interface IDraftCommandService
 {
     Task<DraftCommitResult> StartDraftAsync(StartDraftCommand command, CancellationToken cancellationToken = default);
@@ -39,7 +48,7 @@ public interface ILeagueService
     Task RestoreLeagueAsync(LeagueId leagueId, CancellationToken cancellationToken = default);
     Task DeleteLeaguePermanentlyAsync(LeagueId leagueId, CancellationToken cancellationToken = default);
     Task<League> CreateLeagueAsync(CreateLeagueRequest request, CancellationToken cancellationToken = default);
-    Task SaveLeagueDetailsAsync(LeagueId leagueId, string name, int season, int roundCount, CancellationToken cancellationToken = default);
+    Task SaveLeagueDetailsAsync(LeagueId leagueId, string name, int season, int roundCount, string? draftGuidelines = null, CancellationToken cancellationToken = default);
     Task<League?> GetLeagueAsync(LeagueId leagueId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Team>> GetTeamsAsync(LeagueId leagueId, CancellationToken cancellationToken = default);
     Task SaveTeamsAsync(SaveTeamsRequest request, CancellationToken cancellationToken = default);
@@ -151,6 +160,7 @@ public interface IFantasyDataWriter
     Task<IReadOnlyDictionary<PlayerId, PlayerProjection>> GetProjectionsAsync(string? sourceKey = null, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<FantasyDataRefreshInfo>> GetRefreshInfoAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<string>> GetSourceKeysAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyDictionary<PlayerId, IReadOnlyDictionary<string, string>>> GetProviderIdsAsync(CancellationToken cancellationToken = default);
 }
 
 public interface IAiProviderAdapter

@@ -16,6 +16,30 @@
         </ToolTip.Tip>
       </TextBlock>
     </DataTemplate>
+    <DataTemplate x:Key="PlayerNameWithLinksTemplate" x:DataType="vm:PlayerRow">
+      <StackPanel MinWidth="0" Spacing="1">
+        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+        <TextBlock Text="{Binding HandcuffLabel}" FontSize="11" FontWeight="SemiBold"
+                   Foreground="{StaticResource AccentBrush}"
+                   IsVisible="{Binding IsHandcuff}"
+                   TextTrimming="CharacterEllipsis"
+                   ToolTip.Tip="{Binding HandcuffDetail}" />
+        <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasExternalLinks}">
+          <HyperlinkButton Content="FPros" NavigateUri="{Binding FantasyProsUri}"
+                           IsVisible="{Binding HasFantasyProsLink}"
+                           FontSize="11" Padding="0"
+                           ToolTip.Tip="Open FantasyPros ranks, news, and outlook" />
+          <HyperlinkButton Content="Sleep" NavigateUri="{Binding SleeperUri}"
+                           IsVisible="{Binding HasSleeperLink}"
+                           FontSize="11" Padding="0"
+                           ToolTip.Tip="Open this player on Sleeper" />
+          <HyperlinkButton Content="Yahoo" NavigateUri="{Binding YahooUri}"
+                           IsVisible="{Binding HasYahooLink}"
+                           FontSize="11" Padding="0"
+                           ToolTip.Tip="Open this player on Yahoo" />
+        </StackPanel>
+      </StackPanel>
+    </DataTemplate>
     <DataTemplate x:Key="RosterSlotTemplate" x:DataType="vm:RosterSlotRow">
       <Border Margin="0,0,0,3" Padding="6,4" CornerRadius="3" Background="{Binding Fill}">
         <Grid ColumnDefinitions="72,*,Auto" ColumnSpacing="6" MinWidth="0">
@@ -79,6 +103,37 @@
             <Run Text="    " />
             <Run Text="{Binding UserNext}" />
           </TextBlock>
+          <DockPanel Margin="0,8,0,0" LastChildFill="True">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8" Margin="12,0,0,0">
+              <Button Content="Practice from here" Classes="ghost"
+                      IsVisible="{Binding HasDraft}"
+                      IsEnabled="{Binding !IsMockPlaying}"
+                      Command="{Binding PracticeFromHereCommand}"
+                      ToolTip.Tip="Start a new practice from the live draft's current pick. Keepers stay. Does not change the real board." />
+              <Button Content="Live draft" Classes="ghost"
+                      IsVisible="{Binding CanReturnToLive}"
+                      IsEnabled="{Binding !IsMockPlaying}"
+                      Command="{Binding ReturnToLiveCommand}"
+                      ToolTip.Tip="Leave this practice branch and return to the real draft. Practice picks stay saved on the practice timeline." />
+              <Button Content="Play until my pick" Classes="primary"
+                      IsVisible="{Binding HasMockSession}"
+                      IsEnabled="{Binding CanPlayMock}"
+                      Command="{Binding PlayMockCommand}"
+                      ToolTip.Tip="CPU seats pick from rankings and their personality until you are on the clock." />
+              <Button Content="Step" Classes="ghost"
+                      IsVisible="{Binding HasMockSession}"
+                      IsEnabled="{Binding CanPlayMock}"
+                      Command="{Binding StepMockCommand}"
+                      ToolTip.Tip="Make the next CPU pick only." />
+              <Button Content="Pause" Classes="ghost"
+                      IsVisible="{Binding IsMockPlaying}"
+                      Command="{Binding PauseMockCommand}"
+                      ToolTip.Tip="Stop after the current CPU pick." />
+            </StackPanel>
+            <TextBlock Text="{Binding MockStatusLine}" Classes="muted" TextWrapping="Wrap"
+                       VerticalAlignment="Center"
+                       IsVisible="{Binding HasMockSession}" />
+          </DockPanel>
         </StackPanel>
       </DockPanel>
     </Border>
@@ -159,9 +214,11 @@
                 <ListBox ItemsSource="{Binding Available}" SelectedItem="{Binding SelectedPlayer}" Background="Transparent">
                   <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="vm:PlayerRow">
+                      <Border Background="{Binding HandcuffFill}" CornerRadius="3" Padding="0,1">
                       <Grid ColumnDefinitions="32,*,28,36,36,48,44" MinWidth="0">
-                        <TextBlock Text="{Binding Rank}" Classes="muted" />
-                        <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Rank}" Classes="muted" VerticalAlignment="Center" />
+                        <ContentControl Grid.Column="1" Content="{Binding}"
+                                        ContentTemplate="{StaticResource PlayerNameWithLinksTemplate}" />
                         <TextBlock Grid.Column="2" Text="{Binding StatusLabel}" Classes="danger" FontWeight="SemiBold"
                                    ToolTip.Tip="{Binding InjuryDetail}" />
                         <TextBlock Grid.Column="3" Text="{Binding Position}" />
@@ -169,6 +226,7 @@
                         <TextBlock Grid.Column="5" Text="{Binding Adp}" />
                         <TextBlock Grid.Column="6" Text="{Binding ProjLabel}" />
                       </Grid>
+                      </Border>
                     </DataTemplate>
                   </ListBox.ItemTemplate>
                 </ListBox>
@@ -448,10 +506,11 @@
             <ListBox ItemsSource="{Binding Available}" SelectedItem="{Binding SelectedPlayer}" Background="Transparent">
               <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="vm:PlayerRow">
+                  <Border Background="{Binding HandcuffFill}" CornerRadius="3" Padding="0,1">
                   <Grid ColumnDefinitions="40,*,36,50,50,60,60,50" MinWidth="0">
-                    <TextBlock Text="{Binding Rank}" Classes="muted" />
-                    <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
-                               ToolTip.Tip="{Binding InjuryDetail}" />
+                    <TextBlock Text="{Binding Rank}" Classes="muted" VerticalAlignment="Center" />
+                    <ContentControl Grid.Column="1" Content="{Binding}"
+                                    ContentTemplate="{StaticResource PlayerNameWithLinksTemplate}" />
                     <TextBlock Grid.Column="2" Text="{Binding StatusLabel}" Classes="danger" FontWeight="SemiBold"
                                ToolTip.Tip="{Binding InjuryDetail}" />
                     <TextBlock Grid.Column="3" Text="{Binding Position}" />
@@ -460,6 +519,7 @@
                     <TextBlock Grid.Column="6" Text="{Binding ProjLabel}" />
                     <TextBlock Grid.Column="7" Text="{Binding Tier}" Classes="muted" />
                   </Grid>
+                  </Border>
                 </DataTemplate>
               </ListBox.ItemTemplate>
             </ListBox>

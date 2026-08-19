@@ -7,4 +7,20 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Deterministic>true</Deterministic>
   </PropertyGroup>
+
+  <!-- Versioning is derived from git tags by MinVer (see Directory.Packages.props).
+       Tag a release as e.g. `git tag v0.6.0` — builds on that commit are 0.6.0, and
+       later commits become 0.6.1-alpha.0.<height>+<sha> until the next tag. -->
+  <PropertyGroup>
+    <MinVerTagPrefix>v</MinVerTagPrefix>
+    <MinVerDefaultPreReleaseIdentifiers>alpha.0</MinVerDefaultPreReleaseIdentifiers>
+  </PropertyGroup>
+
+  <!-- MinVer would otherwise pin AssemblyVersion to major.0.0.0, which reads as 0.0.0.0
+       while we are pre-1.0. Track major.minor instead. -->
+  <Target Name="SetAssemblyVersionFromMinVer" AfterTargets="MinVer">
+    <PropertyGroup>
+      <AssemblyVersion>$(MinVerMajor).$(MinVerMinor).0.0</AssemblyVersion>
+    </PropertyGroup>
+  </Target>
 </Project>

@@ -18,6 +18,12 @@ public partial class ShellViewModel : ObservableObject
 
     public SessionState Session { get; }
 
+    public string VersionLabel { get; } = $"v{AppVersion.Display}";
+
+    public string VersionTooltip { get; } = AppVersion.Commit is { } sha
+        ? $"Fantasy Draft Assistant {AppVersion.Display} (commit {sha})"
+        : $"Fantasy Draft Assistant {AppVersion.Display}";
+
     [ObservableProperty] private PageViewModel _currentPage = null!;
     [ObservableProperty] private string _activeNav = "leagues";
 

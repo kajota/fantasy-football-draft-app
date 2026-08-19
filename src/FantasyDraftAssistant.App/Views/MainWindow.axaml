@@ -15,6 +15,9 @@
           <TextBlock Text="Assistant" Classes="h2" />
           <TextBlock Text="{Binding Session.LeagueName, FallbackValue='No league selected'}" Classes="muted" TextWrapping="Wrap" Margin="0,8,0,0" />
         </StackPanel>
+        <TextBlock DockPanel.Dock="Bottom" Text="{Binding VersionLabel}" Classes="muted"
+                   FontSize="11" Margin="0,20,0,0" Opacity="0.7"
+                   ToolTip.Tip="{Binding VersionTooltip}" />
         <StackPanel Spacing="4">
           <Button Content="Leagues" Classes="nav" Command="{Binding GoLeaguesCommand}" />
           <Button Content="League Setup" Classes="nav" Command="{Binding GoSetupCommand}" />

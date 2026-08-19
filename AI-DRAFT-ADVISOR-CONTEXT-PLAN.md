@@ -2,6 +2,25 @@
 
 Living plan for improving the information and prompts sent to AI draft advisors.
 
+## Status — 2026-08-18
+
+First slice implemented, plus deterministic extras. `dotnet test` green (153 Core, 71 Data).
+
+- New context fields: `recentPicks` (named, oldest first), `upcomingPicks` (with `isUser`), `myUpcomingPicks` (user's full remaining pick schedule), `interveningTeams` (only teams before the user's next pick; full roster while ≤7 players, otherwise position counts + last 3 additions), `currentTeamRoster`, `dataFreshness` (timestamps plus precomputed ages), `tierCliffs`, `positionThreats`, `myByeWeeks`, `generatedAt`, `status.userNextOverallPick`.
+- Player annotations on available/queue rows: `nextPickOutlook` (likely gone / coin flip / likely back from ADP vs the user's next pick, band widened by rankStd) and `pointsAboveReplacement` (vs league-demand replacement baseline). Deterministic math lives in `Core/Analytics/DecisionContextMath.cs`.
+- Available pool deepened to 200 (was 80) so `availableRookies` is no longer capped by the top of the board; AI slices unchanged in size.
+- `interveningTeamNeeds` renamed to `allTeamNeeds` (it always contained every team). Prompt fixed (`ranksSource` → `rankingsSource`), explains all new fields, adds the decision rubric, close-call honesty, stale-data mention, and "current JSON beats conversation memory".
+- Tests: `Core.Tests/DecisionContextMathTests.cs`, `Data.Tests/DecisionContextTests.cs`.
+
+Second slice implemented 2026-08-18, plus keeper-league support:
+
+- `AiAnalysisRequest.recentTurns` carries up to 3 of the same provider's prior advice turns (oldest first, answers trimmed to 1200 chars) into manual asks only — auto-ask, watch, and taunt turns neither send nor enter the window. Selection logic is `Core/Ai/ConversationWindow.cs`.
+- `AiResponses` gained a `PromptKind` column (migration `010`) so taunt/watch turns are excluded from windows; advice turns store null.
+- The prompt renders the window in a delimited block, tells the model the JSON wins every factual conflict, and asks it to briefly explain when its recommendation changes from an earlier turn.
+- Keeper leagues: `league.keeperNote` appears in the decision context when the board has keeper selections; the prompt treats keeper upside as a late-round tiebreaker (bump high-upside rookies/young players in roughly the last four rounds, never over starting-lineup needs); a "Keeper upside" guideline preset covers the keep-one-from-round-4+ rule for League Setup.
+
+Remaining slices below are unchanged: outside/live data (third), read-only AI tools (later).
+
 ## Goal
 
 Make connected AI advisors better at live fantasy football draft help by giving them the same practical context a human draft assistant would use: league rules, scoring, roster state, draft flow, opponent needs, player value, injury freshness, and the user's own draft preferences.

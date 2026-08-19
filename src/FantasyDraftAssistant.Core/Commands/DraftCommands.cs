@@ -87,6 +87,7 @@ public sealed record TeamDraftPosition
     public string? PortraitNotes { get; init; }
     public required int DraftPosition { get; init; }
     public string? ExternalTeamId { get; init; }
+    public MockPersonality? PracticePersonality { get; init; }
 }
 
 public sealed class SaveRosterRequest

@@ -168,6 +168,17 @@ public sealed class AiAnalysisRequest
     public string? PromptKind { get; init; }
     public string? TauntStyle { get; init; }
     public string? TauntTarget { get; init; }
+
+    // Prior advice turns for this provider, oldest first. Manual asks only;
+    // the current decision context always outranks this history.
+    public IReadOnlyList<AiConversationExchange> RecentTurns { get; init; } = [];
+}
+
+public sealed class AiConversationExchange
+{
+    public required string Question { get; init; }
+    public required string Answer { get; init; }
+    public int StateVersion { get; init; }
 }
 
 public sealed class AiProviderConfig

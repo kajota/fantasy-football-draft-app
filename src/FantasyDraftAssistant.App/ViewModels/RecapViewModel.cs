@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FantasyDraftAssistant.Core.Analytics;
 using FantasyDraftAssistant.Core.Commands;
+using FantasyDraftAssistant.Core.Engine;
 using FantasyDraftAssistant.Core.Enums;
 using FantasyDraftAssistant.Core.Interfaces;
 using FantasyDraftAssistant.Core.Query;
@@ -18,7 +19,9 @@ public sealed class RecapTeamBlock
     public required string Detail { get; init; }
     public required IReadOnlyList<string> Notes { get; init; }
     public required IReadOnlyList<string> Players { get; init; }
+    public string Personality { get; init; } = "";
     public bool HasNotes => Notes.Count > 0;
+    public bool HasPersonality => Personality.Length > 0;
 }
 
 public partial class RecapViewModel(
@@ -28,6 +31,7 @@ public partial class RecapViewModel(
     IDraftQueryService queries,
     IDraftCommandService commands,
     IFantasyDataWriter fantasyData,
+    IMockDraftService mock,
     SessionState session,
     Navigator navigator) : PageViewModel
 {
@@ -138,10 +142,14 @@ public partial class RecapViewModel(
 
         HasValue = ValueLines.Count > 0;
 
+        // Practice branches have seat policies; the live board has none, so
+        // personality lines only appear on practice recaps.
+        var policies = await mock.GetPoliciesAsync(draftId, state.ActiveBranch.BranchId);
         var grades = DraftGrader.Grade(state, playerList, rankings, adp, projections);
         foreach (var grade in grades)
         {
             var roster = await queries.GetTeamRosterAsync(context, grade.TeamId);
+            var policy = policies.FirstOrDefault(p => p.TeamId.Equals(grade.TeamId));
             Teams.Add(new RecapTeamBlock
             {
                 Title = grade.IsUser ? $"{grade.TeamName} (you)" : grade.TeamName,
@@ -154,7 +162,10 @@ public partial class RecapViewModel(
                 Notes = grade.Notes,
                 Players = roster.Players
                     .Select(p => $"{p.RoundPick}  {p.Position}  {p.NflTeam}  {p.Name}")
-                    .ToList()
+                    .ToList(),
+                Personality = policy is { IsCpu: true }
+                    ? $"CPU personality: {MockPersonalityCatalog.Title(policy.Personality)}"
+                    : ""
             });
         }
 

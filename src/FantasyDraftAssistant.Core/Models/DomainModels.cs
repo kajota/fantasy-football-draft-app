@@ -32,6 +32,10 @@ public sealed class Team
     public int DraftPosition { get; set; }
     public string? ExternalTeamId { get; set; }
 
+    // Preferred CPU drafting style for practice/mock drafts. Null means the
+    // practice draft deals this seat a random personality.
+    public MockPersonality? PracticePersonality { get; set; }
+
     public string Label => string.IsNullOrWhiteSpace(DisplayLabel) ? Name : DisplayLabel;
 }
 

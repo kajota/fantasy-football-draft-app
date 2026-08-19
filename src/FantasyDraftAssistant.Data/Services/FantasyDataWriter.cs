@@ -25,6 +25,13 @@ public sealed class FantasyDataWriter(SqliteConnectionFactory factory) : IFantas
                    .Bind("$k", providerKey).Bind("$n", providerKey))
             cmd.ExecuteNonQuery();
 
+        // Sleeper is the injury/status feed of record: its writes always apply,
+        // including recoveries back to Active. Other providers (FantasyPros
+        // sheets, seed data) may flag an injury they know about, but must not
+        // reset an existing non-Active status to Active — their player rows
+        // default to Active even when they carry no injury data at all.
+        var statusAuthority = string.Equals(providerKey, "sleeper", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+
         foreach (var player in players)
         {
             using (var cmd = db.Cmd("""
@@ -36,8 +43,10 @@ public sealed class FantasyDataWriter(SqliteConnectionFactory factory) : IFantas
                     PrimaryPosition = excluded.PrimaryPosition,
                     ByeWeek = excluded.ByeWeek,
                     YearsExp = COALESCE(excluded.YearsExp, Players.YearsExp),
-                    Status = excluded.Status,
-                    StatusUpdatedAt = excluded.StatusUpdatedAt,
+                    Status = CASE WHEN $auth = 1 OR excluded.Status <> 'Active'
+                        THEN excluded.Status ELSE Players.Status END,
+                    StatusUpdatedAt = CASE WHEN $auth = 1 OR excluded.Status <> 'Active'
+                        THEN excluded.StatusUpdatedAt ELSE Players.StatusUpdatedAt END,
                     InjuryBodyPart = COALESCE(excluded.InjuryBodyPart, Players.InjuryBodyPart),
                     InjuryNotes = COALESCE(excluded.InjuryNotes, Players.InjuryNotes),
                     InjuryStartedOn = COALESCE(excluded.InjuryStartedOn, Players.InjuryStartedOn);
@@ -48,6 +57,7 @@ public sealed class FantasyDataWriter(SqliteConnectionFactory factory) : IFantas
                        .Bind("$pos", player.PrimaryPosition.ToString())
                        .Bind("$bye", player.ByeWeek)
                        .Bind("$years", player.YearsExp)
+                       .Bind("$auth", statusAuthority)
                        .Bind("$status", player.Status.ToString())
                        .Bind("$updated", player.StatusUpdatedAt?.ToString("O"))
                        .Bind("$part", player.InjuryBodyPart)

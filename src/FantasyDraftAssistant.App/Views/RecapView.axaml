@@ -65,6 +65,9 @@
                       <views:TeamPortraitTip TeamKey="{Binding TeamKey}" />
                     </ToolTip.Tip>
                   </TextBlock>
+                  <TextBlock Text="{Binding Personality}" Classes="muted" FontStyle="Italic"
+                             IsVisible="{Binding HasPersonality}"
+                             ToolTip.Tip="The drafting style the CPU used for this seat in this practice draft." />
                   <TextBlock Text="{Binding Headline}" FontWeight="SemiBold" TextWrapping="Wrap" />
                   <TextBlock Text="{Binding Detail}" Classes="muted" />
                   <ItemsControl ItemsSource="{Binding Notes}" IsVisible="{Binding HasNotes}">

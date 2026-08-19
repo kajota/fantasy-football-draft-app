@@ -25,6 +25,7 @@ public sealed class LeagueSettingsDto
     public required string ScoringProfile { get; init; }
     public required IReadOnlyList<string> ScoringLines { get; init; }
     public string? DraftGuidelines { get; init; }
+    public string? KeeperNote { get; init; }
 }
 
 public sealed class DraftStatusDto
@@ -37,6 +38,7 @@ public sealed class DraftStatusDto
     public required string CurrentRoundPick { get; init; }
     public string? CurrentTeam { get; init; }
     public string? UserNextRoundPick { get; init; }
+    public int? UserNextOverallPick { get; init; }
     public int PicksUntilUser { get; init; }
 }
 
@@ -86,6 +88,10 @@ public sealed class PlayerSummaryDto
     public string? HandcuffFor { get; init; }
     public string? SharedByeWith { get; init; }
     public int? SharedByeWeek { get; init; }
+
+    // Decision-context annotations, set after mapping. Mutable on purpose.
+    public decimal? PointsAboveReplacement { get; set; }
+    public string? NextPickOutlook { get; set; }
 }
 
 public sealed class PlayerDetailsDto
@@ -137,6 +143,43 @@ public sealed class MyQueueDto
     public required IReadOnlyList<PlayerSummaryDto> Players { get; init; }
 }
 
+public sealed class UpcomingPickDto
+{
+    public required int OverallPick { get; init; }
+    public required string RoundPick { get; init; }
+    public required string Team { get; init; }
+    public string TeamId { get; init; } = "";
+    public bool IsUser { get; init; }
+}
+
+public sealed class InterveningTeamDto
+{
+    public required string TeamName { get; init; }
+    public string TeamId { get; init; } = "";
+    public required int PicksBeforeUser { get; init; }
+
+    // Full roster when it is still small; otherwise position counts plus
+    // the team's latest picks, to keep the AI context lean late in drafts.
+    public IReadOnlyList<RosterPlayerDto>? Roster { get; init; }
+    public IReadOnlyDictionary<string, int>? RosterPositionCounts { get; init; }
+    public IReadOnlyList<string> RecentAdditions { get; init; } = [];
+    public required IReadOnlyList<string> RemainingNeeds { get; init; }
+}
+
+public sealed class DataFreshnessDto
+{
+    public required IReadOnlyList<DataFreshnessItemDto> Sources { get; init; }
+}
+
+public sealed class DataFreshnessItemDto
+{
+    public required string ProviderKey { get; init; }
+    public required string Dataset { get; init; }
+    public required string RefreshedAt { get; init; }
+    public required string Age { get; init; }
+    public int RecordCount { get; init; }
+}
+
 public sealed class DecisionContextDto
 {
     public required DraftStatusDto Status { get; init; }
@@ -148,12 +191,25 @@ public sealed class DecisionContextDto
     public required PositionSummaryDto Positions { get; init; }
     public required RemainingTiersDto Tiers { get; init; }
     public required IReadOnlyList<string> RecentPositions { get; init; }
-    public required IReadOnlyList<string> InterveningTeamNeeds { get; init; }
+    public required IReadOnlyList<string> AllTeamNeeds { get; init; }
     public required IReadOnlyList<string> Alerts { get; init; }
     public required string RankingsSource { get; init; }
     public required IReadOnlyList<PlayerSummaryDto> AvailableRookies { get; init; }
     public required IReadOnlyList<PlayerSummaryDto> InjuredAvailable { get; init; }
     public required int StateVersion { get; init; }
+
+    // Additive live-draft context. Defaults keep older callers compiling.
+    public IReadOnlyList<PickDto> RecentPicks { get; init; } = [];
+    public IReadOnlyList<UpcomingPickDto> UpcomingPicks { get; init; } = [];
+    public IReadOnlyList<UpcomingPickDto> MyUpcomingPicks { get; init; } = [];
+    public IReadOnlyList<InterveningTeamDto> InterveningTeams { get; init; } = [];
+    public RosterDto? CurrentTeamRoster { get; init; }
+    public DataFreshnessDto? DataFreshness { get; init; }
+    public IReadOnlyList<string> TierCliffs { get; init; } = [];
+    public IReadOnlyDictionary<string, int> PositionThreats { get; init; } =
+        new Dictionary<string, int>();
+    public IReadOnlyList<string> MyByeWeeks { get; init; } = [];
+    public string? GeneratedAt { get; init; }
 }
 
 public enum PlayerListSort

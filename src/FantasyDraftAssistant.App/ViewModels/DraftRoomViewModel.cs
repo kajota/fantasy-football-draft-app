@@ -1150,7 +1150,8 @@ public partial class DraftRoomViewModel : PageViewModel
         string prompt,
         string? promptKind = null,
         string? tauntStyle = null,
-        string? tauntTarget = null)
+        string? tauntTarget = null,
+        bool includeConversation = false)
     {
         var adapter = _ai.Get(panel.ProviderKey);
         if (adapter is null)
@@ -1179,6 +1180,13 @@ public partial class DraftRoomViewModel : PageViewModel
             : watch ? "Generating · Watch"
             : deep ? "Generating · Deep" : "Generating";
         panel.Response = "";
+        IReadOnlyList<AiConversationExchange> recentTurns = [];
+        if (includeConversation && promptKind is null)
+        {
+            var saved = await _responses.ListAsync(draftId, branchId);
+            recentTurns = ConversationWindow.Select(saved, panel.ProviderKey);
+        }
+
         var started = DateTimeOffset.UtcNow;
         try
         {
@@ -1192,7 +1200,8 @@ public partial class DraftRoomViewModel : PageViewModel
                 Model = panel.Model,
                 PromptKind = promptKind,
                 TauntStyle = tauntStyle,
-                TauntTarget = tauntTarget
+                TauntTarget = tauntTarget,
+                RecentTurns = recentTurns
             }))
             {
                 if (chunk.Error is not null)
@@ -1227,7 +1236,8 @@ public partial class DraftRoomViewModel : PageViewModel
                     Prompt = prompt,
                     Body = panel.Response,
                     RequestStartedAt = started,
-                    ResponseCompletedAt = DateTimeOffset.UtcNow
+                    ResponseCompletedAt = DateTimeOffset.UtcNow,
+                    PromptKind = promptKind
                 });
                 Conversation.Add(new AiConversationTurn
                 {
@@ -1402,7 +1412,13 @@ public partial class DraftRoomViewModel : PageViewModel
             StatusMessage = "On the clock — asking advisors.";
         }
         var version = StateVersion;
-        await Task.WhenAll(advisors.Select(panel => AskOneAsync(panel, draftId, branchId, version, prompt)));
+        await Task.WhenAll(advisors.Select(panel => AskOneAsync(
+            panel,
+            draftId,
+            branchId,
+            version,
+            prompt,
+            includeConversation: !auto)));
     }
 
     private async Task WatchAsync(DraftId draftId, BranchId branchId, IReadOnlyList<DraftAlert> events)

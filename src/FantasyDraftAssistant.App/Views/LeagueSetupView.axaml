@@ -176,19 +176,21 @@
               </ComboBox.ItemTemplate>
             </ComboBox>
           </StackPanel>
-          <Grid ColumnDefinitions="20,48,56,200,140,56,Auto,Auto,*" ColumnSpacing="8">
+          <Grid ColumnDefinitions="20,48,56,200,140,120,56,Auto,Auto,*" ColumnSpacing="8">
             <TextBlock />
             <TextBlock Grid.Column="1" Text="#" Classes="muted" />
             <TextBlock Grid.Column="2" />
             <TextBlock Grid.Column="3" Text="Team name" Classes="muted" />
             <TextBlock Grid.Column="4" Text="Owner" Classes="muted" />
-            <TextBlock Grid.Column="5" Text="Normal" Classes="muted" />
+            <TextBlock Grid.Column="5" Text="CPU style" Classes="muted"
+                       ToolTip.Tip="How this seat drafts when the CPU controls it in practice drafts. Random deals a personality each practice." />
+            <TextBlock Grid.Column="6" Text="Normal" Classes="muted" />
           </Grid>
           <ItemsControl x:Name="TeamList" ItemsSource="{Binding Teams}">
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:TeamRow">
                 <StackPanel Margin="0,4,0,8" Spacing="4">
-                  <Grid ColumnDefinitions="20,48,56,200,140,56,Auto,Auto,*" ColumnSpacing="8">
+                  <Grid ColumnDefinitions="20,48,56,200,140,120,56,Auto,Auto,*" ColumnSpacing="8">
                     <TextBlock Text="≡" Classes="muted" VerticalAlignment="Center" HorizontalAlignment="Center"
                                FontWeight="SemiBold" Cursor="SizeNorthSouth"
                                IsEnabled="{Binding $parent[ItemsControl].((vm:LeagueSetupViewModel)DataContext).CanReorderTeams}"
@@ -218,21 +220,26 @@
                     </TextBox>
                     <TextBox Grid.Column="4" Text="{Binding OwnerName}" PlaceholderText="Owner" MaxWidth="140"
                              ToolTip.Tip="Person who owns this team. Optional." />
-                    <CheckBox Grid.Column="5" IsChecked="{Binding NormalImage}"
+                    <ComboBox Grid.Column="5" MinWidth="110"
+                              ItemsSource="{Binding PersonalityOptions}"
+                              SelectedItem="{Binding SelectedPersonality}"
+                              VerticalAlignment="Center"
+                              ToolTip.Tip="Practice drafts only. How this seat drafts when the CPU controls it. Random deals a personality each practice; live drafts ignore this." />
+                    <CheckBox Grid.Column="6" IsChecked="{Binding NormalImage}"
                               IsVisible="{Binding CanChoosePortraitStyle}"
                               HorizontalAlignment="Center" VerticalAlignment="Center"
                               ToolTip.Tip="On: over-the-top handsome genius, same energy as your portrait. Off: the roast. Your team has no checkbox and always looks great." />
-                    <Button Grid.Column="6" Content="New image" Classes="ghost compact"
+                    <Button Grid.Column="7" Content="New image" Classes="ghost compact"
                             Command="{Binding $parent[ItemsControl].((vm:LeagueSetupViewModel)DataContext).GenerateOnePortraitCommand}"
                             CommandParameter="{Binding}"
                             IsEnabled="{Binding !IsGenerating}"
                             ToolTip.Tip="Generate a new portrait for this team only." />
-                    <Button Grid.Column="7" Content="Export" Classes="ghost compact"
+                    <Button Grid.Column="8" Content="Export" Classes="ghost compact"
                             Command="{Binding $parent[ItemsControl].((vm:LeagueSetupViewModel)DataContext).ExportPortraitCommand}"
                             CommandParameter="{Binding}"
                             IsEnabled="{Binding HasPortrait}"
                             ToolTip.Tip="Save this team's image to a file you pick." />
-                    <TextBlock Grid.Column="8" Text="{Binding PortraitStatus}" Classes="muted"
+                    <TextBlock Grid.Column="9" Text="{Binding PortraitStatus}" Classes="muted"
                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                ToolTip.Tip="{Binding PortraitStatus}" />
                   </Grid>

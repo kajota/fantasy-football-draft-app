@@ -200,7 +200,8 @@ public sealed class LeagueService(SqliteConnectionFactory factory, IBackupServic
                 DisplayLabel = spec.DisplayLabel,
                 PortraitNotes = spec.PortraitNotes,
                 DraftPosition = spec.DraftPosition,
-                ExternalTeamId = spec.ExternalTeamId
+                ExternalTeamId = spec.ExternalTeamId,
+                PracticePersonality = spec.PracticePersonality
             });
         }
 
@@ -745,7 +746,10 @@ public sealed class LeagueService(SqliteConnectionFactory factory, IBackupServic
                 DisplayLabel = reader.GetNullString(reader.GetOrdinal("DisplayLabel")),
                 PortraitNotes = reader.GetNullString(reader.GetOrdinal("PortraitNotes")),
                 DraftPosition = reader.GetInt32(reader.GetOrdinal("DraftPosition")),
-                ExternalTeamId = reader.GetNullString(reader.GetOrdinal("ExternalTeamId"))
+                ExternalTeamId = reader.GetNullString(reader.GetOrdinal("ExternalTeamId")),
+                PracticePersonality = reader.GetNullString(reader.GetOrdinal("PracticePersonality")) is { } personality
+                    ? Enum.Parse<MockPersonality>(personality)
+                    : null
             });
         }
 
@@ -1172,8 +1176,8 @@ public sealed class LeagueService(SqliteConnectionFactory factory, IBackupServic
     private static void InsertTeam(SqliteConnection db, SqliteTransaction tx, Team team)
     {
         using var cmd = db.Cmd("""
-            INSERT INTO Teams(TeamId, LeagueId, Name, OwnerName, DisplayLabel, PortraitNotes, DraftPosition, ExternalTeamId)
-            VALUES ($id, $league, $name, $owner, $label, $notes, $pos, $ext);
+            INSERT INTO Teams(TeamId, LeagueId, Name, OwnerName, DisplayLabel, PortraitNotes, DraftPosition, ExternalTeamId, PracticePersonality)
+            VALUES ($id, $league, $name, $owner, $label, $notes, $pos, $ext, $cpu);
             """, tx)
             .Bind("$id", team.TeamId.ToString())
             .Bind("$league", team.LeagueId.ToString())
@@ -1182,7 +1186,8 @@ public sealed class LeagueService(SqliteConnectionFactory factory, IBackupServic
             .Bind("$label", team.DisplayLabel)
             .Bind("$notes", team.PortraitNotes)
             .Bind("$pos", team.DraftPosition)
-            .Bind("$ext", team.ExternalTeamId);
+            .Bind("$ext", team.ExternalTeamId)
+            .Bind("$cpu", team.PracticePersonality?.ToString());
         cmd.ExecuteNonQuery();
     }
 

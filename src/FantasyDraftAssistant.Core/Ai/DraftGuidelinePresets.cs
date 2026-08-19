@@ -74,6 +74,15 @@ public static class DraftGuidelinePresets
         Still wait on K and DEF until the last two rounds.
         """);
 
+    public static readonly DraftGuidelinePreset KeeperUpside = new(
+        "Keeper upside",
+        """
+        This is a keeper league: each team may keep one player drafted in round 4 or later into next season.
+        In roughly the last four rounds, lean toward high-upside rookies and young breakout candidates over safe veteran bench depth — a hit becomes next year's keeper at a late-round price.
+        This is a tiebreaker, not an override: fill required starting slots first, and do not pass a clearly better player for a longshot.
+        Still wait on K and DEF until the last two rounds.
+        """);
+
     public static IReadOnlyList<DraftGuidelinePreset> All { get; } =
     [
         HouseRules,
@@ -83,6 +92,7 @@ public static class DraftGuidelinePresets
         RbHeavy,
         LateQb,
         SuperflexQb,
-        TePremium
+        TePremium,
+        KeeperUpside
     ];
 }

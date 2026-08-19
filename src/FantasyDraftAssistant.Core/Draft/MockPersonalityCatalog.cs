@@ -74,8 +74,12 @@ public static class MockPersonalityCatalog
         TeamId? userTeamId,
         int seed)
     {
-        var cpu = teams.Where(team => userTeamId is not { } user || !team.TeamId.Equals(user)).ToList();
-        var personalities = Deal(cpu.Count, seed);
+        // Teams with a saved practice personality keep it; only the rest of
+        // the CPU seats draw from the random deal.
+        var randomCpu = teams
+            .Where(team => userTeamId is not { } user || !team.TeamId.Equals(user))
+            .Count(team => team.PracticePersonality is null);
+        var personalities = Deal(randomCpu, seed);
         var policies = new List<MockSeatPolicy>(teams.Count);
         var index = 0;
         foreach (var team in teams.OrderBy(item => item.DraftPosition))
@@ -84,7 +88,9 @@ public static class MockPersonalityCatalog
             policies.Add(new MockSeatPolicy
             {
                 TeamId = team.TeamId,
-                Personality = isUser ? MockPersonality.BestAvailable : personalities[index++],
+                Personality = isUser
+                    ? team.PracticePersonality ?? MockPersonality.BestAvailable
+                    : team.PracticePersonality ?? personalities[index++],
                 IsCpu = !isUser
             });
         }

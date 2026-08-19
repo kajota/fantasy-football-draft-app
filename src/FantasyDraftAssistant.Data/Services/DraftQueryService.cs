@@ -36,6 +36,14 @@ public sealed class DraftQueryService(
     {
         var state = await Require(context, cancellationToken);
         var players = (await drafts.GetPlayersAsync(cancellationToken)).ToDictionary(p => p.PlayerId);
+        return MapRoster(state, players, teamId);
+    }
+
+    private static RosterDto MapRoster(
+        DraftWorkingState state,
+        IReadOnlyDictionary<PlayerId, Core.Models.Player> players,
+        TeamId teamId)
+    {
         var team = state.Teams.First(t => t.TeamId.Equals(teamId));
         var roster = state.SelectionsForTeam(teamId).Select(s =>
         {
@@ -136,19 +144,27 @@ public sealed class DraftQueryService(
         return new MyQueueDto { Players = await MapPlayers(state, queued, cancellationToken) };
     }
 
+    // Deep pool so rookies and injured players past the top of the board still
+    // appear; the AI only ever sees the trimmed slices below.
+    private const int AvailablePoolSize = 200;
+    private const int TopAvailableCount = 24;
+    private const int RookieCount = 16;
+    private const int InjuredCount = 20;
+    private const int RecentPickCount = 12;
+    private const int UpcomingPickCount = 10;
+
+    // Intervening opponents keep their full roster in context while it is
+    // small; deeper rosters are summarized to keep token cost down.
+    private const int FullRosterLimit = 7;
+    private const int RecentAdditionCount = 3;
+
     public async Task<DecisionContextDto> GetDecisionContextAsync(QueryContext context, CancellationToken cancellationToken = default)
     {
         var state = await Require(context, cancellationToken);
         var snapshot = await analytics.GetSnapshotAsync(context.DraftId, context.BranchId, cancellationToken);
         var format = FantasyDataFormat.FromLeague(state.ScoringRules, state.RosterSlots);
         var sourceKey = FantasyDataSourcePicker.Pick(await fantasyData.GetSourceKeysAsync(cancellationToken), format);
-        var available = await Available(state, new PlayerFilter { MaxResults = 80, SourceKey = sourceKey }, cancellationToken);
-        var topAvailable = available.Take(24).ToList();
-        var rookies = available.Where(player => player.IsRookie).Take(16).ToList();
-        var injured = available
-            .Where(player => !string.Equals(player.Status, "Active", StringComparison.OrdinalIgnoreCase))
-            .Take(20)
-            .ToList();
+        var available = await Available(state, new PlayerFilter { MaxResults = AvailablePoolSize, SourceKey = sourceKey }, cancellationToken);
         var user = state.League.UserTeamId ?? state.Teams[0].TeamId;
         var players = (await drafts.GetPlayersAsync(cancellationToken)).ToDictionary(p => p.PlayerId);
         var queued = state.Queue
@@ -157,14 +173,29 @@ public sealed class DraftQueryService(
             .Where(p => p is not null)
             .Select(p => p!)
             .ToList();
+        var queue = await MapPlayers(state, queued, cancellationToken, sourceKey);
         var userNeeds = snapshot.TeamNeeds.FirstOrDefault(team => team.TeamId.Equals(user));
+
+        Annotate(available, queue, snapshot);
+
+        var topAvailable = available.Take(TopAvailableCount).ToList();
+        var rookies = available.Where(player => player.IsRookie).Take(RookieCount).ToList();
+        var injured = available
+            .Where(player => !string.Equals(player.Status, "Active", StringComparison.OrdinalIgnoreCase))
+            .Take(InjuredCount)
+            .ToList();
+        var board = await GetDraftBoardAsync(context, cancellationToken);
+        var intervening = InterveningTeams(state, snapshot, players, user);
+        var refreshes = await fantasyData.GetRefreshInfoAsync(cancellationToken);
+        var now = DateTimeOffset.UtcNow;
+
         return new DecisionContextDto
         {
             Status = MapStatus(state, snapshot),
             League = MapLeague(state),
-            MyRoster = await GetTeamRosterAsync(context, user, cancellationToken),
+            MyRoster = MapRoster(state, players, user),
             MyRemainingNeeds = FormatNeeds(userNeeds),
-            Queue = new MyQueueDto { Players = await MapPlayers(state, queued, cancellationToken, sourceKey) },
+            Queue = new MyQueueDto { Players = queue },
             TopAvailable = topAvailable,
             AvailableRookies = rookies,
             InjuredAvailable = injured,
@@ -175,14 +206,154 @@ public sealed class DraftQueryService(
             },
             Tiers = new RemainingTiersDto { RemainingByTier = snapshot.RemainingByTier },
             RecentPositions = snapshot.RecentPositions.Select(position => position.ToString()).ToList(),
-            InterveningTeamNeeds = snapshot.TeamNeeds
+            AllTeamNeeds = snapshot.TeamNeeds
                 .Select(t => $"{t.TeamName}: {string.Join(", ", t.RemainingNeeds.Select(n => $"{n.Value} {n.Key}"))}")
                 .ToList(),
             Alerts = snapshot.Alerts.Select(a => a.Message).ToList(),
             RankingsSource = FantasyDataSourcePicker.Describe(sourceKey, format),
-            StateVersion = state.Draft.CurrentStateVersion
+            StateVersion = state.Draft.CurrentStateVersion,
+            RecentPicks = board.Picks.TakeLast(RecentPickCount).ToList(),
+            UpcomingPicks = UpcomingPicks(state, user, UpcomingPickCount),
+            MyUpcomingPicks = MyUpcomingPicks(state, user),
+            InterveningTeams = intervening,
+            CurrentTeamRoster = snapshot.CurrentTeamId is { } currentTeam
+                ? MapRoster(state, players, currentTeam)
+                : null,
+            DataFreshness = new DataFreshnessDto
+            {
+                Sources = refreshes.Select(r => new DataFreshnessItemDto
+                {
+                    ProviderKey = r.ProviderKey,
+                    Dataset = r.Dataset,
+                    RefreshedAt = $"{r.RefreshedAt.ToUniversalTime():yyyy-MM-dd HH:mm} UTC",
+                    Age = FreshnessAge.Describe(r.RefreshedAt, now),
+                    RecordCount = r.RecordCount
+                }).ToList()
+            },
+            TierCliffs = TierCliffSummary.Build(available),
+            PositionThreats = PositionThreats(snapshot, intervening),
+            MyByeWeeks = ByeWeeks(state, players, user),
+            GeneratedAt = $"{now:yyyy-MM-dd HH:mm} UTC"
         };
     }
+
+    private static void Annotate(
+        IReadOnlyList<PlayerSummaryDto> available,
+        IReadOnlyList<PlayerSummaryDto> queue,
+        AnalyticsSnapshot snapshot)
+    {
+        var leagueDemand = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var team in snapshot.TeamNeeds)
+        {
+            foreach (var (position, count) in team.RemainingNeeds)
+            {
+                if (count > 0)
+                    leagueDemand[position.ToString()] = leagueDemand.GetValueOrDefault(position.ToString()) + count;
+            }
+        }
+
+        var baselines = ValueOverReplacement.Baselines(available, leagueDemand);
+        foreach (var player in available.Concat(queue))
+        {
+            player.NextPickOutlook = PickOutlook.For(player.OverallAdp, player.RankStd, snapshot.UserNextOverallPick);
+            if (player.ProjectedPoints is { } points && baselines.TryGetValue(player.Position, out var baseline))
+                player.PointsAboveReplacement = points - baseline;
+        }
+    }
+
+    private static List<UpcomingPickDto> UpcomingPicks(DraftWorkingState state, TeamId user, int take) =>
+        state.Slots
+            .Where(s => !state.ActiveSelections.ContainsKey(s.OverallPick))
+            .OrderBy(s => s.OverallPick)
+            .Take(take)
+            .Select(s => MapUpcoming(state, s, user))
+            .ToList();
+
+    private static List<UpcomingPickDto> MyUpcomingPicks(DraftWorkingState state, TeamId user) =>
+        state.Slots
+            .Where(s => !state.ActiveSelections.ContainsKey(s.OverallPick))
+            .Where(s => s.TeamId.Equals(user))
+            .OrderBy(s => s.OverallPick)
+            .Select(s => MapUpcoming(state, s, user))
+            .ToList();
+
+    private static UpcomingPickDto MapUpcoming(DraftWorkingState state, Core.Models.DraftSlot slot, TeamId user) => new()
+    {
+        OverallPick = slot.OverallPick,
+        RoundPick = DraftSlotGenerator.FormatRoundPick(slot.Round, slot.RoundPick),
+        Team = state.Teams.First(t => t.TeamId.Equals(slot.TeamId)).Label,
+        TeamId = slot.TeamId.ToString(),
+        IsUser = slot.TeamId.Equals(user)
+    };
+
+    private static List<InterveningTeamDto> InterveningTeams(
+        DraftWorkingState state,
+        AnalyticsSnapshot snapshot,
+        IReadOnlyDictionary<PlayerId, Core.Models.Player> players,
+        TeamId user)
+    {
+        if (snapshot.UserNextOverallPick is not { } userNext)
+            return [];
+        var current = state.CurrentSlot;
+        if (current is null || current.TeamId.Equals(user))
+            return [];
+
+        var needsByTeam = snapshot.TeamNeeds.ToDictionary(t => t.TeamId, t => (TeamNeedSummary?)t);
+        return state.Slots
+            .Where(s => !state.ActiveSelections.ContainsKey(s.OverallPick))
+            .Where(s => s.OverallPick < userNext && !s.TeamId.Equals(user))
+            .OrderBy(s => s.OverallPick)
+            .GroupBy(s => s.TeamId)
+            .Select(group =>
+            {
+                var roster = MapRoster(state, players, group.Key);
+                var full = roster.Players.Count <= FullRosterLimit;
+                return new InterveningTeamDto
+                {
+                    TeamName = roster.TeamName,
+                    TeamId = group.Key.ToString(),
+                    PicksBeforeUser = group.Count(),
+                    Roster = full ? roster.Players : null,
+                    RosterPositionCounts = full
+                        ? null
+                        : roster.Players
+                            .GroupBy(p => p.Position)
+                            .ToDictionary(g => g.Key, g => g.Count()),
+                    RecentAdditions = full
+                        ? []
+                        : roster.Players
+                            .TakeLast(RecentAdditionCount)
+                            .Select(p => $"{p.Name} ({p.Position}, {p.RoundPick})")
+                            .ToList(),
+                    RemainingNeeds = FormatNeeds(needsByTeam.GetValueOrDefault(group.Key))
+                };
+            })
+            .ToList();
+    }
+
+    private static IReadOnlyDictionary<string, int> PositionThreats(
+        AnalyticsSnapshot snapshot,
+        IReadOnlyList<InterveningTeamDto> intervening)
+    {
+        var interveningIds = intervening.Select(t => t.TeamId).ToHashSet(StringComparer.Ordinal);
+        return snapshot.TeamNeeds
+            .Where(t => interveningIds.Contains(t.TeamId.ToString()))
+            .SelectMany(t => t.RemainingNeeds.Where(kv => kv.Value > 0).Select(kv => kv.Key))
+            .GroupBy(p => p.ToString())
+            .ToDictionary(g => g.Key, g => g.Count());
+    }
+
+    private static IReadOnlyList<string> ByeWeeks(
+        DraftWorkingState state,
+        IReadOnlyDictionary<PlayerId, Core.Models.Player> players,
+        TeamId user) =>
+        state.SelectionsForTeam(user)
+            .Select(s => players.GetValueOrDefault(s.PlayerId))
+            .Where(p => p?.ByeWeek is not null)
+            .GroupBy(p => p!.ByeWeek!.Value)
+            .OrderBy(g => g.Key)
+            .Select(g => $"Week {g.Key}: {string.Join(", ", g.Select(p => p!.Name))}")
+            .ToList();
 
     private async Task<DraftWorkingState> Require(QueryContext context, CancellationToken cancellationToken) =>
         await drafts.GetWorkingStateAsync(context.DraftId, context.BranchId, cancellationToken)
@@ -348,8 +519,19 @@ public sealed class DraftQueryService(
             .ToList(),
         DraftGuidelines = string.IsNullOrWhiteSpace(state.League.DraftGuidelines)
             ? null
-            : state.League.DraftGuidelines.Trim()
+            : state.League.DraftGuidelines.Trim(),
+        KeeperNote = KeeperNote(state)
     };
+
+    private static string? KeeperNote(DraftWorkingState state)
+    {
+        var keeperSlots = state.Slots.Count(s => s.IsKeeperSlot);
+        var configured = state.Keepers.Count;
+        if (keeperSlots == 0 && configured == 0)
+            return null;
+        return $"Keeper league: {Math.Max(keeperSlots, configured)} keeper selections on this board, " +
+               $"max {KeeperRules.MaxKeepersPerTeam} per team.";
+    }
 
     private static DraftStatusDto MapStatus(DraftWorkingState state, AnalyticsSnapshot snapshot)
     {
@@ -366,6 +548,7 @@ public sealed class DraftQueryService(
             CurrentRoundPick = snapshot.CurrentRoundPick,
             CurrentTeam = currentTeam,
             UserNextRoundPick = snapshot.UserNextRoundPick,
+            UserNextOverallPick = snapshot.UserNextOverallPick,
             PicksUntilUser = snapshot.PicksUntilUser
         };
     }

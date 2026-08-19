@@ -265,4 +265,8 @@ public sealed class AiSavedResponse
     public required string Body { get; init; }
     public required DateTimeOffset RequestStartedAt { get; init; }
     public DateTimeOffset? ResponseCompletedAt { get; init; }
+
+    // Null or empty means a regular advice turn; taunt/watch turns carry
+    // their prompt kind so conversation windows can skip them.
+    public string? PromptKind { get; init; }
 }

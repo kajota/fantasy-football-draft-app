@@ -1,0 +1,1 @@
+ALTER TABLE AiResponses ADD COLUMN PromptKind TEXT;

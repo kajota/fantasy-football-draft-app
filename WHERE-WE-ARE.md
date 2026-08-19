@@ -22,6 +22,8 @@ Leagues and setup:
 - Create league with **8 / 10 / 12 / 14 / 16** teams (default 12). Mock button is still 12-team Superflex.
 - League cards show `N teams · Season · draft status`.
 - League Setup: name, season, rounds, AI draft guidelines, roster presets, scoring (Yahoo FG bands), team names/owners/portraits.
+- Per-team **CPU style** dropdown (`PracticePersonality`, migration `011`): pins that seat's mock-draft personality in practice drafts. "Random" keeps the old per-practice deal. Recap shows the personality each CPU seat used. Live drafts ignore it.
+- Injury statuses no longer get wiped by FantasyPros/seed refreshes — only Sleeper can reset a player to Active. If the St column looks empty, run Player Data → Sleeper refresh once.
 - Per-team **About** box (`PortraitNotes`, migration `009`) feeds image generation. Empty box uses the original default look (including the old name-based woman check).
 - First-round seats: `#` box, ↑/↓, and drag the `≡` handle. **Save** rewrites live draft slots when seats are still editable.
 - Seats lock only when the **live** board has regular (non-keeper) picks. Returning to an empty live board unlocks them again. Practice picks do not lock live order.

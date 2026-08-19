@@ -133,8 +133,8 @@ public sealed class AiResponseStore(SqliteConnectionFactory factory) : IAiRespon
     {
         using var db = factory.Open();
         using var cmd = db.Cmd("""
-            INSERT INTO AiResponses(ResponseId, DraftId, BranchId, Provider, Model, AnalyzedStateVersion, RequestStartedAt, ResponseCompletedAt, Body, Prompt)
-            VALUES ($id, $draft, $branch, $p, $m, $v, $start, $end, $body, $prompt);
+            INSERT INTO AiResponses(ResponseId, DraftId, BranchId, Provider, Model, AnalyzedStateVersion, RequestStartedAt, ResponseCompletedAt, Body, Prompt, PromptKind)
+            VALUES ($id, $draft, $branch, $p, $m, $v, $start, $end, $body, $prompt, $kind);
             """)
             .Bind("$id", response.ResponseId)
             .Bind("$draft", response.DraftId.ToString())
@@ -145,7 +145,8 @@ public sealed class AiResponseStore(SqliteConnectionFactory factory) : IAiRespon
             .Bind("$start", response.RequestStartedAt.ToString("O"))
             .Bind("$end", response.ResponseCompletedAt?.ToString("O"))
             .Bind("$body", response.Body)
-            .Bind("$prompt", response.Prompt);
+            .Bind("$prompt", response.Prompt)
+            .Bind("$kind", response.PromptKind);
         cmd.ExecuteNonQuery();
         return Task.CompletedTask;
     }
@@ -154,7 +155,7 @@ public sealed class AiResponseStore(SqliteConnectionFactory factory) : IAiRespon
     {
         using var db = factory.Open();
         using var cmd = db.Cmd("""
-            SELECT ResponseId, Provider, Model, AnalyzedStateVersion, RequestStartedAt, ResponseCompletedAt, Body, Prompt
+            SELECT ResponseId, Provider, Model, AnalyzedStateVersion, RequestStartedAt, ResponseCompletedAt, Body, Prompt, PromptKind
             FROM AiResponses
             WHERE DraftId = $d AND BranchId = $b
             ORDER BY RequestStartedAt;
@@ -177,7 +178,10 @@ public sealed class AiResponseStore(SqliteConnectionFactory factory) : IAiRespon
                 Prompt = reader.IsDBNull(promptOrdinal) ? "" : reader.GetString(promptOrdinal),
                 Body = reader.GetString(reader.GetOrdinal("Body")),
                 RequestStartedAt = reader.GetTime(reader.GetOrdinal("RequestStartedAt")),
-                ResponseCompletedAt = reader.GetNullTime(reader.GetOrdinal("ResponseCompletedAt"))
+                ResponseCompletedAt = reader.GetNullTime(reader.GetOrdinal("ResponseCompletedAt")),
+                PromptKind = reader.IsDBNull(reader.GetOrdinal("PromptKind"))
+                    ? null
+                    : reader.GetString(reader.GetOrdinal("PromptKind"))
             });
         }
 

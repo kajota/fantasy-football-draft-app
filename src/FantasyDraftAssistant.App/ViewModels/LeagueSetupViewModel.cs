@@ -12,8 +12,20 @@ using FantasyDraftAssistant.Core.Interfaces;
 
 namespace FantasyDraftAssistant.App.ViewModels;
 
+public sealed record PersonalityChoice(string Title, MockPersonality? Personality)
+{
+    public override string ToString() => Title;
+}
+
 public partial class TeamRow : ObservableObject
 {
+    public static readonly IReadOnlyList<PersonalityChoice> PersonalityChoices =
+    [
+        new PersonalityChoice("Random", null),
+        .. Enum.GetValues<MockPersonality>()
+            .Select(personality => new PersonalityChoice(MockPersonalityCatalog.Title(personality), personality))
+    ];
+
     [ObservableProperty] private string _name = "";
     [ObservableProperty] private string? _ownerName;
     [ObservableProperty] private string _portraitNotes = "";
@@ -26,6 +38,9 @@ public partial class TeamRow : ObservableObject
     [ObservableProperty] private bool _hasPortrait;
     [ObservableProperty] private bool _canMoveUp;
     [ObservableProperty] private bool _canMoveDown;
+    [ObservableProperty] private PersonalityChoice _selectedPersonality = PersonalityChoices[0];
+
+    public IReadOnlyList<PersonalityChoice> PersonalityOptions => PersonalityChoices;
 
     public void SyncSeatText() => SeatText = DraftPosition.ToString(CultureInfo.InvariantCulture);
     public Core.Ids.TeamId TeamId { get; init; }
@@ -230,7 +245,9 @@ public partial class LeagueSetupViewModel(
                 DraftPosition = team.DraftPosition,
                 ExternalTeamId = team.ExternalTeamId,
                 CanChoosePortraitStyle = !isMine,
-                HasPortrait = portraitStore.Exists(team.TeamId)
+                HasPortrait = portraitStore.Exists(team.TeamId),
+                SelectedPersonality = TeamRow.PersonalityChoices
+                    .First(choice => choice.Personality == team.PracticePersonality)
             };
             row.SyncSeatText();
             Teams.Add(row);
@@ -389,7 +406,8 @@ public partial class LeagueSetupViewModel(
             OwnerName = t.OwnerName,
             PortraitNotes = string.IsNullOrWhiteSpace(t.PortraitNotes) ? null : t.PortraitNotes.Trim(),
             DraftPosition = index + 1,
-            ExternalTeamId = t.ExternalTeamId
+            ExternalTeamId = t.ExternalTeamId,
+            PracticePersonality = t.SelectedPersonality.Personality
         }).ToList();
         await leagues.SaveTeamsAsync(new SaveTeamsRequest
         {

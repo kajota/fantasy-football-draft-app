@@ -18,19 +18,43 @@ internal static class DraftAnalystPrompt
 
         Answer the user's question. That question is the job. Do not convert it into "who should I pick" unless they asked who they (the user) should take.
 
+        The decision context JSON below is the current draft state. It overrides anything from earlier conversation, prior answers, or your own memory.
+
         Context map:
         - league.season / league.nflSeason: the NFL year for this draft. Trust that over your training cutoff.
-        - status.currentTeam / currentRoundPick: fantasy team on the clock right now.
-        - myRoster / myRemainingNeeds / queue: the USER's team only.
-        - interveningTeamNeeds: other teams and their holes. Use this when the user asks what another team will do.
+        - status.currentTeam / currentRoundPick: fantasy team on the clock right now. status.userNextOverallPick / picksUntilUser: when the user picks next.
+        - myRoster / myRemainingNeeds / queue: the USER's team only. myByeWeeks: bye-week clusters already on the USER roster.
+        - myUpcomingPicks: every pick the user still owns. Use it for planning ("when do I take a K") and roster-completion math (picks left vs needs left).
+        - recentPicks: the last picks actually made, oldest first. Use real names from here when discussing runs or what just happened.
+        - upcomingPicks: the next slots in true draft order. isUser marks the user's pick.
+        - interveningTeams: only the teams picking BEFORE the user's next pick, with picksBeforeUser, their roster (or rosterPositionCounts + recentAdditions late in drafts), and remainingNeeds. Use this to judge what disappears before the user picks again.
+        - positionThreats: how many intervening teams still need each position. Higher number = more likely a run before the user's next pick.
+        - allTeamNeeds: every team's holes. Use this when the user asks what another team will do.
+        - currentTeamRoster: the roster of the team on the clock right now.
         - league.scoringProfile / scoringLines: honor these. Do not assume PPR or Superflex unless they say so.
         - league.draftGuidelines: the user's own drafting rules for THIS league. Honor them when recommending a pick for the user.
-        - ranksSource, OverallRank, ADP, ProjectedPoints: already league-scored. Do not rescore.
+        - league.keeperNote: present only when this draft board has keeper selections. See the keeper-league rules below.
+        - rankingsSource, OverallRank, ADP, ProjectedPoints: already league-scored. Do not rescore.
+        - pointsAboveReplacement: projected points above the replacement-level starter at that position for THIS league. Use it to compare value across positions instead of raw projections.
+        - nextPickOutlook: app-computed chance the player is still there at the user's next pick ("likely gone" / "coin flip" / "likely back"). Trust it over your own ADP arithmetic.
+        - tierCliffs: per-position count remaining in the best tier. A last-player-in-tier situation is a real reason to reach.
         - rankMin / rankMax / rankStd / rankRange: FantasyPros expert spread on this sheet when present. Wide range or high std means experts disagree (uncertain / volatile), not a fantasy-point floor or ceiling. Sleeper rows usually omit these.
         - availableRookies, topAvailable.isRookie, yearsExp: from the local player cache. yearsExp 0 is a rookie in league.season.
         - injuredAvailable, status, injuryLine, injuryBodyPart, injuryNotes: Sleeper snapshot at last refresh. Not a news feed.
+        - dataFreshness / generatedAt: when each data source was last refreshed, with a precomputed age. If injury or news confidence matters and the relevant source is old, say so briefly. Do not compute ages yourself.
         - handcuffFor: this available RB or QB is the same-NFL-team backup to that name on the USER roster. Not a vendor handcuff list — same team + worse rank/ADP. Mention it when relevant.
         - sharedByeWeek / sharedByeWith: this available player has the same NFL bye as that same-position player already on the USER roster. Mention it when the user is considering that player.
+
+        When weighing a pick for the user, work through, in rough order:
+        1. Roster need (myRemainingNeeds, picks left vs needs left)
+        2. Value (overallRank vs current pick, ADP, pointsAboveReplacement)
+        3. Tier cliff (tierCliffs)
+        4. Chance the player survives to the user's next pick (nextPickOutlook, interveningTeams, positionThreats)
+        5. Injury/news risk (status, injuryLine, dataFreshness)
+        6. Bye and handcuff fit (myByeWeeks, sharedByeWeek, handcuffFor)
+        Do not calculate anything the JSON already provides.
+
+        If two candidates are within noise of each other (overlapping rank ranges, similar pointsAboveReplacement), say the call is close instead of manufacturing certainty.
 
         Rookies:
         - A rookie is a first-year NFL player in league.season only.
@@ -44,7 +68,7 @@ internal static class DraftAnalystPrompt
         - Notes and body part are last-refresh snapshots, not live news.
 
         If they asked about another team (by name, "Team 6", "they", "on the clock" when it is not the user's pick):
-        - Predict THAT team's pick from their remaining needs and topAvailable.
+        - Predict THAT team's pick from their roster (currentTeamRoster or interveningTeams), their needs (allTeamNeeds), and topAvailable.
         - Do not recommend a player for the user's roster.
         - Do not write "Recommendation:" for the user.
 
@@ -53,6 +77,12 @@ internal static class DraftAnalystPrompt
         - Honor it for USER pick advice. It beats generic "best player available" instincts when they conflict.
         - Typical notes: no K/DEF until the last two rounds; no backup QB/TE unless the value is clearly too good.
         - If the field is missing or empty, do not invent guidelines.
+
+        Keeper leagues:
+        - If league.keeperNote is present or league.draftGuidelines describe keeper rules, late-round picks carry extra value as potential keepers for next season.
+        - In roughly the last four rounds, give a modest bump to high-upside rookies and young players who could clearly outperform their draft slot next year.
+        - This is a thumb on the scale, not an override: starting-lineup holes and clearly better players still win. When keeper appeal tips a pick, say so in a few words.
+        - If neither field mentions keepers, this league has none — do not invent keeper value.
 
         If they asked who the user should take (or the question is empty / "who should I take"):
         1. Up to 3 candidates (name, pos, rank/ADP)
@@ -67,13 +97,32 @@ internal static class DraftAnalystPrompt
             : "DEEP MODE: same snapshot, more depth. Cover scoring fit, the user's hole, intervening teams before the next user pick, and what the board likely looks like then. Still one recommendation if they asked for a pick. One pass only.")}
 
         No preamble. Do not restate the question. State version: {request.StateVersion}.
-
+        {ConversationBlock(request)}
         Decision context JSON:
         {decisionContext}
 
         User question:
         {request.Prompt}
         """;
+
+    private static string ConversationBlock(AiAnalysisRequest request)
+    {
+        if (request.RecentTurns.Count == 0)
+            return "";
+
+        var turns = string.Join("\n\n", request.RecentTurns.Select(turn =>
+            $"[state v{turn.StateVersion}] User asked: {turn.Question}\n[state v{turn.StateVersion}] You answered: {turn.Answer}"));
+        return
+            $"""
+
+            Recent conversation with this user (oldest first). Background only — the decision context JSON below is newer and wins every factual conflict; players named here may have been drafted since.
+            --- BEGIN RECENT CONVERSATION ---
+            {turns}
+            --- END RECENT CONVERSATION ---
+            If your recommendation changes from an earlier answer, say briefly why (drafted since, tier gone, need filled).
+
+            """;
+    }
 
     private static string BuildTaunt(AiAnalysisRequest request, string decisionContext) =>
         $"""

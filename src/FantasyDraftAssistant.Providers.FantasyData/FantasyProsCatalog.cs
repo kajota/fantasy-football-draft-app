@@ -124,7 +124,7 @@ public static class FantasyProsCatalog
     public static Player ToPlayer(FantasyProsRankedPlayer row, DateTimeOffset now, PlayerStatus? status = null, int? byeWeek = null) =>
         new()
         {
-            PlayerId = PlayerId.FromName(row.Name, row.NflTeam, row.Position.ToString()),
+            PlayerId = PlayerId.FromName(row.Name, row.Position.ToString()),
             Name = row.Name,
             NflTeam = row.NflTeam,
             PrimaryPosition = row.Position,

@@ -43,7 +43,7 @@ public class DecisionContextTests : IDisposable
         var (draftId, first) = await CreateStartedDraftAsync();
         var commands = _services.GetRequiredService<IDraftCommandService>();
         Assert.True((await commands.DraftPlayerAsync(new DraftPlayerCommand(draftId, first))).Succeeded);
-        var second = PlayerId.FromName("Saquon Barkley", "PHI", "RB");
+        var second = PlayerId.FromName("Saquon Barkley", "RB");
         Assert.True((await commands.DraftPlayerAsync(new DraftPlayerCommand(draftId, second))).Succeeded);
 
         var context = await GetContextAsync(draftId);
@@ -187,7 +187,7 @@ public class DecisionContextTests : IDisposable
                 new KeeperSpec
                 {
                     TeamId = teams[0].TeamId,
-                    PlayerId = PlayerId.FromName("Bijan Robinson", "ATL", "RB"),
+                    PlayerId = PlayerId.FromName("Bijan Robinson", "RB"),
                     RoundCost = 4
                 }
             ]
@@ -268,6 +268,6 @@ public class DecisionContextTests : IDisposable
         var start = await _services.GetRequiredService<IDraftCommandService>()
             .StartDraftAsync(new StartDraftCommand(draft.DraftId));
         Assert.True(start.Succeeded, start.Error);
-        return (draft.DraftId, PlayerId.FromName("Bijan Robinson", "ATL", "RB"));
+        return (draft.DraftId, PlayerId.FromName("Bijan Robinson", "RB"));
     }
 }

@@ -145,7 +145,7 @@ internal static class SeedCatalog
 
         foreach (var seed in All)
         {
-            var playerId = PlayerId.FromName(seed.Name, seed.Team, seed.Position.ToString());
+            var playerId = PlayerId.FromName(seed.Name, seed.Position.ToString());
             players.Add(new Player
             {
                 PlayerId = playerId,
@@ -199,7 +199,7 @@ internal static class SeedCatalog
         }
 
         // Position ranks should be per-position, not overall.
-        foreach (var group in rankings.GroupBy(r => All.First(s => PlayerId.FromName(s.Name, s.Team, s.Position.ToString()).Equals(r.PlayerId)).Position))
+        foreach (var group in rankings.GroupBy(r => All.First(s => PlayerId.FromName(s.Name, s.Position.ToString()).Equals(r.PlayerId)).Position))
         {
             var i = 1;
             foreach (var ranking in group.OrderBy(r => r.OverallRank).ToList())
@@ -223,7 +223,7 @@ internal static class SeedCatalog
         for (var i = 0; i < ordered.Count; i++)
         {
             var seed = ordered[i];
-            var playerId = PlayerId.FromName(seed.Name, seed.Team, seed.Position.ToString());
+            var playerId = PlayerId.FromName(seed.Name, seed.Position.ToString());
             var idx = rankings.FindIndex(r => r.PlayerId.Equals(playerId));
             var current = rankings[idx];
             rankings[idx] = new PlayerRanking

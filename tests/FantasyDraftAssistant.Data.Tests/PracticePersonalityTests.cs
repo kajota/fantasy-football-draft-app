@@ -98,7 +98,7 @@ public class PracticePersonalityTests : IDisposable
     public async Task Non_sleeper_refresh_does_not_reset_injury_status()
     {
         var writer = _services.GetRequiredService<IFantasyDataWriter>();
-        var playerId = Core.Ids.PlayerId.FromName("Bijan Robinson", "ATL", "RB");
+        var playerId = Core.Ids.PlayerId.FromName("Bijan Robinson", "RB");
         var now = DateTimeOffset.UtcNow;
 
         Player PlayerWith(PlayerStatus status) => new()

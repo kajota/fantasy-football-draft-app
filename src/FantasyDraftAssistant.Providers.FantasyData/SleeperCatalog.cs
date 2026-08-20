@@ -121,7 +121,7 @@ public static class SleeperCatalog
         var team = string.IsNullOrWhiteSpace(dto.Team) ? "FA" : dto.Team.Trim().ToUpperInvariant();
         return new Player
         {
-            PlayerId = PlayerId.FromName(name, team, position.Value.ToString()),
+            PlayerId = PlayerId.FromName(name, position.Value.ToString()),
             Name = name,
             NflTeam = team,
             PrimaryPosition = position.Value,

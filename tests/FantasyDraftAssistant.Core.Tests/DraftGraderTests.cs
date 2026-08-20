@@ -121,7 +121,7 @@ public class DraftGraderTests
 
     private static Player Player(string name, string team, PlayerPosition position) => new()
     {
-        PlayerId = PlayerId.FromName(name, team, position.ToString()),
+        PlayerId = PlayerId.FromName(name, position.ToString()),
         Name = name,
         NflTeam = team,
         PrimaryPosition = position,

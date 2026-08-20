@@ -31,7 +31,20 @@ public readonly record struct ScoringRuleId(Guid Value)
 public readonly record struct PlayerId(Guid Value)
 {
     public static PlayerId New() => new(Guid.NewGuid());
-    public static PlayerId FromName(string name, string nflTeam, string primaryPosition)
+
+    /// <summary>
+    /// Identity is the player, not their current situation, so the NFL team is deliberately
+    /// excluded: providers disagree about it (JAC vs JAX) and real players change teams. Both
+    /// used to fork one person into two records — see migration 012.
+    /// </summary>
+    public static PlayerId FromName(string name, string primaryPosition)
+    {
+        var input = $"{name.Trim().ToUpperInvariant()}|{primaryPosition.Trim().ToUpperInvariant()}";
+        return new PlayerId(DeterministicGuid(input));
+    }
+
+    /// <summary>The pre-migration-012 identity, kept only so the migration can map old rows.</summary>
+    public static PlayerId LegacyFromName(string name, string nflTeam, string primaryPosition)
     {
         var input = $"{name.Trim().ToUpperInvariant()}|{nflTeam.Trim().ToUpperInvariant()}|{primaryPosition.Trim().ToUpperInvariant()}";
         return new PlayerId(DeterministicGuid(input));

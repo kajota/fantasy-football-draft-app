@@ -70,7 +70,7 @@ public class PersistenceTests : IDisposable
     public async Task Rollback_and_rebuild_from_events_restore_availability()
     {
         var (draftId, first) = await CreateStartedDraftAsync();
-        var second = PlayerId.FromName("Saquon Barkley", "PHI", "RB");
+        var second = PlayerId.FromName("Saquon Barkley", "RB");
         var commands = _services.GetRequiredService<IDraftCommandService>();
         var states = _services.GetRequiredService<IDraftStateService>();
 
@@ -332,7 +332,7 @@ public class PersistenceTests : IDisposable
         Assert.Equal(3, selection.Round);
         Assert.Equal(player, selection.PlayerId);
 
-        var other = PlayerId.FromName("Saquon Barkley", "PHI", "RB");
+        var other = PlayerId.FromName("Saquon Barkley", "RB");
         await leagues.SaveKeepersAsync(new SaveKeepersRequest
         {
             DraftId = draftId,
@@ -392,7 +392,7 @@ public class PersistenceTests : IDisposable
     public async Task Keepers_reject_two_for_the_same_team()
     {
         var (draftId, player, teamId) = await CreateUnstartedDraftAsync();
-        var other = PlayerId.FromName("Saquon Barkley", "PHI", "RB");
+        var other = PlayerId.FromName("Saquon Barkley", "RB");
         var leagues = _services.GetRequiredService<ILeagueService>();
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -416,7 +416,7 @@ public class PersistenceTests : IDisposable
         var commands = _services.GetRequiredService<IDraftCommandService>();
         var states = _services.GetRequiredService<IDraftStateService>();
         var mock = _services.GetRequiredService<IMockDraftService>();
-        var other = PlayerId.FromName("Saquon Barkley", "PHI", "RB");
+        var other = PlayerId.FromName("Saquon Barkley", "RB");
 
         await leagues.SaveKeepersAsync(new SaveKeepersRequest
         {
@@ -531,9 +531,9 @@ public class PersistenceTests : IDisposable
     public async Task Switch_branch_keeps_independent_timelines()
     {
         var (draftId, first) = await CreateStartedDraftAsync();
-        var second = PlayerId.FromName("Saquon Barkley", "PHI", "RB");
-        var third = PlayerId.FromName("Jahmyr Gibbs", "DET", "RB");
-        var alternate = PlayerId.FromName("Ashton Jeanty", "LV", "RB");
+        var second = PlayerId.FromName("Saquon Barkley", "RB");
+        var third = PlayerId.FromName("Jahmyr Gibbs", "RB");
+        var alternate = PlayerId.FromName("Ashton Jeanty", "RB");
         var commands = _services.GetRequiredService<IDraftCommandService>();
         var states = _services.GetRequiredService<IDraftStateService>();
         var leagues = _services.GetRequiredService<ILeagueService>();
@@ -577,8 +577,8 @@ public class PersistenceTests : IDisposable
     public async Task Queue_can_be_reordered_and_items_removed()
     {
         var (draftId, first) = await CreateStartedDraftAsync();
-        var second = PlayerId.FromName("Saquon Barkley", "PHI", "RB");
-        var third = PlayerId.FromName("Jahmyr Gibbs", "DET", "RB");
+        var second = PlayerId.FromName("Saquon Barkley", "RB");
+        var third = PlayerId.FromName("Jahmyr Gibbs", "RB");
         var states = _services.GetRequiredService<IDraftStateService>();
         var working = await states.GetWorkingStateAsync(draftId);
         Assert.NotNull(working);
@@ -772,7 +772,7 @@ public class PersistenceTests : IDisposable
         Assert.True((await commands.StartDraftAsync(new StartDraftCommand(draft.DraftId))).Succeeded);
         Assert.True((await commands.DraftPlayerAsync(new DraftPlayerCommand(
             draft.DraftId,
-            PlayerId.FromName("Bijan Robinson", "ATL", "RB")))).Succeeded);
+            PlayerId.FromName("Bijan Robinson", "RB")))).Succeeded);
 
         var state = await _services.GetRequiredService<IDraftStateService>().GetWorkingStateAsync(draft.DraftId);
         Assert.NotNull(state);
@@ -787,7 +787,7 @@ public class PersistenceTests : IDisposable
     public async Task Rankings_prefer_fantasypros_over_sleeper()
     {
         var writer = _services.GetRequiredService<IFantasyDataWriter>();
-        var playerId = PlayerId.FromName("Bijan Robinson", "ATL", "RB");
+        var playerId = PlayerId.FromName("Bijan Robinson", "RB");
         var now = DateTimeOffset.UtcNow;
         var player = new Player
         {
@@ -817,7 +817,7 @@ public class PersistenceTests : IDisposable
     public async Task Provider_ids_round_trip_for_external_links()
     {
         var writer = _services.GetRequiredService<IFantasyDataWriter>();
-        var playerId = PlayerId.FromName("Bijan Robinson", "ATL", "RB");
+        var playerId = PlayerId.FromName("Bijan Robinson", "RB");
         var player = new Player
         {
             PlayerId = playerId,
@@ -847,7 +847,7 @@ public class PersistenceTests : IDisposable
     {
         var (draftId, _) = await CreateStartedDraftAsync();
         var writer = _services.GetRequiredService<IFantasyDataWriter>();
-        var playerId = PlayerId.FromName("Bijan Robinson", "ATL", "RB");
+        var playerId = PlayerId.FromName("Bijan Robinson", "RB");
         var now = DateTimeOffset.UtcNow;
         await writer.WriteAsync("fantasypros",
             [
@@ -1092,7 +1092,7 @@ public class PersistenceTests : IDisposable
     public async Task Player_years_exp_survives_reload()
     {
         var writer = _services.GetRequiredService<IFantasyDataWriter>();
-        var playerId = PlayerId.FromName("First Year", "SEA", "WR");
+        var playerId = PlayerId.FromName("First Year", "WR");
         await writer.WriteAsync("sleeper",
         [
             new Player
@@ -1116,7 +1116,7 @@ public class PersistenceTests : IDisposable
     public async Task Injury_notes_survive_a_refresh_that_omits_them()
     {
         var writer = _services.GetRequiredService<IFantasyDataWriter>();
-        var playerId = PlayerId.FromName("Banged Up", "KC", "WR");
+        var playerId = PlayerId.FromName("Banged Up", "WR");
         var player = new Player
         {
             PlayerId = playerId,
@@ -1193,14 +1193,14 @@ public class PersistenceTests : IDisposable
             Name = "Test Draft"
         });
         var teams = await leagues.GetTeamsAsync(league.LeagueId);
-        return (draft.DraftId, PlayerId.FromName("Bijan Robinson", "ATL", "RB"), teams[0].TeamId);
+        return (draft.DraftId, PlayerId.FromName("Bijan Robinson", "RB"), teams[0].TeamId);
     }
 
     private async Task WriteSplitRankingsAsync()
     {
         var writer = _services.GetRequiredService<IFantasyDataWriter>();
-        var bijan = PlayerId.FromName("Bijan Robinson", "ATL", "RB");
-        var allen = PlayerId.FromName("Josh Allen", "BUF", "QB");
+        var bijan = PlayerId.FromName("Bijan Robinson", "RB");
+        var allen = PlayerId.FromName("Josh Allen", "QB");
         var now = DateTimeOffset.UtcNow;
         Player Player(PlayerId id, string name, string team, PlayerPosition position) => new()
         {

@@ -102,7 +102,7 @@ public class MockPickPolicyTests
         var teamId = state.CurrentSlot!.TeamId;
         PickCurrent(state, first!.Value);
         while (state.CurrentSlot is { } slot && !slot.TeamId.Equals(teamId))
-            PickCurrent(state, PlayerId.FromName($"Skip{slot.OverallPick}", "FA", "WR"));
+            PickCurrent(state, PlayerId.FromName($"Skip{slot.OverallPick}", "WR"));
 
         var second = MockPickPolicy.Choose(state, players, rankings, None, MockPersonality.BestAvailable);
         Assert.Equal(players[2].PlayerId, second);
@@ -112,7 +112,7 @@ public class MockPickPolicyTests
     {
         var lastOverall = lastFilledRound * state.League.TeamCount;
         foreach (var slot in state.Slots.Where(item => item.OverallPick <= lastOverall))
-            PickSlot(state, slot, PlayerId.FromName($"Filler{slot.OverallPick}", "FA", "WR"));
+            PickSlot(state, slot, PlayerId.FromName($"Filler{slot.OverallPick}", "WR"));
     }
 
     private static void PickCurrent(DraftWorkingState state, PlayerId playerId)
@@ -196,7 +196,7 @@ public class MockPickPolicyTests
         };
         var player = new Player
         {
-            PlayerId = PlayerId.FromName(name, nfl, position.ToString()),
+            PlayerId = PlayerId.FromName(name, position.ToString()),
             Name = name,
             NflTeam = nfl,
             PrimaryPosition = position,

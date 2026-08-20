@@ -69,7 +69,7 @@ public sealed class FantasyProsFantasyDataProvider(
             try
             {
                 foreach (var row in FantasyProsCatalog.ParseProjections(
-                             await GetAsync(apiKey, $"nfl/{season}/projections?week=0", cancellationToken)))
+                             await GetAsync(apiKey, ProjectionsPath(season), cancellationToken)))
                 {
                     projections[row.ExternalId] = row;
                     if (!string.IsNullOrWhiteSpace(row.Name))
@@ -232,6 +232,18 @@ public sealed class FantasyProsFantasyDataProvider(
 
         return new Dictionary<string, double>();
     }
+
+    /// <summary>
+    /// Projections for every position, in one request.
+    ///
+    /// The position parameter is not optional here, whatever the docs imply: without it the
+    /// endpoint answers with running backs only and no error, which left every quarterback,
+    /// receiver, tight end, kicker and defence with no projected points and so no value over
+    /// replacement. Measured against the live API: no parameter returns 131 rows, all RB;
+    /// position=ALL returns 605 across all six positions.
+    /// </summary>
+    public static string ProjectionsPath(int season) =>
+        $"nfl/{season}/projections?week=0&position=ALL";
 
     private static FantasyProsProjectedPlayer? TryProjection(
         IReadOnlyDictionary<string, FantasyProsProjectedPlayer> projections,

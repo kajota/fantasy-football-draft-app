@@ -59,7 +59,7 @@ public class FantasyProsProviderTests
               ]
             }
             """;
-        handler.Responses["nfl/2026/projections?week=0"] = """
+        handler.Responses["nfl/2026/projections?week=0&position=ALL"] = """
             { "players": [ { "player_id": 17298, "rush_yd": 1400, "rush_td": 12, "rec": 70, "rec_yds": 560 } ] }
             """;
 
@@ -93,6 +93,64 @@ public class FantasyProsProviderTests
         Assert.Contains(writer.Ids, id => id.ProviderKey == "yahoo" && id.ExternalId == "31002");
         Assert.Equal(4, handler.ApiKeys.Count);
         Assert.All(handler.ApiKeys, key => Assert.Equal("test-key", key));
+    }
+
+    /// <summary>
+    /// Without an explicit position the endpoint answers with running backs only, and says
+    /// nothing about it — which silently left every other position with no projected points.
+    /// </summary>
+    [Fact]
+    public void Projections_are_requested_for_every_position()
+    {
+        var path = FantasyProsFantasyDataProvider.ProjectionsPath(2026);
+
+        Assert.Contains("position=ALL", path, StringComparison.Ordinal);
+        Assert.StartsWith("nfl/2026/projections?", path, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Projections_are_mapped_for_positions_other_than_running_back()
+    {
+        var handler = new ScriptedHandler();
+        handler.Responses["nfl/2026/consensus-rankings?type=draft&scoring=HALF&position=ALL"] = """
+            {
+              "players": [
+                { "player_id": 1, "player_name": "Ja'Marr Chase", "player_team_id": "CIN", "player_position_id": "WR", "rank_ecr": 1 },
+                { "player_id": 2, "player_name": "Josh Allen", "player_team_id": "BUF", "player_position_id": "QB", "rank_ecr": 2 },
+                { "player_id": 3, "player_name": "Brock Bowers", "player_team_id": "LV", "player_position_id": "TE", "rank_ecr": 3 }
+              ]
+            }
+            """;
+        handler.Responses["nfl/2026/projections?week=0&position=ALL"] = """
+            {
+              "players": [
+                { "player_id": 1, "rec": 100, "rec_yds": 1400 },
+                { "player_id": 2, "pass_yds": 4100, "pass_td": 30 },
+                { "player_id": 3, "rec": 85, "rec_yds": 1100 }
+              ]
+            }
+            """;
+
+        var writer = new CapturingWriter();
+        var credentials = new MemoryCredentials();
+        await credentials.SaveSecretAsync("fantasydata", "fantasypros", "test-key");
+        var http = new HttpClient(handler) { BaseAddress = new Uri("https://api.fantasypros.com/public/v2/json/") };
+        var provider = new FantasyProsFantasyDataProvider(http, writer, credentials, TimeSpan.Zero);
+
+        var result = await provider.RefreshAsync(new FantasyDataRefreshRequest { Season = 2026 }, CancellationToken.None);
+
+        Assert.True(result.Succeeded, result.Error);
+        var byPlayer = writer.Players.ToDictionary(p => p.PlayerId, p => p.PrimaryPosition);
+        var positions = writer.Projections
+            .Select(row => byPlayer[row.PlayerId])
+            .Distinct()
+            .ToList();
+
+        Assert.Contains(PlayerPosition.WR, positions);
+        Assert.Contains(PlayerPosition.QB, positions);
+        Assert.Contains(PlayerPosition.TE, positions);
+        Assert.Contains(writer.Projections, row => row.PassingYards == 4100);
+        Assert.Contains(writer.Projections, row => row.Receptions == 100);
     }
 
     private sealed class ScriptedHandler : HttpMessageHandler

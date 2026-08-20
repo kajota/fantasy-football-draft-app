@@ -1,4 +1,5 @@
 using FantasyDraftAssistant.Core.Commands;
+using FantasyDraftAssistant.Core.Analytics;
 using FantasyDraftAssistant.Core.Ids;
 using FantasyDraftAssistant.Core.Interfaces;
 using FantasyDraftAssistant.Core.Query;
@@ -140,6 +141,28 @@ public class DecisionContextTests : IDisposable
         Assert.All(withAdp, p => Assert.NotNull(p.NextPickOutlook));
         Assert.Contains(context.TopAvailable, p => p.PointsAboveReplacement is not null);
         Assert.NotEmpty(context.TierCliffs);
+    }
+
+    [Fact]
+    public async Task Consecutive_turn_pick_marks_available_players_as_back()
+    {
+        var (draftId, _) = await CreateStartedDraftAsync();
+        var commands = _services.GetRequiredService<IDraftCommandService>();
+        var players = await _services.GetRequiredService<IDraftStateService>().GetPlayersAsync();
+        foreach (var playerId in players.Select(player => player.PlayerId).Take(7))
+            Assert.True((await commands.DraftPlayerAsync(new DraftPlayerCommand(draftId, playerId))).Succeeded);
+
+        var context = await GetContextAsync(draftId);
+
+        Assert.Equal(0, context.Status.PicksUntilUser);
+        Assert.Equal(new[] { 8, 9 }, context.MyUpcomingPicks.Take(2).Select(p => p.OverallPick).ToArray());
+        var withAdp = context.TopAvailable.Where(p => p.OverallAdp is not null).ToList();
+        Assert.NotEmpty(withAdp);
+        Assert.All(withAdp, player =>
+        {
+            Assert.Equal(PickOutlook.LikelyBack, player.NextPickOutlook);
+            Assert.Equal(0, player.NextPickGonePercent);
+        });
     }
 
     [Fact]

@@ -68,12 +68,11 @@ public sealed class PositionBestRow
         : "Overall rank. This player has no projected points in the current data source, so points above replacement cannot be computed.";
 
     /// <summary>
-    /// "81% gone · likely gone", or just the words when there is no ADP to work from. Clamped
-    /// short of 0 and 100: this is a heuristic over noisy ADP, and it should never claim
-    /// certainty it cannot have.
+    /// "81% gone · likely gone", or just the words when there is no ADP to work from. ADP
+    /// heuristics are clamped short of certainty, but turn picks can correctly report 0%.
     /// </summary>
     public string OutlookLabel => GonePercent is { } percent
-        ? $"{Math.Clamp(percent, 1, 99)}% gone · {Outlook}"
+        ? $"{Math.Clamp(percent, 0, 99)}% gone · {Outlook}"
         : Outlook;
 
     public string OutlookTip =>
@@ -344,6 +343,9 @@ public partial class DraftRoomViewModel : PageViewModel
     private bool _suppressBoardReaction;
     private AnalyticsSnapshot? _pendingBoardReaction;
     private bool _pauseMock;
+    private string? _revealedSearchName;
+
+    private static readonly TimeSpan PracticePickRevealDelay = TimeSpan.FromMilliseconds(750);
 
     public DraftRoomViewModel(
         IDraftCommandService commands,
@@ -696,55 +698,7 @@ public partial class DraftRoomViewModel : PageViewModel
             .ToList();
 
         await EnsureDataSourcesAsync(FantasyDataFormat.FromLeague(state.ScoringRules, state.RosterSlots));
-        var providerIds = await _fantasyData.GetProviderIdsAsync();
-        var available = await _queries.GetAvailablePlayersAsync(context, new PlayerFilter
-        {
-            Search = string.IsNullOrWhiteSpace(Search) ? null : Search,
-            Position = Enum.TryParse<PlayerPosition>(PositionFilter, out var pos) ? pos : null,
-            MaxResults = 80,
-            SortBy = SortBy,
-            SortDescending = SortDescending,
-            SourceKey = SourceKeyFor(DataSource)
-        });
-        Available.Clear();
-        foreach (var player in available.Players)
-        {
-            var playerId = PlayerId.Parse(player.PlayerId);
-            string? sleeperId = null;
-            string? yahooId = null;
-            if (providerIds.TryGetValue(playerId, out var ids))
-            {
-                ids.TryGetValue("sleeper", out sleeperId);
-                ids.TryGetValue("yahoo", out yahooId);
-            }
-
-            var links = PlayerExternalLinks.Build(player.Name, player.Position, sleeperId, yahooId);
-            Available.Add(new PlayerRow
-            {
-                PlayerId = playerId,
-                Rank = player.OverallRank,
-                Name = player.Name,
-                Position = player.Position,
-                NflTeam = player.NflTeam,
-                Adp = player.AdpRoundPick,
-                Proj = player.ProjectedPoints,
-                ProjLabel = player.ProjectedPoints is { } points ? points.ToString("0") : "—",
-                Status = player.Status,
-                StatusLabel = StatusCode(player.Status),
-                InjuryDetail = player.InjuryLine ?? "",
-                IsInjured = !string.Equals(player.Status, "Active", StringComparison.OrdinalIgnoreCase),
-                Tier = player.Tier,
-                HandcuffFor = player.HandcuffFor,
-                SharedByeWith = player.SharedByeWith,
-                SharedByeWeek = player.SharedByeWeek,
-                FantasyProsUrl = links.FantasyPros,
-                SleeperUrl = links.Sleeper,
-                YahooUrl = links.Yahoo
-            });
-        }
-
-        if (SelectedPlayer is null || Available.All(p => !p.PlayerId.Equals(SelectedPlayer.PlayerId)))
-            SelectedPlayer = Available.FirstOrDefault();
+        await RefreshAvailableAsync(context);
 
         Queue.Clear();
         var queueItems = await _drafts.GetQueueAsync(draftId, state.ActiveBranch.BranchId);
@@ -832,6 +786,66 @@ public partial class DraftRoomViewModel : PageViewModel
         await RefreshDecisionBoardAsync(context);
         await RefreshAnalystsAsync();
         await ReactToBoardAsync(snapshot);
+    }
+
+    private async Task RefreshAvailableAsync(QueryContext? context = null)
+    {
+        if (context is null)
+        {
+            if (_session.DraftId is not { } draftId || _session.BranchId is not { } branchId)
+                return;
+            context = new QueryContext { DraftId = draftId, BranchId = branchId };
+        }
+
+        var providerIds = await _fantasyData.GetProviderIdsAsync();
+        var available = await _queries.GetAvailablePlayersAsync(context, new PlayerFilter
+        {
+            Search = string.IsNullOrWhiteSpace(Search) ? null : Search,
+            Position = Enum.TryParse<PlayerPosition>(PositionFilter, out var pos) ? pos : null,
+            MaxResults = 80,
+            SortBy = SortBy,
+            SortDescending = SortDescending,
+            SourceKey = SourceKeyFor(DataSource)
+        });
+        Available.Clear();
+        foreach (var player in available.Players)
+        {
+            var playerId = PlayerId.Parse(player.PlayerId);
+            string? sleeperId = null;
+            string? yahooId = null;
+            if (providerIds.TryGetValue(playerId, out var ids))
+            {
+                ids.TryGetValue("sleeper", out sleeperId);
+                ids.TryGetValue("yahoo", out yahooId);
+            }
+
+            var links = PlayerExternalLinks.Build(player.Name, player.Position, sleeperId, yahooId);
+            Available.Add(new PlayerRow
+            {
+                PlayerId = playerId,
+                Rank = player.OverallRank,
+                Name = player.Name,
+                Position = player.Position,
+                NflTeam = player.NflTeam,
+                Adp = player.AdpRoundPick,
+                Proj = player.ProjectedPoints,
+                ProjLabel = player.ProjectedPoints is { } points ? points.ToString("0") : "—",
+                Status = player.Status,
+                StatusLabel = StatusCode(player.Status),
+                InjuryDetail = player.InjuryLine ?? "",
+                IsInjured = !string.Equals(player.Status, "Active", StringComparison.OrdinalIgnoreCase),
+                Tier = player.Tier,
+                HandcuffFor = player.HandcuffFor,
+                SharedByeWith = player.SharedByeWith,
+                SharedByeWeek = player.SharedByeWeek,
+                FantasyProsUrl = links.FantasyPros,
+                SleeperUrl = links.Sleeper,
+                YahooUrl = links.Yahoo
+            });
+        }
+
+        if (SelectedPlayer is null || Available.All(p => !p.PlayerId.Equals(SelectedPlayer.PlayerId)))
+            SelectedPlayer = Available.FirstOrDefault();
     }
 
     /// <summary>
@@ -1153,6 +1167,8 @@ public partial class DraftRoomViewModel : PageViewModel
                 last = $"{result.TeamName} ({result.Personality}) took {result.PlayerName}.";
                 StatusMessage = last;
                 await ReloadAsync();
+                if (!_pauseMock)
+                    await Task.Delay(PracticePickRevealDelay);
             }
 
             if (_pauseMock)
@@ -1335,7 +1351,11 @@ public partial class DraftRoomViewModel : PageViewModel
         if (_session.DraftId is not { } draftId || _session.BranchId is not { } branchId)
             return;
         var prompt = string.IsNullOrWhiteSpace(AiPrompt) ? "Who should I take here?" : AiPrompt.Trim();
-        await AskAdvisorsAsync(draftId, branchId, prompt, auto: false);
+        var snapshot = await _analytics.GetSnapshotAsync(draftId, branchId);
+        var currentUserPick = snapshot.PicksUntilUser == 0 && snapshot.UserNextRoundPick is not null
+            ? snapshot.CurrentOverallPick
+            : (int?)null;
+        await AskAdvisorsAsync(draftId, branchId, prompt, auto: false, overallPick: currentUserPick);
     }
 
     [RelayCommand]
@@ -1633,7 +1653,7 @@ public partial class DraftRoomViewModel : PageViewModel
                     snapshot.CurrentOverallPick,
                     _autoAskBranch,
                     _lastAutoAskOverall)
-                ? AskAdvisorsAsync(draftId, branchId, "Who should I take here?", auto: true, snapshot.CurrentOverallPick)
+                ? AskAdvisorsAsync(draftId, branchId, "Who should I take here?", auto: true, overallPick: snapshot.CurrentOverallPick)
                 : Task.CompletedTask;
             await Task.WhenAll(watchTask, askTask);
         }
@@ -1669,14 +1689,14 @@ public partial class DraftRoomViewModel : PageViewModel
         if (advisors.Any(IsBusy))
             return;
 
+        if (overallPick is { } pick)
+        {
+            _autoAskBranch = branchId;
+            _lastAutoAskOverall = pick;
+        }
+
         if (auto)
         {
-            if (overallPick is { } pick)
-            {
-                _autoAskBranch = branchId;
-                _lastAutoAskOverall = pick;
-            }
-
             StatusMessage = "On the clock — asking advisors.";
         }
         var version = StateVersion;
@@ -1765,7 +1785,7 @@ public partial class DraftRoomViewModel : PageViewModel
             SortDescending = sort == PlayerListSort.ProjectedPoints;
         }
 
-        await ReloadAsync();
+        await RefreshAvailableAsync();
     }
 
     private string SortLabel(string label, PlayerListSort column)
@@ -1847,33 +1867,65 @@ public partial class DraftRoomViewModel : PageViewModel
         // deep sleeper would not otherwise be on screen to select.
         _muteExternalReload = true;
         PositionFilter = "All";
+        _revealedSearchName = name;
         Search = name;
         _muteExternalReload = false;
-        await ReloadAsync();
+        await RefreshAvailableAsync();
 
         SelectedPlayer = Available.FirstOrDefault(row => row.PlayerId.Equals(playerId)) ?? Available.FirstOrDefault();
         SelectedTabIndex = AvailablePlayersTab;
+        if (SelectedPlayer is null)
+            _revealedSearchName = null;
         StatusMessage = SelectedPlayer is null
             ? $"{name} is not in the available list."
-            : $"Showing {name}. Clear the search box for the full board.";
+            : RevealSearchMessage(name);
     }
 
-    public bool HasSearch => !string.IsNullOrEmpty(Search);
+    public bool HasSearch => !string.IsNullOrWhiteSpace(Search);
+
+    private static string RevealSearchMessage(string name) =>
+        $"Showing {name}. Clear the search box for the full board.";
+
+    private void ClearRevealSearchStatus()
+    {
+        if (_revealedSearchName is { } name
+            && string.Equals(StatusMessage, RevealSearchMessage(name), StringComparison.Ordinal))
+        {
+            StatusMessage = null;
+        }
+
+        _revealedSearchName = null;
+    }
 
     [RelayCommand]
-    private void ClearSearch() => Search = "";
+    private void ClearSearch()
+    {
+        if (Search.Length == 0)
+        {
+            ClearRevealSearchStatus();
+            return;
+        }
+
+        Search = "";
+    }
 
     partial void OnSearchChanged(string value)
     {
         OnPropertyChanged(nameof(HasSearch));
+        if (string.IsNullOrWhiteSpace(value)
+            || (_revealedSearchName is { } name && !string.Equals(value, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            ClearRevealSearchStatus();
+        }
+
         if (!_muteExternalReload)
-            _ = ReloadAsync();
+            _ = RefreshAvailableAsync();
     }
 
     partial void OnPositionFilterChanged(string value)
     {
         if (!_muteExternalReload)
-            _ = ReloadAsync();
+            _ = RefreshAvailableAsync();
     }
 
     [RelayCommand]

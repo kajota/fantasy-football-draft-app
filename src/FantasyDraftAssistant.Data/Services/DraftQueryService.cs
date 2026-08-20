@@ -176,7 +176,8 @@ public sealed class DraftQueryService(
         var queue = await MapPlayers(state, queued, cancellationToken, sourceKey);
         var userNeeds = snapshot.TeamNeeds.FirstOrDefault(team => team.TeamId.Equals(user));
 
-        Annotate(available, queue, snapshot);
+        var outlook = PickOutlookWindow(state, user);
+        Annotate(available, queue, snapshot, outlook.TargetOverallPick, outlook.InterveningPicks);
 
         var topAvailable = available.Take(TopAvailableCount).ToList();
         var rookies = available.Where(player => player.IsRookie).Take(RookieCount).ToList();
@@ -241,7 +242,9 @@ public sealed class DraftQueryService(
     private static void Annotate(
         IReadOnlyList<PlayerSummaryDto> available,
         IReadOnlyList<PlayerSummaryDto> queue,
-        AnalyticsSnapshot snapshot)
+        AnalyticsSnapshot snapshot,
+        int? outlookTargetOverallPick,
+        int? interveningPicks)
     {
         var leagueDemand = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (var team in snapshot.TeamNeeds)
@@ -256,12 +259,49 @@ public sealed class DraftQueryService(
         var baselines = ValueOverReplacement.Baselines(available, leagueDemand);
         foreach (var player in available.Concat(queue))
         {
-            player.NextPickOutlook = PickOutlook.For(player.OverallAdp, player.RankStd, snapshot.UserNextOverallPick);
-            player.NextPickGonePercent = PickOutlook.GoneProbability(player.OverallAdp, player.RankStd, snapshot.UserNextOverallPick)
-                is { } gone ? (int)Math.Round(gone * 100) : null;
+            if (interveningPicks == 0)
+            {
+                player.NextPickOutlook = PickOutlook.LikelyBack;
+                player.NextPickGonePercent = 0;
+            }
+            else
+            {
+                player.NextPickOutlook = PickOutlook.For(player.OverallAdp, player.RankStd, outlookTargetOverallPick);
+                player.NextPickGonePercent = PickOutlook.GoneProbability(player.OverallAdp, player.RankStd, outlookTargetOverallPick)
+                    is { } gone ? (int)Math.Round(gone * 100) : null;
+            }
+
             if (player.ProjectedPoints is { } points && baselines.TryGetValue(player.Position, out var baseline))
                 player.PointsAboveReplacement = points - baseline;
         }
+    }
+
+    private static (int? TargetOverallPick, int? InterveningPicks) PickOutlookWindow(DraftWorkingState state, TeamId user)
+    {
+        var current = state.CurrentSlot;
+        if (current is null)
+            return (null, null);
+
+        var upcomingUserPicks = state.Slots
+            .Where(s => !state.ActiveSelections.ContainsKey(s.OverallPick))
+            .Where(s => s.TeamId.Equals(user))
+            .OrderBy(s => s.OverallPick)
+            .ToList();
+        var target = current.TeamId.Equals(user)
+            ? upcomingUserPicks.FirstOrDefault(s => s.OverallPick > current.OverallPick)
+            : upcomingUserPicks.FirstOrDefault();
+        if (target is null)
+            return (null, null);
+
+        var start = current.TeamId.Equals(user)
+            ? current.OverallPick + 1
+            : current.OverallPick;
+        var intervening = state.Slots.Count(s =>
+            !state.ActiveSelections.ContainsKey(s.OverallPick)
+            && s.OverallPick >= start
+            && s.OverallPick < target.OverallPick
+            && !s.TeamId.Equals(user));
+        return (target.OverallPick, intervening);
     }
 
     private static List<UpcomingPickDto> UpcomingPicks(DraftWorkingState state, TeamId user, int take) =>

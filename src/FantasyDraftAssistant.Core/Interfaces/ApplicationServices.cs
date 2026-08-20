@@ -23,6 +23,7 @@ public interface IDraftCommandService
     Task<DraftCommitResult> DraftPlayerAsync(DraftPlayerCommand command, CancellationToken cancellationToken = default);
     Task<DraftCommitResult> RollbackAsync(RollbackDraftCommand command, CancellationToken cancellationToken = default);
     Task<DraftCommitResult> RedoAsync(RedoDraftCommand command, CancellationToken cancellationToken = default);
+    Task<DraftCommitResult> ResetAsync(ResetDraftCommand command, CancellationToken cancellationToken = default);
     Task<DraftCommitResult> CorrectPickAsync(CorrectPickCommand command, CancellationToken cancellationToken = default);
     Task<DraftCommitResult> CreateBranchAsync(CreateDraftBranchCommand command, CancellationToken cancellationToken = default);
     Task<DraftCommitResult> SwitchBranchAsync(SwitchDraftBranchCommand command, CancellationToken cancellationToken = default);

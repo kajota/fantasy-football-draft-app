@@ -40,7 +40,13 @@ internal static class DraftStateLoader
             state.KnownPlayers.Add(player.PlayerId);
 
         var selections = LeagueService.LoadSelections(db, tx, draftId, activeBranchId);
-        if (selections.Count == 0 && branch.ParentBranchId is { } parentId)
+
+        // Only inherit from the parent while this branch has never been written to. Once it
+        // has, its own rows are the truth even when there are none — otherwise undoing back to
+        // an empty board would silently pull the parent's picks in again. See migration 013.
+        if (selections.Count == 0
+            && branch.ParentBranchId is { } parentId
+            && !LeagueService.SelectionsMaterialized(db, tx, activeBranchId))
         {
             selections = LeagueService.LoadSelections(db, tx, draftId, parentId)
                 .Where(s => s.OverallPick < branch.BranchPointOverallPick || s.Source == PickSource.Keeper)

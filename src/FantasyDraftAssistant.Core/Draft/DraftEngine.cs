@@ -149,6 +149,42 @@ public static class DraftEngine
         return DraftCommitResult.Ok(state, state.NewEvents);
     }
 
+    /// <summary>
+    /// Clears the board back to the first pick, keeping keepers. Recorded as a single rollback
+    /// so it is one Undo away, rather than the pick-by-pick unwinding it replaces.
+    /// </summary>
+    public static DraftCommitResult Reset(DraftWorkingState state, ResetDraftCommand command)
+    {
+        var validation = DraftValidator.CanReset(state);
+        if (!validation.IsValid)
+            return DraftCommitResult.Fail(validation.Error!);
+
+        var deactivated = state.ActiveSelections.Values
+            .Where(s => s.Source != PickSource.Keeper)
+            .OrderBy(s => s.OverallPick)
+            .ToList();
+
+        IncrementVersion(state);
+        foreach (var selection in deactivated)
+            Deactivate(state, selection.OverallPick);
+
+        state.Redo = new RedoCandidate
+        {
+            Selections = deactivated,
+            RolledBackToOverallPick = 0
+        };
+        state.Draft.Status = DraftStatus.InProgress;
+        state.Draft.CompletedAt = null;
+
+        AppendEvent(state, DraftEventType.DraftRolledBack, command.CreatedBy, new DraftRolledBackPayload
+        {
+            TargetOverallPick = 0,
+            DeactivatedOverallPicks = deactivated.Select(s => s.OverallPick).ToArray()
+        });
+
+        return DraftCommitResult.Ok(state, state.NewEvents);
+    }
+
     public static DraftCommitResult Redo(DraftWorkingState state, RedoDraftCommand command)
     {
         var validation = DraftValidator.CanRedo(state);

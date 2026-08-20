@@ -950,6 +950,24 @@ public sealed class LeagueService(SqliteConnectionFactory factory, IBackupServic
         return list;
     }
 
+    /// <summary>
+    /// True once a branch's own selection rows have been written at least once, which makes
+    /// them authoritative even when empty. See migration 013.
+    /// </summary>
+    internal static bool SelectionsMaterialized(SqliteConnection db, SqliteTransaction? tx, BranchId branchId)
+    {
+        using var cmd = db.Cmd("SELECT SelectionsMaterialized FROM DraftBranches WHERE BranchId = $b;", tx)
+            .Bind("$b", branchId.ToString());
+        return cmd.ExecuteScalar() is long flag && flag != 0;
+    }
+
+    internal static void MarkSelectionsMaterialized(SqliteConnection db, SqliteTransaction? tx, BranchId branchId)
+    {
+        using var cmd = db.Cmd("UPDATE DraftBranches SET SelectionsMaterialized = 1 WHERE BranchId = $b;", tx)
+            .Bind("$b", branchId.ToString());
+        cmd.ExecuteNonQuery();
+    }
+
     internal static List<ActiveSelection> LoadSelections(SqliteConnection db, SqliteTransaction? tx, DraftId draftId, BranchId branchId)
     {
         using var cmd = db.Cmd("""

@@ -60,6 +60,14 @@ public static class DraftValidator
         return ValidationResult.Ok();
     }
 
+    public static ValidationResult CanReset(DraftWorkingState state)
+    {
+        if (!state.ActiveSelections.Values.Any(s => s.Source != PickSource.Keeper))
+            return ValidationResult.Fail("This board has no picks to clear.");
+
+        return ValidationResult.Ok();
+    }
+
     public static ValidationResult CanRollback(DraftWorkingState state, int targetOverallPick)
     {
         if (state.Draft.Status != DraftStatus.InProgress)

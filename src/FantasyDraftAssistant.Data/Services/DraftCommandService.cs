@@ -30,6 +30,12 @@ public sealed class DraftCommandService(
     public Task<DraftCommitResult> RedoAsync(RedoDraftCommand command, CancellationToken cancellationToken = default) =>
         CommitAsync(command.DraftId, null, state => DraftEngine.Redo(state, command), cancellationToken);
 
+    public async Task<DraftCommitResult> ResetAsync(ResetDraftCommand command, CancellationToken cancellationToken = default)
+    {
+        await backups.CreateBackupAsync("reset", cancellationToken);
+        return await CommitAsync(command.DraftId, null, state => DraftEngine.Reset(state, command), cancellationToken);
+    }
+
     public async Task<DraftCommitResult> CorrectPickAsync(CorrectPickCommand command, CancellationToken cancellationToken = default)
     {
         await backups.CreateBackupAsync("correction", cancellationToken);
@@ -169,6 +175,10 @@ public sealed class DraftCommandService(
         using (var cmd = db.Cmd("DELETE FROM ActiveDraftSelections WHERE DraftId = $d AND BranchId = $b;", tx)
                    .Bind("$d", draft).Bind("$b", branch))
             cmd.ExecuteNonQuery();
+
+        // From here the branch owns its selections, so a later load must not fall back to
+        // inheriting the parent's picks just because this wrote no rows.
+        LeagueService.MarkSelectionsMaterialized(db, tx, state.ActiveBranch.BranchId);
         using (var cmd = db.Cmd("DELETE FROM TeamRosterProjection WHERE DraftId = $d AND BranchId = $b;", tx)
                    .Bind("$d", draft).Bind("$b", branch))
             cmd.ExecuteNonQuery();

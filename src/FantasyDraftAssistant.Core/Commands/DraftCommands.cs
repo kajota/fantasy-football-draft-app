@@ -25,6 +25,11 @@ public sealed record RedoDraftCommand(
     DraftId DraftId,
     string CreatedBy = "user");
 
+/// <summary>Clears every non-keeper pick on the current branch in one undoable step.</summary>
+public sealed record ResetDraftCommand(
+    DraftId DraftId,
+    string CreatedBy = "user");
+
 public sealed record CorrectPickCommand(
     DraftId DraftId,
     int OverallPick,

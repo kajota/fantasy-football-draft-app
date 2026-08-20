@@ -43,6 +43,16 @@ public sealed class FantasyProsProjectedPlayer
     public double Receptions { get; init; }
     public double ReceivingYards { get; init; }
     public double ReceivingTouchdowns { get; init; }
+
+    /// <summary>
+    /// True when nothing this app scores was reported. Kickers and defences come back with
+    /// only field goals or sacks and turnovers, none of which map onto these fields, so
+    /// keeping their rows would claim a confident projection of zero points.
+    /// </summary>
+    public bool HasScorableStats =>
+        PassingAttempts > 0 || Completions > 0 || PassingYards > 0 || PassingTouchdowns > 0
+        || Interceptions > 0 || RushingAttempts > 0 || RushingYards > 0 || RushingTouchdowns > 0
+        || Targets > 0 || Receptions > 0 || ReceivingYards > 0 || ReceivingTouchdowns > 0;
 }
 
 public static class FantasyProsCatalog
@@ -256,7 +266,10 @@ public static class FantasyProsCatalog
             RushingYards = FirstDouble(stats, "rushing_yds", "rush_yd", "rush_yds") ?? 0,
             RushingTouchdowns = FirstDouble(stats, "rushing_tds", "rush_td", "rush_tds") ?? 0,
             Targets = FirstDouble(stats, "rec_tgt", "targets", "tgt") ?? 0,
-            Receptions = FirstDouble(stats, "rec", "receptions") ?? 0,
+            // "rec_rec" is what the API actually calls receptions. Missing it scored every
+            // pass catcher as if the league were non-PPR, which quietly cost a receiver more
+            // than a hundred points and tilted every recommendation toward running backs.
+            Receptions = FirstDouble(stats, "rec_rec", "rec", "receptions") ?? 0,
             ReceivingYards = FirstDouble(stats, "rec_yds", "receiving_yds", "rec_yd") ?? 0,
             ReceivingTouchdowns = FirstDouble(stats, "rec_tds", "receiving_tds", "rec_td") ?? 0
         };

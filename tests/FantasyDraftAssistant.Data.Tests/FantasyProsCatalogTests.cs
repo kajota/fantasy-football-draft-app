@@ -109,6 +109,72 @@ public class FantasyProsCatalogTests
         Assert.Equal(535, row.RushingYards);
     }
 
+    /// <summary>
+    /// Verbatim from a live nfl/2026/projections?week=0&amp;position=WR response. The other
+    /// projection test uses invented field names that happen to sit in our alias lists, which
+    /// is how "rec_rec" went unnoticed and every pass catcher scored as if the league were
+    /// non-PPR. Keep this fixture matching the wire format, not our expectations of it.
+    /// </summary>
+    [Fact]
+    public void Parses_the_stat_names_the_api_actually_sends()
+    {
+        const string json = """
+            {
+              "players": [
+                {
+                  "fpid": 23180,
+                  "name": "Puka Nacua",
+                  "position_id": "WR",
+                  "team_id": "LAR",
+                  "stats": {
+                    "points": 222.8,
+                    "points_ppr": 339.8,
+                    "points_half": 281.3,
+                    "rec_rec": 117,
+                    "rec_yds": 1539,
+                    "rec_tds": 9,
+                    "rush_att": 13.64,
+                    "rush_yds": 85,
+                    "rush_tds": 1.39,
+                    "fumbles": 0.98
+                  }
+                }
+              ]
+            }
+            """;
+
+        var row = Assert.Single(FantasyProsCatalog.ParseProjections(json));
+        Assert.Equal(117, row.Receptions);
+        Assert.Equal(1539, row.ReceivingYards);
+        Assert.Equal(9, row.ReceivingTouchdowns);
+        Assert.Equal(85, row.RushingYards);
+        Assert.Equal(1.39, row.RushingTouchdowns);
+        Assert.True(row.HasScorableStats);
+    }
+
+    [Fact]
+    public void A_kicker_row_carries_nothing_this_app_can_score()
+    {
+        // Kickers report only fga/fg/xpt, so a row of zeros would claim a confident
+        // projection of zero points rather than an absent one.
+        const string json = """
+            {
+              "players": [
+                {
+                  "fpid": 1,
+                  "name": "Cam Little",
+                  "position_id": "K",
+                  "team_id": "JAX",
+                  "stats": { "points": 142.1, "fga": 31.2, "fg": 26.1, "xpt": 33.4 }
+                }
+              ]
+            }
+            """;
+
+        var row = Assert.Single(FantasyProsCatalog.ParseProjections(json));
+        Assert.False(row.HasScorableStats);
+    }
+
     [Fact]
     public void Ignores_non_fantasy_positions()
     {

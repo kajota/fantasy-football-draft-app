@@ -146,7 +146,7 @@ public sealed class FantasyProsFantasyDataProvider(
                     }
                 }
 
-                if (TryProjection(projections, row) is { } stats)
+                if (TryProjection(projections, row) is { HasScorableStats: true } stats)
                 {
                     foreach (var sourceKey in new[] { format.SourceKey, Key })
                         projectionRows.Add(FantasyProsCatalog.ToProjection(player.PlayerId, stats, now, sourceKey));

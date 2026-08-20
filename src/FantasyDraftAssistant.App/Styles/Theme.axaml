@@ -154,6 +154,17 @@
     <Setter Property="Padding" Value="16" />
   </Style>
 
+  <!-- Drag handle between resizable panes. Reads as a gap until you hover it. -->
+  <Style Selector="GridSplitter.pane">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="MinWidth" Value="0" />
+    <Setter Property="MinHeight" Value="0" />
+  </Style>
+
+  <Style Selector="GridSplitter.pane:pointerover">
+    <Setter Property="Background" Value="{StaticResource AccentBrush}" />
+  </Style>
+
   <Style Selector="TabControl">
     <Setter Property="Padding" Value="0,8,0,0" />
     <Setter Property="Background" Value="Transparent" />

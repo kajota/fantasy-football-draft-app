@@ -12,21 +12,63 @@ public static class PickOutlook
     public const string CoinFlip = "coin flip";
     public const string LikelyBack = "likely back";
 
-    public static string? For(double? overallAdp, double? rankStd, int? userNextOverallPick)
+    /// <summary>Above this the player is called gone; below its mirror, called back.</summary>
+    private const double LikelyThreshold = 0.75;
+
+    /// <summary>
+    /// Probability the player is off the board before the user's next pick.
+    ///
+    /// Treats the player's actual draft slot as normally distributed around their ADP, with the
+    /// spread taken from disagreement between ranking sources. That is a proxy — rank spread is
+    /// not observed draft variance — so the number is a calibrated guess, not a measurement.
+    /// Returns null when there is no ADP or no next pick to compare against.
+    /// </summary>
+    public static double? GoneProbability(double? overallAdp, double? rankStd, int? userNextOverallPick)
     {
         if (overallAdp is not { } adp || userNextOverallPick is not { } next)
             return null;
 
-        var margin = Margin(rankStd);
-        if (adp + margin < next)
-            return LikelyGone;
-        if (adp - margin > next)
-            return LikelyBack;
-        return CoinFlip;
+        return StandardNormalCdf((next - adp) / Sigma(rankStd));
     }
 
-    public static double Margin(double? rankStd) =>
-        rankStd is { } std ? Math.Clamp(std * 1.5, 4.0, 12.0) : 6.0;
+    public static string? For(double? overallAdp, double? rankStd, int? userNextOverallPick) =>
+        GoneProbability(overallAdp, rankStd, userNextOverallPick) switch
+        {
+            null => null,
+            >= LikelyThreshold => LikelyGone,
+            <= 1 - LikelyThreshold => LikelyBack,
+            _ => CoinFlip
+        };
+
+    /// <summary>
+    /// Spread of the player's likely draft slot. Sources that agree closely still leave room for
+    /// one manager to reach, so the floor keeps the curve from becoming a step function.
+    /// </summary>
+    public static double Sigma(double? rankStd) =>
+        Math.Clamp(rankStd ?? 4.0, 2.0, 10.0);
+
+    /// <summary>
+    /// Normal CDF via the Abramowitz &amp; Stegun 7.1.26 error-function approximation
+    /// (max error ~1.5e-7) — far tighter than the inputs deserve, and dependency free.
+    /// </summary>
+    private static double StandardNormalCdf(double z)
+    {
+        var sign = z < 0 ? -1.0 : 1.0;
+        var x = Math.Abs(z) / Math.Sqrt(2.0);
+
+        const double p = 0.3275911;
+        const double a1 = 0.254829592;
+        const double a2 = -0.284496736;
+        const double a3 = 1.421413741;
+        const double a4 = -1.453152027;
+        const double a5 = 1.061405429;
+
+        var t = 1.0 / (1.0 + p * x);
+        var poly = t * (a1 + t * (a2 + t * (a3 + t * (a4 + t * a5))));
+        var erf = 1.0 - poly * Math.Exp(-x * x);
+
+        return 0.5 * (1.0 + sign * erf);
+    }
 }
 
 /// <summary>
@@ -64,11 +106,31 @@ public static class ValueOverReplacement
 /// One line per position describing how many players remain in the best
 /// remaining tier, so the AI can see tier cliffs without counting.
 /// </summary>
+/// <summary>How many players are left in a position's current tier before quality drops.</summary>
+public sealed record TierCliff(string Position, int Remaining, int Tier, int? NextTier)
+{
+    /// <summary>
+    /// The next tier is normally just this one plus one, which says nothing, so it is only
+    /// named when it skips — that happens once every player of the intervening tier is gone,
+    /// and it means the drop below this cliff is steeper than usual.
+    /// </summary>
+    public bool NextTierIsNotable => NextTier is { } next && next > Tier + 1;
+
+    public string Line => NextTierIsNotable
+        ? $"{Position}: {Remaining} left in Tier {Tier}, then Tier {NextTier}"
+        : $"{Position}: {Remaining} left in Tier {Tier}";
+}
+
 public static class TierCliffSummary
 {
-    public static IReadOnlyList<string> Build(IReadOnlyList<PlayerSummaryDto> available)
+    /// <summary>Ordered by position so the AI context stays stable between refreshes.</summary>
+    public static IReadOnlyList<string> Build(IReadOnlyList<PlayerSummaryDto> available) =>
+        Detail(available).Select(cliff => cliff.Line).ToList();
+
+    /// <summary>Same data structured, so the UI can rank cliffs by how close they are.</summary>
+    public static IReadOnlyList<TierCliff> Detail(IReadOnlyList<PlayerSummaryDto> available)
     {
-        var lines = new List<string>();
+        var cliffs = new List<TierCliff>();
         foreach (var group in available
                      .Where(p => p.Tier is not null)
                      .GroupBy(p => p.Position)
@@ -77,12 +139,14 @@ public static class TierCliffSummary
             var topTier = group.Min(p => p.Tier!.Value);
             var count = group.Count(p => p.Tier!.Value == topTier);
             var laterTiers = group.Where(p => p.Tier!.Value > topTier).Select(p => p.Tier!.Value).ToList();
-            lines.Add(laterTiers.Count > 0
-                ? $"{group.Key}: {count} left in Tier {topTier}, next tier is {laterTiers.Min()}"
-                : $"{group.Key}: {count} left in Tier {topTier}, no later tier cached");
+            cliffs.Add(new TierCliff(
+                group.Key,
+                count,
+                topTier,
+                laterTiers.Count > 0 ? laterTiers.Min() : null));
         }
 
-        return lines;
+        return cliffs;
     }
 }
 

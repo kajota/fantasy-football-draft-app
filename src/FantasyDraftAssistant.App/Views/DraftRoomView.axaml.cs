@@ -84,9 +84,17 @@ public partial class DraftRoomView : UserControl
 
         if (e.Source is TextBox)
         {
+            if (e.Key == Key.Escape
+                && (ReferenceEquals(e.Source, SearchBox) || ReferenceEquals(e.Source, SearchBoxTab)))
+            {
+                vm.ClearSearchCommand.Execute(null);
+                e.Handled = true;
+                return;
+            }
+
             if (e.Key == Key.Enter
                 && e.KeyModifiers == KeyModifiers.None
-                && (ReferenceEquals(e.Source, AiPromptBox) || ReferenceEquals(e.Source, AiPromptBoxTab)))
+                && ReferenceEquals(e.Source, AiPromptBoxTab))
             {
                 await vm.AskAiCommand.ExecuteAsync(null);
                 e.Handled = true;

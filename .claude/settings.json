@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bean-query *)",
+      "Bash(bean-check *)",
+      "Bash(ffprobe *)",
+      "Bash(getent *)"
+    ]
+  }
+}

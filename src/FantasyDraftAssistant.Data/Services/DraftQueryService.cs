@@ -231,6 +231,7 @@ public sealed class DraftQueryService(
                 }).ToList()
             },
             TierCliffs = TierCliffSummary.Build(available),
+            TierCliffDetail = TierCliffSummary.Detail(available),
             PositionThreats = PositionThreats(snapshot, intervening),
             MyByeWeeks = ByeWeeks(state, players, user),
             GeneratedAt = $"{now:yyyy-MM-dd HH:mm} UTC"
@@ -256,6 +257,8 @@ public sealed class DraftQueryService(
         foreach (var player in available.Concat(queue))
         {
             player.NextPickOutlook = PickOutlook.For(player.OverallAdp, player.RankStd, snapshot.UserNextOverallPick);
+            player.NextPickGonePercent = PickOutlook.GoneProbability(player.OverallAdp, player.RankStd, snapshot.UserNextOverallPick)
+                is { } gone ? (int)Math.Round(gone * 100) : null;
             if (player.ProjectedPoints is { } points && baselines.TryGetValue(player.Position, out var baseline))
                 player.PointsAboveReplacement = points - baseline;
         }

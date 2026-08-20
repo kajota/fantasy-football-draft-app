@@ -1,4 +1,5 @@
 using FantasyDraftAssistant.Core.Commands;
+using FantasyDraftAssistant.Core.Engine;
 using FantasyDraftAssistant.Core.Enums;
 using FantasyDraftAssistant.Core.Ids;
 using FantasyDraftAssistant.Core.Models;
@@ -15,6 +16,15 @@ public interface IMockDraftService
     Task<MockPickResult> StartPracticeAsync(DraftId draftId, CancellationToken cancellationToken = default);
     Task<MockPickResult> ReturnToLiveAsync(DraftId draftId, CancellationToken cancellationToken = default);
     Task<MockPickResult> SimulateNextAsync(DraftId draftId, BranchId? branchId = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Guesses what each seat between now and the user's next pick will take. A heuristic from
+    /// the practice-draft policy, not a forecast of real managers. Changes nothing.
+    /// </summary>
+    Task<IReadOnlyList<PredictedPick>> PredictUpcomingPicksAsync(
+        DraftId draftId,
+        BranchId? branchId = null,
+        CancellationToken cancellationToken = default);
 }
 
 public interface IDraftCommandService

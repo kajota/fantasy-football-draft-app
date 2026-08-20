@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+using FantasyDraftAssistant.Core.Analytics;
 using FantasyDraftAssistant.Core.Enums;
 using FantasyDraftAssistant.Core.Ids;
 
@@ -92,6 +94,9 @@ public sealed class PlayerSummaryDto
     // Decision-context annotations, set after mapping. Mutable on purpose.
     public decimal? PointsAboveReplacement { get; set; }
     public string? NextPickOutlook { get; set; }
+
+    /// <summary>Chance, 0-100, the player is drafted before the user's next pick.</summary>
+    public int? NextPickGonePercent { get; set; }
 }
 
 public sealed class PlayerDetailsDto
@@ -206,6 +211,13 @@ public sealed class DecisionContextDto
     public RosterDto? CurrentTeamRoster { get; init; }
     public DataFreshnessDto? DataFreshness { get; init; }
     public IReadOnlyList<string> TierCliffs { get; init; } = [];
+
+    /// <summary>
+    /// The same cliffs structured for the UI. Ignored when serialising so the AI payload
+    /// keeps carrying only the prose form.
+    /// </summary>
+    [JsonIgnore]
+    public IReadOnlyList<TierCliff> TierCliffDetail { get; init; } = [];
     public IReadOnlyDictionary<string, int> PositionThreats { get; init; } =
         new Dictionary<string, int>();
     public IReadOnlyList<string> MyByeWeeks { get; init; } = [];

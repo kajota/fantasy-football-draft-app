@@ -17,6 +17,92 @@ using FantasyDraftAssistant.Core.Results;
 
 namespace FantasyDraftAssistant.App.ViewModels;
 
+/// <summary>One run of an advisor answer: either plain prose or a player the user can click.</summary>
+public sealed class AiResponseSegment
+{
+    public required string Text { get; init; }
+    public PlayerId? PlayerId { get; init; }
+    public string? PlayerName { get; init; }
+
+    /// <summary>False once the player is off the board, which greys the link out.</summary>
+    public bool IsAvailable { get; init; }
+
+    public bool IsPlayer => PlayerId is not null;
+}
+
+/// <summary>
+/// The best remaining player at one position, with the two numbers that actually decide a
+/// pick: value over a replacement-level starter, and whether they survive to your next turn.
+/// </summary>
+public sealed class PositionBestRow
+{
+    public required string Position { get; init; }
+    public required PlayerId PlayerId { get; init; }
+    public required string Name { get; init; }
+    public required string NflTeam { get; init; }
+    public required decimal? Par { get; init; }
+    public required string Outlook { get; init; }
+    public int? Rank { get; init; }
+
+    public bool HasOutlook => !string.IsNullOrWhiteSpace(Outlook);
+
+    /// <summary>Chance, 0-100, the player is drafted before the user's next pick.</summary>
+    public int? GonePercent { get; init; }
+
+    /// <summary>
+    /// Value over replacement when projections are loaded, otherwise the overall rank. The unit
+    /// is always spelled out: the two are different quantities and must never look alike.
+    /// </summary>
+    public string ParLabel => Par is { } par
+        ? $"{par:+0;-0;0} PAR"
+        : Rank is { } rank ? $"Rank #{rank}" : "—";
+
+    public bool HasPar => Par is not null;
+
+    public IBrush ParBrush => HasPar
+        ? new SolidColorBrush(Color.Parse("#E8A317"))
+        : new SolidColorBrush(Color.Parse("#8B97A8"));
+
+    public string ParTip => HasPar
+        ? "PAR: projected points above a replacement-level starter at this position — how much you gain by taking them now instead of waiting."
+        : "Overall rank. This player has no projected points in the current data source, so points above replacement cannot be computed.";
+
+    /// <summary>
+    /// "81% gone · likely gone", or just the words when there is no ADP to work from. Clamped
+    /// short of 0 and 100: this is a heuristic over noisy ADP, and it should never claim
+    /// certainty it cannot have.
+    /// </summary>
+    public string OutlookLabel => GonePercent is { } percent
+        ? $"{Math.Clamp(percent, 1, 99)}% gone · {Outlook}"
+        : Outlook;
+
+    public string OutlookTip =>
+        "Chance this player is drafted before your next pick, from their ADP and how much the ranking "
+        + "sources disagree about them. A coin flip means genuinely undecided, not exactly 50%.";
+
+    /// <summary>Gone before your next pick is the case worth shouting about.</summary>
+    public bool IsUrgent => Outlook.Contains("gone", StringComparison.OrdinalIgnoreCase);
+
+    public IBrush OutlookBrush => IsUrgent
+        ? new SolidColorBrush(Color.Parse("#FF6B6B"))
+        : Outlook.Contains("coin", StringComparison.OrdinalIgnoreCase)
+            ? new SolidColorBrush(Color.Parse("#E8A317"))
+            : new SolidColorBrush(Color.Parse("#8B97A8"));
+
+    public string RankLabel => Rank is { } rank ? $"#{rank}" : "";
+    public string Detail => string.IsNullOrWhiteSpace(NflTeam) ? Name : $"{Name} · {NflTeam}";
+}
+
+/// <summary>A seat picking before the user, with the practice policy's guess at their pick.</summary>
+public sealed class UpcomingPickRow
+{
+    public string RoundPick { get; init; } = "";
+    public required string TeamName { get; init; }
+    public string Predicted { get; init; } = "";
+
+    public bool HasPrediction => Predicted.Length > 0;
+}
+
 public partial class AiAnalystPanel : ObservableObject
 {
     public required string ProviderKey { get; init; }
@@ -25,9 +111,21 @@ public partial class AiAnalystPanel : ObservableObject
     public string? Model { get; init; }
     public string Role { get; init; } = AiAnalysisMode.FastAdvisor;
     public decimal? SpendLimit { get; init; }
+
+    /// <summary>Set by the draft room so the panel can linkify names as answers stream in.</summary>
+    public Func<string, IReadOnlyList<AiResponseSegment>>? SegmentBuilder { get; set; }
+
     [ObservableProperty] private bool _includeInAsk = true;
     [ObservableProperty] private string _status = "Idle";
+    [ObservableProperty] private IReadOnlyList<AiResponseSegment> _segments = [];
     [ObservableProperty] private string _response = "";
+
+    partial void OnResponseChanged(string value) => RebuildSegments();
+
+    public void RebuildSegments() =>
+        Segments = SegmentBuilder is { } build && !string.IsNullOrEmpty(Response)
+            ? build(Response)
+            : [new AiResponseSegment { Text = Response }];
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Heading))]
     private string _spendLabel = "";
@@ -336,6 +434,37 @@ public partial class DraftRoomViewModel : PageViewModel
     [NotifyPropertyChangedFor(nameof(AiTileHorizontal))]
     [NotifyPropertyChangedFor(nameof(AiTileVertical))]
     private bool _aiStackVertically;
+    [ObservableProperty] private int _selectedTabIndex;
+    [ObservableProperty] private bool _canReset;
+    [ObservableProperty] private int _pickCount;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ResetLabel))]
+    private bool _resetArmed;
+
+    public string ResetLabel => ResetArmed ? "Clear board?" : "Reset board";
+
+    /// <summary>Tab order in DraftRoomView. Clicking a player name jumps here.</summary>
+    private const int AvailablePlayersTab = 3;
+
+    private PlayerMentionIndex _mentionIndex = PlayerMentionIndex.Empty;
+    private HashSet<PlayerId> _undraftedPlayers = [];
+
+    private static readonly string[] PositionOrder = ["QB", "RB", "WR", "TE", "K", "DEF"];
+
+    /// <summary>Positions whose tier cliffs only matter when they are nearly exhausted.</summary>
+    private static readonly HashSet<string> FringePositions = new(StringComparer.OrdinalIgnoreCase) { "K", "DEF" };
+
+    [ObservableProperty] private string _nextPickLine = "";
+    [ObservableProperty] private string _interveningHeading = "Before your turn";
+    [ObservableProperty] private bool _hasTierCliffs;
+    [ObservableProperty] private bool _hasInterveningTeams;
+    [ObservableProperty] private bool _hasDecisionBoard;
+
+    /// <summary>Top remaining player at each position by points above replacement.</summary>
+    public ObservableCollection<PositionBestRow> BestByPosition { get; } = [];
+    public ObservableCollection<string> TierCliffLines { get; } = [];
+    public ObservableCollection<UpcomingPickRow> InterveningLines { get; } = [];
 
     public bool AiTileHorizontal => !AiStackVertically;
     public bool AiTileVertical => AiStackVertically;
@@ -438,8 +567,11 @@ public partial class DraftRoomViewModel : PageViewModel
         CanReturnToLive = state.ActiveBranch.ParentBranchId is not null;
         StateVersion = state.Draft.CurrentStateVersion;
         SourceMode = state.Draft.SourceMode.ToString();
-        CanUndo = state.ActiveSelections.Values.Any(selection => selection.Source != PickSource.Keeper);
+        PickCount = state.ActiveSelections.Values.Count(selection => selection.Source != PickSource.Keeper);
+        CanUndo = PickCount > 0;
         CanRedo = state.Redo is not null;
+        CanReset = PickCount > 0;
+        ResetArmed = false;
         var snapshot = await _analytics.GetSnapshotAsync(draftId, state.ActiveBranch.BranchId);
         LeagueName = state.League.Name;
         RoundPick = snapshot.CurrentRoundPick;
@@ -482,6 +614,7 @@ public partial class DraftRoomViewModel : PageViewModel
         var context = new QueryContext { DraftId = draftId, BranchId = state.ActiveBranch.BranchId };
         var playersById = (await _drafts.GetPlayersAsync()).ToDictionary(p => p.PlayerId);
         var userTeam = state.League.UserTeamId;
+        RebuildMentionIndex(playersById.Values, state);
         foreach (var slot in state.Slots.OrderBy(s => s.OverallPick))
         {
             state.ActiveSelections.TryGetValue(slot.OverallPick, out var selection);
@@ -696,8 +829,112 @@ public partial class DraftRoomViewModel : PageViewModel
         var format = FantasyDataFormat.FromLeague(state.ScoringRules, state.RosterSlots);
         var sourceKey = SourceKeyFor(DataSource);
         AiContextLine = $"Advice uses {FantasyDataSourcePicker.Describe(sourceKey, format)} ranks, ADP, and this league's scoring.";
+        await RefreshDecisionBoardAsync(context);
         await RefreshAnalystsAsync();
         await ReactToBoardAsync(snapshot);
+    }
+
+    /// <summary>
+    /// Fills the Overview decision board. Everything here already gets computed for the AI
+    /// context; this simply puts the same numbers in front of the user.
+    /// </summary>
+    private async Task RefreshDecisionBoardAsync(QueryContext context)
+    {
+        DecisionContextDto decision;
+        try
+        {
+            decision = await _queries.GetDecisionContextAsync(context);
+        }
+        catch (InvalidOperationException)
+        {
+            // No usable draft state yet; leave the board as it was.
+            return;
+        }
+
+        var mine = decision.MyUpcomingPicks.FirstOrDefault();
+        var away = decision.Status.PicksUntilUser;
+        NextPickLine = mine is null
+            ? "You have no picks left in this draft"
+            : away <= 0
+                ? $"You are on the clock at {mine.RoundPick}"
+                : $"Your next pick: {mine.RoundPick} · {away} {(away == 1 ? "pick" : "picks")} away";
+
+        BestByPosition.Clear();
+        foreach (var position in PositionOrder)
+        {
+            var best = decision.TopAvailable
+                .Where(player => string.Equals(player.Position, position, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(player => player.PointsAboveReplacement ?? decimal.MinValue)
+                .ThenBy(player => player.OverallRank ?? int.MaxValue)
+                .FirstOrDefault();
+            if (best is null || !Guid.TryParse(best.PlayerId, out var bestId))
+                continue;
+
+            BestByPosition.Add(new PositionBestRow
+            {
+                Position = position,
+                PlayerId = new PlayerId(bestId),
+                Name = best.Name,
+                NflTeam = best.NflTeam,
+                Par = best.PointsAboveReplacement,
+                Outlook = best.NextPickOutlook ?? "",
+                GonePercent = best.NextPickGonePercent,
+                Rank = best.OverallRank
+            });
+        }
+
+        // Rank by how close the drop is, not alphabetically — "DEF: 10 left" is noise next
+        // to "TE: 1 left". Kickers and defences only earn a line when they are nearly gone.
+        TierCliffLines.Clear();
+        var cliffs = decision.TierCliffDetail.Count > 0
+            ? decision.TierCliffDetail
+                .Where(cliff => cliff.Remaining <= 2 || !FringePositions.Contains(cliff.Position))
+                .OrderBy(cliff => cliff.Remaining)
+                .ThenBy(cliff => cliff.Position, StringComparer.Ordinal)
+                .Take(4)
+                .Select(cliff => cliff.Line)
+            : decision.TierCliffs.Take(4);
+        foreach (var line in cliffs)
+            TierCliffLines.Add(line);
+        HasTierCliffs = TierCliffLines.Count > 0;
+
+        // A guess from the practice-draft policy, so it is labelled as such in the UI.
+        IReadOnlyList<PredictedPick> predicted = [];
+        try
+        {
+            if (_session.DraftId is { } forecastDraft)
+                predicted = await _mock.PredictUpcomingPicksAsync(forecastDraft, _session.BranchId);
+        }
+        catch (InvalidOperationException)
+        {
+            // A forecast is a nicety; never let it break the board.
+        }
+
+        InterveningLines.Clear();
+        foreach (var pick in predicted.OrderBy(pick => pick.OverallPick))
+        {
+            InterveningLines.Add(new UpcomingPickRow
+            {
+                RoundPick = pick.RoundPick,
+                TeamName = RosterTeams.FirstOrDefault(team => team.TeamId.Equals(pick.TeamId))?.Label
+                           ?? decision.InterveningTeams.FirstOrDefault(t => t.TeamId == pick.TeamId.ToString())?.TeamName
+                           ?? "Team",
+                Predicted = $"{pick.PlayerName} · {pick.Position}"
+            });
+        }
+
+        // Fall back to bare team names when the forecast could not run.
+        if (InterveningLines.Count == 0)
+        {
+            foreach (var team in decision.InterveningTeams.OrderBy(team => team.PicksBeforeUser))
+                InterveningLines.Add(new UpcomingPickRow { TeamName = team.TeamName });
+        }
+
+        InterveningHeading = decision.InterveningTeams.Count == 0
+            ? ""
+            : $"{decision.InterveningTeams.Count} {(decision.InterveningTeams.Count == 1 ? "team" : "teams")} pick before you";
+        HasInterveningTeams = InterveningLines.Count > 0;
+        HasDecisionBoard = BestByPosition.Count > 0 || HasTierCliffs || HasInterveningTeams;
     }
 
     partial void OnSelectedRosterTeamChanged(TauntTargetOption? value)
@@ -1051,6 +1288,35 @@ public partial class DraftRoomViewModel : PageViewModel
         });
     }
 
+    /// <summary>
+    /// Clears the board in one step. Two clicks on purpose: the first arms it, the second does
+    /// it, so a stray click on a live draft cannot wipe the board.
+    /// </summary>
+    [RelayCommand]
+    private async Task ResetBoardAsync()
+    {
+        if (_session.DraftId is not { } draftId)
+            return;
+
+        if (!ResetArmed)
+        {
+            ResetArmed = true;
+            StatusMessage = PickCount == 1
+                ? "Click again to clear the 1 pick on this board. Keepers stay."
+                : $"Click again to clear all {PickCount} picks on this board. Keepers stay.";
+            return;
+        }
+
+        ResetArmed = false;
+        await RunDraftMutationAsync(async () =>
+        {
+            var result = await _commands.ResetAsync(new ResetDraftCommand(draftId));
+            StatusMessage = result.Succeeded
+                ? "Board cleared. Undo puts every pick back."
+                : result.Error;
+        });
+    }
+
     [RelayCommand]
     private async Task RedoAsync()
     {
@@ -1313,6 +1579,8 @@ public partial class DraftRoomViewModel : PageViewModel
                 Model = config?.Model ?? descriptor.DefaultModel,
                 Role = string.IsNullOrWhiteSpace(config?.Role) ? AiAnalysisMode.FastAdvisor : config.Role,
                 SpendLimit = config?.PerDraftSpendLimit,
+                // Assigned before Response so the first assignment already linkifies.
+                SegmentBuilder = BuildResponseSegments,
                 IncludeInAsk = prior?.IncludeInAsk ?? true,
                 Status = config?.Enabled == true
                     ? CopiedAnalystStatus(prior?.Status, last is null ? "Idle" : "Saved")
@@ -1507,8 +1775,97 @@ public partial class DraftRoomViewModel : PageViewModel
         return SortDescending ? $"{label} ▼" : $"{label} ▲";
     }
 
+    /// <summary>
+    /// Rebuilds the name index the AI panels use to linkify player names, and the set of
+    /// players still on the board so a drafted name renders greyed out rather than clickable.
+    /// </summary>
+    private void RebuildMentionIndex(IEnumerable<Player> players, DraftWorkingState state)
+    {
+        var drafted = state.ActiveSelections.Values.Select(selection => selection.PlayerId).ToHashSet();
+        var pool = players.ToList();
+        _mentionIndex = PlayerMentionIndex.Build(
+            pool.Select(player => new PlayerMentionCandidate(player.PlayerId.ToString(), player.Name)));
+        _undraftedPlayers = pool
+            .Select(player => player.PlayerId)
+            .Where(id => !drafted.Contains(id))
+            .ToHashSet();
+
+        foreach (var panel in Analysts)
+            panel.RebuildSegments();
+    }
+
+    private IReadOnlyList<AiResponseSegment> BuildResponseSegments(string text) =>
+        _mentionIndex.Split(text)
+            .Select(part =>
+            {
+                if (part.Mention is not { } mention || !Guid.TryParse(mention.PlayerId, out var raw))
+                    return new AiResponseSegment { Text = part.Text };
+
+                var playerId = new PlayerId(raw);
+                return new AiResponseSegment
+                {
+                    Text = part.Text,
+                    PlayerId = playerId,
+                    PlayerName = mention.Name,
+                    IsAvailable = _undraftedPlayers.Contains(playerId)
+                };
+            })
+            .ToList();
+
+    /// <summary>
+    /// Jumps to Available Players with the clicked name filtered in and selected. Deliberately
+    /// does not draft: a stray click during a live draft should never cost a pick.
+    /// </summary>
+    [RelayCommand]
+    private async Task ShowMentionedPlayerAsync(AiResponseSegment? segment)
+    {
+        if (segment?.PlayerId is not { } playerId)
+            return;
+
+        var name = segment.PlayerName ?? segment.Text;
+        if (!segment.IsAvailable)
+        {
+            StatusMessage = $"{name} is already off the board.";
+            SelectedTabIndex = AvailablePlayersTab;
+            return;
+        }
+
+        await RevealPlayerAsync(playerId, name);
+    }
+
+    /// <summary>Jumps to a player picked off the Overview decision board.</summary>
+    [RelayCommand]
+    private async Task ShowPositionBestAsync(PositionBestRow? row)
+    {
+        if (row is not null)
+            await RevealPlayerAsync(row.PlayerId, row.Name);
+    }
+
+    private async Task RevealPlayerAsync(PlayerId playerId, string name)
+    {
+        // Search by name rather than clearing filters: the available list is capped, so a
+        // deep sleeper would not otherwise be on screen to select.
+        _muteExternalReload = true;
+        PositionFilter = "All";
+        Search = name;
+        _muteExternalReload = false;
+        await ReloadAsync();
+
+        SelectedPlayer = Available.FirstOrDefault(row => row.PlayerId.Equals(playerId)) ?? Available.FirstOrDefault();
+        SelectedTabIndex = AvailablePlayersTab;
+        StatusMessage = SelectedPlayer is null
+            ? $"{name} is not in the available list."
+            : $"Showing {name}. Clear the search box for the full board.";
+    }
+
+    public bool HasSearch => !string.IsNullOrEmpty(Search);
+
+    [RelayCommand]
+    private void ClearSearch() => Search = "";
+
     partial void OnSearchChanged(string value)
     {
+        OnPropertyChanged(nameof(HasSearch));
         if (!_muteExternalReload)
             _ = ReloadAsync();
     }

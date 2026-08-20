@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:FantasyDraftAssistant.App.ViewModels"
              xmlns:views="using:FantasyDraftAssistant.App.Views"
+             xmlns:controls="using:FantasyDraftAssistant.App.Controls"
              x:Class="FantasyDraftAssistant.App.Views.DraftRoomView"
              x:DataType="vm:DraftRoomViewModel"
              Focusable="True">
@@ -70,7 +71,11 @@
             <TextBlock Text="{Binding Heading}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
                        ToolTip.Tip="{Binding Heading}" />
           </DockPanel>
-          <TextBox Text="{Binding Response}" Classes="readonly" FontSize="13" />
+          <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+            <controls:AiResponseText Segments="{Binding Segments}" FontSize="13" TextWrapping="Wrap"
+                                     MentionCommand="{Binding $parent[UserControl].((vm:DraftRoomViewModel)DataContext).ShowMentionedPlayerCommand}"
+                                     ToolTip.Tip="Highlighted names are players. Click one to find them on Available Players." />
+          </ScrollViewer>
         </DockPanel>
       </Border>
     </DataTemplate>
@@ -89,6 +94,10 @@
                   IsEnabled="{Binding CanRedo}"
                   Command="{Binding RedoCommand}"
                   ToolTip.Tip="Redo the last undo. Ctrl+Y. A new pick clears this." />
+          <Button Content="{Binding ResetLabel}" Classes="danger"
+                  IsEnabled="{Binding CanReset}"
+                  Command="{Binding ResetBoardCommand}"
+                  ToolTip.Tip="Clear every pick on this board back to the first pick. Keepers stay. Click twice to confirm, and Undo puts it all back." />
         </StackPanel>
         <StackPanel Spacing="2" MinWidth="0">
           <TextBlock Text="CURRENT PICK" FontSize="11" LetterSpacing="1" Classes="muted" />
@@ -143,10 +152,11 @@
       </DockPanel>
     </Border>
 
-    <TabControl Grid.Row="1">
+    <TabControl Grid.Row="1" SelectedIndex="{Binding SelectedTabIndex}">
       <TabItem Header="Overview">
-        <Grid RowDefinitions="*,140,190" RowSpacing="8" Margin="0,4,0,0">
-          <Grid ColumnDefinitions="*,1.4*" ColumnSpacing="8">
+        <!-- Star row plus pixel row, so the splitter between them can move real height around. -->
+        <Grid RowDefinitions="*,6,250" Margin="0,4,0,0">
+          <Grid ColumnDefinitions="*,6,1.4*">
             <Border Classes="card" Padding="10" ClipToBounds="True" MinWidth="0">
               <DockPanel>
                 <TextBlock DockPanel.Dock="Top" Text="Draft list" Classes="h2" Margin="0,0,0,6" />
@@ -174,7 +184,9 @@
               </DockPanel>
             </Border>
 
-            <Border Grid.Column="1" Classes="card" Padding="10" ClipToBounds="True" MinWidth="0">
+            <GridSplitter Grid.Column="1" Classes="pane" ResizeDirection="Columns" />
+
+            <Border Grid.Column="2" Classes="card" Padding="10" ClipToBounds="True" MinWidth="0">
               <DockPanel>
                 <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,6">
                   <TextBlock Text="Available players" Classes="h2" />
@@ -187,7 +199,15 @@
                     </StackPanel>
                     <Grid ColumnDefinitions="*,72,*" ColumnSpacing="6" MinWidth="0">
                       <TextBox x:Name="SearchBox" Text="{Binding Search}" MinWidth="0"
-                               ToolTip.Tip="Filter players by name. Press / when you are not typing in another box." />
+                               PlaceholderText="Search players"
+                               ToolTip.Tip="Filter players by name. Press / when you are not typing in another box.">
+                        <TextBox.InnerRightContent>
+                          <Button Content="✕" Classes="ghost compact" Padding="6,0" Margin="0,0,2,0"
+                                  IsVisible="{Binding HasSearch}"
+                                  Command="{Binding ClearSearchCommand}"
+                                  ToolTip.Tip="Clear the search and show the full board. Esc also clears." />
+                        </TextBox.InnerRightContent>
+                      </TextBox>
                       <ComboBox Grid.Column="1" ItemsSource="{Binding Positions}" SelectedItem="{Binding PositionFilter}"
                                 MinWidth="0"
                                 ItemTemplate="{StaticResource SourceLabelTemplate}" />
@@ -239,134 +259,97 @@
             </Border>
           </Grid>
 
-          <Grid Grid.Row="1" ColumnDefinitions="*,*" ColumnSpacing="8">
-            <Border Classes="card" Padding="10" ClipToBounds="True" MinWidth="0">
+          <GridSplitter Grid.Row="1" Classes="pane" ResizeDirection="Rows"
+                        IsVisible="{Binding HasDecisionBoard}" />
+
+          <Border Grid.Row="2" Classes="card" Padding="12,10" ClipToBounds="True"
+                  IsVisible="{Binding HasDecisionBoard}">
+            <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Spacing="8">
               <DockPanel>
-                <StackPanel DockPanel.Dock="Top" Margin="0,0,0,4">
-                  <DockPanel>
-                    <Button DockPanel.Dock="Right" Content="Draft first" Classes="primary compact"
-                            Margin="8,0,0,0" VerticalAlignment="Center"
-                            IsVisible="{Binding !QueueEmpty}"
-                            Command="{Binding DraftQueueCommand}"
-                            ToolTip.Tip="Give the #1 queued player to the team on the clock. Same as Ctrl+D." />
-                    <TextBlock Text="My queue" Classes="h2" VerticalAlignment="Center" />
-                  </DockPanel>
-                  <TextBlock Text="A shortlist for later. Draft first / Ctrl+D sends the #1 player to whoever is on the clock."
-                             Classes="muted" TextWrapping="Wrap" FontSize="11" />
+                <StackPanel DockPanel.Dock="Right" Spacing="1" HorizontalAlignment="Right">
+                  <TextBlock Text="{Binding NextPickLine}" FontWeight="SemiBold" FontSize="12"
+                             Foreground="{StaticResource AccentBrush}" HorizontalAlignment="Right" />
+                  <TextBlock Text="{Binding InterveningHeading}" Classes="muted" FontSize="11"
+                             HorizontalAlignment="Right" IsVisible="{Binding HasInterveningTeams}" />
                 </StackPanel>
-                <TextBlock Text="Empty — select a player above and click Queue."
-                           Classes="muted" IsVisible="{Binding QueueEmpty}" />
-                <ListBox ItemsSource="{Binding Queue}" Background="Transparent" IsVisible="{Binding !QueueEmpty}">
-                  <ListBox.ItemTemplate>
-                    <DataTemplate x:DataType="vm:PlayerRow">
-                      <Grid ColumnDefinitions="20,*,36,28,28,28" ColumnSpacing="4" MinWidth="0">
-                        <TextBlock Text="{Binding Rank}" Classes="muted" VerticalAlignment="Center" />
-                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                          <TextBlock Text="{Binding Name}" FontWeight="SemiBold"
-                                     TextTrimming="CharacterEllipsis" />
-                          <TextBlock Text="{Binding SharedByeLabel}" Classes="danger" FontSize="11"
-                                     IsVisible="{Binding HasSharedBye}"
-                                     TextTrimming="CharacterEllipsis"
-                                     ToolTip.Tip="{Binding SharedByeDetail}" />
-                        </StackPanel>
-                        <TextBlock Grid.Column="2" Text="{Binding Position}" Classes="muted" VerticalAlignment="Center" />
-                        <Button Grid.Column="3" Content="↑" Classes="ghost compact"
-                                IsEnabled="{Binding CanMoveUp}"
-                                Command="{Binding $parent[ListBox].((vm:DraftRoomViewModel)DataContext).MoveQueuedUpCommand}"
-                                CommandParameter="{Binding}" />
-                        <Button Grid.Column="4" Content="↓" Classes="ghost compact"
-                                IsEnabled="{Binding CanMoveDown}"
-                                Command="{Binding $parent[ListBox].((vm:DraftRoomViewModel)DataContext).MoveQueuedDownCommand}"
-                                CommandParameter="{Binding}" />
-                        <Button Grid.Column="5" Content="×" Classes="ghost compact"
-                                Command="{Binding $parent[ListBox].((vm:DraftRoomViewModel)DataContext).RemoveQueuedCommand}"
-                                CommandParameter="{Binding}" />
-                      </Grid>
-                    </DataTemplate>
-                  </ListBox.ItemTemplate>
-                </ListBox>
-              </DockPanel>
-            </Border>
-            <Border Grid.Column="1" Classes="card" Padding="10" ClipToBounds="True" MinWidth="0">
-              <DockPanel>
-                <StackPanel DockPanel.Dock="Top" Margin="0,0,0,4" Spacing="4">
-                  <TextBlock Text="Roster" Classes="h2" />
-                  <ComboBox ItemsSource="{Binding RosterTeams}" SelectedItem="{Binding SelectedRosterTeam}"
-                            IsVisible="{Binding HasMultipleRosterTeams}"
-                            ItemTemplate="{StaticResource TauntTargetTemplate}"
-                            ToolTip.Tip="Whose roster and remaining needs to show.">
-                    <ToolTip.Tip>
-                      <views:TeamPortraitTip TeamKey="{Binding SelectedRosterTeam.TeamKey}" />
-                    </ToolTip.Tip>
-                  </ComboBox>
-                  <TextBlock Text="{Binding RosterNeedsLine}" Classes="muted" FontSize="11" TextWrapping="Wrap"
-                             IsVisible="{Binding HasRosterBoard}" />
-                  <TextBlock Text="Starting slots and open needs. Full bench is on the Roster tab."
+                <StackPanel Spacing="1" MinWidth="0">
+                  <TextBlock Text="Best available by position" Classes="h2" />
+                  <TextBlock Text="The top player left at each position, and whether they last until your next pick. Click one to find them on Available Players."
                              Classes="muted" FontSize="11" TextWrapping="Wrap" />
                 </StackPanel>
-                <TextBlock Text="Open a draft to see slot needs."
-                           Classes="muted" IsVisible="{Binding !HasRosterBoard}" />
-                <ScrollViewer IsVisible="{Binding HasRosterBoard}">
-                  <ItemsControl ItemsSource="{Binding OverviewRoster}"
-                                ItemTemplate="{StaticResource RosterSlotTemplate}" />
-                </ScrollViewer>
               </DockPanel>
-            </Border>
-          </Grid>
 
-          <Border Grid.Row="2" Classes="card" Padding="10" ClipToBounds="True">
-            <Grid ColumnDefinitions="220,*" ColumnSpacing="12" MinWidth="0">
-              <StackPanel Spacing="6" MinWidth="0">
-                <TextBlock Text="AI analysts" Classes="h2" />
-                <TextBlock Text="{Binding AiContextLine}" Classes="muted" TextWrapping="Wrap" FontSize="11" />
-                <TextBox x:Name="AiPromptBox" Text="{Binding AiPrompt}" MinWidth="0"
-                         PlaceholderText="Ask a question…"
-                         ToolTip.Tip="Question sent to every enabled provider. Enter asks. / does not steal focus here." />
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                  <Button Content="Fast" Classes="ghost" Command="{Binding UseFastAiCommand}"
-                          ToolTip.Tip="Short answer from the current snapshot. Use on the clock." />
-                  <Button Content="Deep" Classes="ghost" Command="{Binding UseDeepAiCommand}"
-                          ToolTip.Tip="Same snapshot, longer look. Slower and costs more." />
-                  <Button Content="Ask" Classes="primary" Command="{Binding AskAiCommand}" />
-                </StackPanel>
-                <CheckBox Content="Auto-ask when I'm on the clock" IsChecked="{Binding AutoAskEnabled}"
-                          ToolTip.Tip="Off until you check it. Opening Draft Room does not spend. When on, Fast/Deep advisors are asked automatically when it becomes your pick." />
-                <ItemsControl ItemsSource="{Binding Alerts}" IsVisible="{Binding HasAlerts}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="x:String">
-                      <TextBlock Text="{Binding}" Classes="accent" FontSize="11" TextWrapping="Wrap" Margin="0,1" />
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasTauntTarget}">
-                  <ComboBox ItemsSource="{Binding TauntTargets}" SelectedItem="{Binding SelectedTauntTarget}"
-                            MinWidth="120" ItemTemplate="{StaticResource TauntTargetTemplate}"
-                            ToolTip.Tip="Manager the taunt is aimed at. Not you." />
-                  <Button Content="Taunt" Classes="ghost" Command="{Binding TauntManagerCommand}"
-                          ToolTip.Tip="Each enabled AI writes a roast of that manager. Claude: Melville. ChatGPT: wrestling promo. Grok: vulgar locker room." />
-                </StackPanel>
-                <TextBlock Text="{Binding AiModeHint}" Classes="muted" TextWrapping="Wrap" FontSize="11" />
-              </StackPanel>
-              <ScrollViewer Grid.Column="1" HorizontalScrollBarVisibility="Disabled">
-                <ItemsControl ItemsSource="{Binding Analysts}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="vm:AiAnalystPanel">
-                      <StackPanel Margin="0,0,0,8">
+              <ItemsControl ItemsSource="{Binding BestByPosition}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <UniformGrid Rows="1" />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:PositionBestRow">
+                    <Button Classes="ghost" Margin="0,0,6,0" Padding="8,6"
+                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                            Command="{Binding $parent[ItemsControl].((vm:DraftRoomViewModel)DataContext).ShowPositionBestCommand}"
+                            CommandParameter="{Binding}"
+                            ToolTip.Tip="Best value left at this position. Click to find them on Available Players.">
+                      <StackPanel Spacing="1" MinWidth="0">
                         <DockPanel>
-                          <TextBlock DockPanel.Dock="Right" Text="{Binding Status}" Classes="muted" />
-                          <CheckBox DockPanel.Dock="Left" IsChecked="{Binding IncludeInAsk}"
-                                    IsEnabled="{Binding Enabled}" Margin="0,0,6,0"
-                                    ToolTip.Tip="Include this analyst when you Ask, Auto-ask, or Taunt." />
-                          <TextBlock Text="{Binding Heading}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
-                                     ToolTip.Tip="{Binding Heading}" />
+                          <TextBlock DockPanel.Dock="Right" Text="{Binding ParLabel}" FontWeight="Bold"
+                                     Foreground="{Binding ParBrush}" FontSize="13"
+                                     ToolTip.Tip="{Binding ParTip}" />
+                          <TextBlock Text="{Binding Position}" FontWeight="Bold" FontSize="11"
+                                     Foreground="{StaticResource MutedBrush}" />
                         </DockPanel>
-                        <TextBox Text="{Binding Response}" Classes="readonly" FontSize="12" />
+                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="12"
+                                   TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Detail}" />
+                        <TextBlock Text="{Binding OutlookLabel}" FontSize="11" IsVisible="{Binding HasOutlook}"
+                                   Foreground="{Binding OutlookBrush}" TextTrimming="CharacterEllipsis"
+                                   ToolTip.Tip="{Binding OutlookTip}" />
                       </StackPanel>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-              </ScrollViewer>
-            </Grid>
+                    </Button>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+
+              <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                <StackPanel Spacing="2" IsVisible="{Binding HasTierCliffs}" MinWidth="0">
+                  <TextBlock Text="Tier cliffs" FontWeight="SemiBold" FontSize="11"
+                             Foreground="{StaticResource MutedBrush}"
+                             ToolTip.Tip="Positions where the next drop in quality is close." />
+                  <ItemsControl ItemsSource="{Binding TierCliffLines}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="x:String">
+                        <TextBlock Text="{Binding}" FontSize="11" TextWrapping="Wrap" Margin="0,1"
+                                   Foreground="{StaticResource TextBrush}" />
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Spacing="2" IsVisible="{Binding HasInterveningTeams}" MinWidth="0">
+                  <TextBlock Text="Picking before you · likely targets" FontWeight="SemiBold" FontSize="11"
+                             Foreground="{StaticResource MutedBrush}"
+                             ToolTip.Tip="Teams on the clock between now and your next pick. The player shown is a guess from the same policy the practice-draft CPUs use — good about which positions are under pressure, often wrong about the exact name." />
+                  <ItemsControl ItemsSource="{Binding InterveningLines}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:UpcomingPickRow">
+                        <Grid ColumnDefinitions="34,Auto,*" ColumnSpacing="8" Margin="0,1" MinWidth="0">
+                          <TextBlock Text="{Binding RoundPick}" FontSize="11" Classes="muted" />
+                          <TextBlock Grid.Column="1" Text="{Binding TeamName}" FontSize="11"
+                                     TextTrimming="CharacterEllipsis" MaxWidth="220"
+                                     Foreground="{StaticResource TextBrush}" />
+                          <TextBlock Grid.Column="2" Text="{Binding Predicted}" FontSize="11"
+                                     IsVisible="{Binding HasPrediction}"
+                                     TextTrimming="CharacterEllipsis"
+                                     Foreground="{StaticResource AccentBrush}" />
+                        </Grid>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+              </Grid>
+            </StackPanel>
+            </ScrollViewer>
           </Border>
         </Grid>
       </TabItem>
@@ -491,7 +474,14 @@
                   <Button Content="Queue" Classes="ghost" Command="{Binding QueueSelectedCommand}" />
                 </StackPanel>
                 <Grid ColumnDefinitions="*,80,*" ColumnSpacing="6" MinWidth="0">
-                  <TextBox Text="{Binding Search}" PlaceholderText="Search players" MinWidth="0" />
+                  <TextBox x:Name="SearchBoxTab" Text="{Binding Search}" PlaceholderText="Search players" MinWidth="0">
+                    <TextBox.InnerRightContent>
+                      <Button Content="✕" Classes="ghost compact" Padding="6,0" Margin="0,0,2,0"
+                              IsVisible="{Binding HasSearch}"
+                              Command="{Binding ClearSearchCommand}"
+                              ToolTip.Tip="Clear the search and show the full board. Esc also clears." />
+                    </TextBox.InnerRightContent>
+                  </TextBox>
                   <ComboBox Grid.Column="1" ItemsSource="{Binding Positions}" SelectedItem="{Binding PositionFilter}"
                             MinWidth="0"
                             ItemTemplate="{StaticResource SourceLabelTemplate}" />

@@ -36,7 +36,8 @@ internal static class DraftAnalystPrompt
         - league.keeperNote: present only when this draft board has keeper selections. See the keeper-league rules below.
         - rankingsSource, OverallRank, ADP, ProjectedPoints: already league-scored. Do not rescore.
         - pointsAboveReplacement: projected points above the replacement-level starter at that position for THIS league. Use it to compare value across positions instead of raw projections.
-        - nextPickOutlook: app-computed chance the player is still there at the user's next pick ("likely gone" / "coin flip" / "likely back"). Trust it over your own ADP arithmetic.
+        - nextPickGonePercent: app-computed chance (0-100) the player is drafted before the user's next pick, from ADP and how much the ranking sources disagree. Trust it over your own ADP arithmetic.
+        - nextPickOutlook: the same number as a word — "likely gone" at 75%+, "likely back" at 25% or less, "coin flip" between.
         - tierCliffs: per-position count remaining in the best tier. A last-player-in-tier situation is a real reason to reach.
         - rankMin / rankMax / rankStd / rankRange: FantasyPros expert spread on this sheet when present. Wide range or high std means experts disagree (uncertain / volatile), not a fantasy-point floor or ceiling. Sleeper rows usually omit these.
         - availableRookies, topAvailable.isRookie, yearsExp: from the local player cache. yearsExp 0 is a rookie in league.season.

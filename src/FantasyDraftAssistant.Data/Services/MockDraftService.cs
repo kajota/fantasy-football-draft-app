@@ -45,6 +45,30 @@ public sealed class MockDraftService(
         return Task.FromResult<IReadOnlyList<MockSeatPolicy>>(list);
     }
 
+    public async Task<IReadOnlyList<PredictedPick>> PredictUpcomingPicksAsync(
+        DraftId draftId,
+        BranchId? branchId = null,
+        CancellationToken cancellationToken = default)
+    {
+        // A private load, mutated by the simulation and discarded. Nothing is persisted.
+        var scratch = await drafts.GetWorkingStateAsync(draftId, branchId, cancellationToken);
+        if (scratch?.CurrentSlot is null)
+            return [];
+
+        var players = await drafts.GetPlayersAsync(cancellationToken);
+        var (rankings, adp) = await LoadBoardDataAsync(scratch, cancellationToken);
+        var policies = await GetPoliciesAsync(draftId, scratch.ActiveBranch.BranchId, cancellationToken);
+        var byTeam = policies.ToDictionary(policy => policy.TeamId, policy => policy.Personality);
+
+        return DraftForecast.SimulateOnto(
+            scratch,
+            players,
+            rankings,
+            adp,
+            teamId => byTeam.GetValueOrDefault(teamId, MockPersonality.BestAvailable),
+            scratch.League.UserTeamId);
+    }
+
     public async Task SeedPoliciesAsync(DraftId draftId, BranchId branchId, CancellationToken cancellationToken = default)
     {
         var state = await drafts.GetWorkingStateAsync(draftId, branchId, cancellationToken)

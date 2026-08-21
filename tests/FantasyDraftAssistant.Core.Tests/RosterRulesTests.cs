@@ -19,6 +19,30 @@ public class RosterRulesTests
     }
 
     [Fact]
+    public void Remaining_roster_needs_keep_flex_slots_explicit()
+    {
+        var state = LeagueFactory.CreateStandardState(superflex: false);
+        var drafted = new[]
+        {
+            PlayerPosition.QB,
+            PlayerPosition.RB,
+            PlayerPosition.RB,
+            PlayerPosition.WR,
+            PlayerPosition.WR,
+            PlayerPosition.TE,
+            PlayerPosition.K,
+            PlayerPosition.DEF
+        };
+
+        var needs = RosterRules.RemainingRosterNeeds(state.RosterSlots, drafted);
+
+        var need = Assert.Single(needs);
+        Assert.Equal("W/R/T", need.SlotCode);
+        Assert.Equal(1, need.Count);
+        Assert.Equal([PlayerPosition.WR, PlayerPosition.RB, PlayerPosition.TE], need.EligiblePositions);
+    }
+
+    [Fact]
     public void Standard_roster_is_one_qb_not_superflex()
     {
         var slots = RosterRules.DefaultStandardRoster();

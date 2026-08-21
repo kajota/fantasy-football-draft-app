@@ -73,4 +73,43 @@ public class FantasyDataSourcePickerTests
         Assert.Equal("Sleeper", FantasyDataSourcePicker.Describe("sleeper", OneQbHalf));
         Assert.Equal("no cached ranks", FantasyDataSourcePicker.Describe(null, OneQbHalf));
     }
+
+    [Fact]
+    public void Compatibility_warning_is_empty_for_matching_sheet()
+    {
+        Assert.Null(FantasyDataSourcePicker.CompatibilityWarning("fantasypros-half", OneQbHalf));
+        Assert.Null(FantasyDataSourcePicker.CompatibilityWarning("fantasypros-half-sf", SuperflexHalf));
+    }
+
+    [Fact]
+    public void Compatibility_warning_flags_scoring_mismatch()
+    {
+        var warning = FantasyDataSourcePicker.CompatibilityWarning(
+            "fantasypros-half",
+            new FantasyDataFormat(ConsensusScoring.Ppr, Superflex: false));
+
+        Assert.NotNull(warning);
+        Assert.Contains("this league is PPR 1-QB", warning);
+        Assert.Contains("FantasyPros Half PPR 1-QB", warning);
+    }
+
+    [Fact]
+    public void Compatibility_warning_flags_superflex_mismatch()
+    {
+        var warning = FantasyDataSourcePicker.CompatibilityWarning("fantasypros-half", SuperflexHalf);
+
+        Assert.NotNull(warning);
+        Assert.Contains("this league is Half PPR Superflex", warning);
+        Assert.Contains("FantasyPros Half PPR 1-QB", warning);
+    }
+
+    [Fact]
+    public void Compatibility_warning_flags_untagged_source()
+    {
+        var warning = FantasyDataSourcePicker.CompatibilityWarning("sleeper", SuperflexHalf);
+
+        Assert.NotNull(warning);
+        Assert.Contains("Sleeper is not tagged", warning);
+        Assert.Contains("Half PPR Superflex", warning);
+    }
 }

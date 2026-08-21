@@ -50,6 +50,22 @@ public static class FantasyDataSourcePicker
         };
     }
 
+    public static string? CompatibilityWarning(string? sourceKey, FantasyDataFormat leagueFormat)
+    {
+        if (string.IsNullOrWhiteSpace(sourceKey))
+            return $"Player data compatibility warning: no cached source is selected for this {leagueFormat.DisplayName} league.";
+
+        var sourceFormat = FantasyDataFormat.TryParseSourceKey(sourceKey);
+        var sourceLabel = Describe(sourceKey, leagueFormat);
+        if (sourceFormat is null)
+            return $"Player data compatibility warning: {sourceLabel} is not tagged as Standard, Half PPR, PPR, 1-QB, or Superflex. This league is {leagueFormat.DisplayName}.";
+
+        if (sourceFormat == leagueFormat)
+            return null;
+
+        return $"Player data mismatch: this league is {leagueFormat.DisplayName}, but the selected player data is {sourceLabel}. Rankings, ADP, projections, and AI advice may be wrong.";
+    }
+
     public static string ChooseDisplayLabel(
         IReadOnlyList<string> labels,
         string? currentLabel,

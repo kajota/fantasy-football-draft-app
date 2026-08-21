@@ -20,17 +20,28 @@ public sealed class DesktopFileSavePicker : IFileSavePicker
         if (string.IsNullOrWhiteSpace(ext))
             ext = "jpg";
 
+        var isImage = ext.Equals("jpg", StringComparison.OrdinalIgnoreCase)
+                      || ext.Equals("jpeg", StringComparison.OrdinalIgnoreCase)
+                      || ext.Equals("png", StringComparison.OrdinalIgnoreCase)
+                      || ext.Equals("webp", StringComparison.OrdinalIgnoreCase);
+        var isMarkdown = ext.Equals("md", StringComparison.OrdinalIgnoreCase)
+                         || ext.Equals("markdown", StringComparison.OrdinalIgnoreCase);
+
         var file = await desktop.MainWindow.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
-            Title = "Export team image",
+            Title = isImage ? "Export team image" : "Export file",
             SuggestedFileName = suggestedFileName,
             DefaultExtension = ext,
             ShowOverwritePrompt = true,
             FileTypeChoices =
             [
-                new FilePickerFileType("Image")
+                new FilePickerFileType(isImage ? "Image" : isMarkdown ? "Markdown" : "Text")
                 {
-                    Patterns = [$"*.{ext}", "*.jpg", "*.jpeg", "*.png", "*.webp"]
+                    Patterns = isImage
+                        ? [$"*.{ext}", "*.jpg", "*.jpeg", "*.png", "*.webp"]
+                        : isMarkdown
+                            ? [$"*.{ext}", "*.md", "*.markdown", "*.txt"]
+                            : [$"*.{ext}", "*.txt"]
                 }
             ]
         });

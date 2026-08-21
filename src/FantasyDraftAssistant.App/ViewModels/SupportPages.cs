@@ -69,13 +69,16 @@ public partial class DataSourcesViewModel(
             return;
         }
 
+        var wasSaved = row.KeySaved;
         await credentials.SaveSecretAsync(
             FantasyProsFantasyDataProvider.CredentialScope,
             FantasyProsFantasyDataProvider.CredentialKey,
             row.ApiKey.Trim());
         row.ApiKey = "";
         row.KeySaved = true;
-        StatusMessage = "FantasyPros key saved. It is not stored in the draft database.";
+        StatusMessage = wasSaved
+            ? "FantasyPros key updated. It is not stored in the draft database."
+            : "FantasyPros key saved. It is not stored in the draft database.";
     }
 
     [RelayCommand]

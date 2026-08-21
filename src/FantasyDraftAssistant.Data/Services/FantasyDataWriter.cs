@@ -47,9 +47,12 @@ public sealed class FantasyDataWriter(SqliteConnectionFactory factory) : IFantas
                         THEN excluded.Status ELSE Players.Status END,
                     StatusUpdatedAt = CASE WHEN $auth = 1 OR excluded.Status <> 'Active'
                         THEN excluded.StatusUpdatedAt ELSE Players.StatusUpdatedAt END,
-                    InjuryBodyPart = COALESCE(excluded.InjuryBodyPart, Players.InjuryBodyPart),
-                    InjuryNotes = COALESCE(excluded.InjuryNotes, Players.InjuryNotes),
-                    InjuryStartedOn = COALESCE(excluded.InjuryStartedOn, Players.InjuryStartedOn);
+                    InjuryBodyPart = CASE WHEN $auth = 1 AND excluded.Status = 'Active'
+                        THEN NULL ELSE COALESCE(excluded.InjuryBodyPart, Players.InjuryBodyPart) END,
+                    InjuryNotes = CASE WHEN $auth = 1 AND excluded.Status = 'Active'
+                        THEN NULL ELSE COALESCE(excluded.InjuryNotes, Players.InjuryNotes) END,
+                    InjuryStartedOn = CASE WHEN $auth = 1 AND excluded.Status = 'Active'
+                        THEN NULL ELSE COALESCE(excluded.InjuryStartedOn, Players.InjuryStartedOn) END;
                 """, tx)
                        .Bind("$id", player.PlayerId.ToString())
                        .Bind("$name", player.Name)

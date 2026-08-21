@@ -23,18 +23,19 @@ internal static class DraftAnalystPrompt
         Context map:
         - league.season / league.nflSeason: the NFL year for this draft. Trust that over your training cutoff.
         - status.currentTeam / currentRoundPick: fantasy team on the clock right now. status.userNextOverallPick / picksUntilUser: when the user picks next.
-        - myRoster / myRemainingNeeds / queue: the USER's team only. myByeWeeks: bye-week clusters already on the USER roster.
+        - myRoster / myRemainingNeeds / myRosterNeeds / queue: the USER's team only. myRemainingNeeds is the older position summary; myRosterNeeds is the authoritative slot-level need list with flex slots preserved, such as W/R/T or Q/W/R/T. myByeWeeks: bye-week clusters already on the USER roster.
         - myUpcomingPicks: every pick the user still owns. Use it for planning ("when do I take a K") and roster-completion math (picks left vs needs left).
         - recentPicks: the last picks actually made, oldest first. Use real names from here when discussing runs or what just happened.
         - upcomingPicks: the next slots in true draft order. isUser marks the user's pick.
-        - interveningTeams: only the teams picking BEFORE the user's next pick, with picksBeforeUser, their roster (or rosterPositionCounts + recentAdditions late in drafts), and remainingNeeds. Use this to judge what disappears before the user picks again.
+        - interveningTeams: only the teams picking BEFORE the user's next pick, with picksBeforeUser, their roster (or rosterPositionCounts + recentAdditions late in drafts), remainingNeeds, and rosterNeeds. Use rosterNeeds for flex-aware holes and to judge what disappears before the user picks again.
         - positionThreats: how many intervening teams still need each position. Higher number = more likely a run before the user's next pick.
-        - allTeamNeeds: every team's holes. Use this when the user asks what another team will do.
+        - allTeamNeeds / allTeamRosterNeeds: every team's holes. allTeamNeeds is the older position summary; allTeamRosterNeeds preserves flex slots. Use these when the user asks what another team will do.
         - currentTeamRoster: the roster of the team on the clock right now.
         - league.scoringProfile / scoringLines: honor these. Do not assume PPR or Superflex unless they say so.
         - league.draftGuidelines: the user's own drafting rules for THIS league. Honor them when recommending a pick for the user.
         - league.keeperNote: present only when this draft board has keeper selections. See the keeper-league rules below.
-        - rankingsSource, OverallRank, ADP, ProjectedPoints: already league-scored. Do not rescore.
+        - rankingsSource, dataSourcesUsed, OverallRank, ADP, ProjectedPoints: already league-scored. dataSourcesUsed names the actual source used for rankings, ADP, projections, and player status after fallback; mention mixed or fallback provenance when it matters. Do not rescore.
+        - mentionedPlayers: players named in the user's question/request, even if they are outside topAvailable or already drafted. If isAvailable is false, do not recommend drafting them; use draftedBy / draftedRoundPick / draftedOverallPick to explain they are off the board.
         - pointsAboveReplacement: projected points above the replacement-level starter at that position for THIS league. Use it to compare value across positions instead of raw projections.
         - nextPickGonePercent: app-computed chance (0-100) the player is drafted before the user's next pick, from ADP and how much the ranking sources disagree. Trust it over your own ADP arithmetic.
         - nextPickOutlook: the same number as a word — "likely gone" at 75%+, "likely back" at 25% or less, "coin flip" between.

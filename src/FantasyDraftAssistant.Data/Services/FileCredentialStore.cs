@@ -117,6 +117,8 @@ public sealed class LinuxSecretToolCredentialStore : ICredentialStore
             return;
         }
 
+        await ClearSecretToolAsync(scope, key, cancellationToken);
+
         var psi = new System.Diagnostics.ProcessStartInfo("secret-tool", $"store --label=FantasyDraftAssistant/{scope}/{key} app fantasy-draft-assistant scope {scope} key {key}")
         {
             RedirectStandardInput = true,
@@ -159,6 +161,12 @@ public sealed class LinuxSecretToolCredentialStore : ICredentialStore
             return;
         }
 
+        await ClearSecretToolAsync(scope, key, cancellationToken);
+        await _fallback.DeleteSecretAsync(scope, key, cancellationToken);
+    }
+
+    private static async Task ClearSecretToolAsync(string scope, string key, CancellationToken cancellationToken)
+    {
         var psi = new System.Diagnostics.ProcessStartInfo("secret-tool", $"clear app fantasy-draft-assistant scope {scope} key {key}")
         {
             RedirectStandardError = true,
@@ -167,7 +175,6 @@ public sealed class LinuxSecretToolCredentialStore : ICredentialStore
         using var process = System.Diagnostics.Process.Start(psi);
         if (process is not null)
             await process.WaitForExitAsync(cancellationToken);
-        await _fallback.DeleteSecretAsync(scope, key, cancellationToken);
     }
 
     private static bool CanUseSecretTool()

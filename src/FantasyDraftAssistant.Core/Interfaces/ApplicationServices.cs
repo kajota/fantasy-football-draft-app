@@ -80,7 +80,11 @@ public interface ILeagueService
 
 public interface IAnalyticsService
 {
-    Task<Analytics.AnalyticsSnapshot> GetSnapshotAsync(DraftId draftId, BranchId? branchId = null, CancellationToken cancellationToken = default);
+    Task<Analytics.AnalyticsSnapshot> GetSnapshotAsync(
+        DraftId draftId,
+        BranchId? branchId = null,
+        CancellationToken cancellationToken = default,
+        string? sourceKey = null);
 }
 
 public interface IDraftQueryService

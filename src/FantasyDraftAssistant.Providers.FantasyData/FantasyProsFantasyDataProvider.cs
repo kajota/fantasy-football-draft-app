@@ -35,6 +35,13 @@ public sealed class FantasyProsFantasyDataProvider(
                 "Save a FantasyPros API key on Player Data first. Premium personal keys work; this app does not use a My Playbook login.");
         }
 
+        apiKey = apiKey.Trim();
+        if (apiKey.Any(char.IsWhiteSpace))
+        {
+            return FantasyDataRefreshResult.Fail(
+                "The saved FantasyPros API key appears malformed because it contains spaces or line breaks. Re-save the key on Player Data with no spaces.");
+        }
+
         try
         {
             var season = request.Season > 0 ? request.Season : DateTime.UtcNow.Year;

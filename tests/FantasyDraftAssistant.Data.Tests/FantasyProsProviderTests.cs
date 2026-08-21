@@ -26,6 +26,24 @@ public class FantasyProsProviderTests
     }
 
     [Fact]
+    public async Task Refresh_identifies_a_saved_key_with_internal_whitespace()
+    {
+        var credentials = new MemoryCredentials();
+        await credentials.SaveSecretAsync("fantasydata", "fantasypros", "abcd efgh");
+        var provider = new FantasyProsFantasyDataProvider(
+            new HttpClient(new ScriptedHandler()) { BaseAddress = new Uri("https://api.fantasypros.com/public/v2/json/") },
+            new CapturingWriter(),
+            credentials,
+            TimeSpan.Zero);
+
+        var result = await provider.RefreshAsync(new FantasyDataRefreshRequest { Season = 2026 }, CancellationToken.None);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("malformed", result.Error, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("spaces", result.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Refresh_maps_half_ppr_ranks_and_yahoo_ids()
     {
         var handler = new ScriptedHandler();

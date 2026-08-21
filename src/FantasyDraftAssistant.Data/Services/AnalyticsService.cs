@@ -6,13 +6,19 @@ namespace FantasyDraftAssistant.Data.Services;
 
 public sealed class AnalyticsService(IDraftStateService drafts, IFantasyDataWriter fantasyData) : IAnalyticsService
 {
-    public async Task<AnalyticsSnapshot> GetSnapshotAsync(DraftId draftId, BranchId? branchId = null, CancellationToken cancellationToken = default)
+    public async Task<AnalyticsSnapshot> GetSnapshotAsync(
+        DraftId draftId,
+        BranchId? branchId = null,
+        CancellationToken cancellationToken = default,
+        string? sourceKey = null)
     {
         var state = await drafts.GetWorkingStateAsync(draftId, branchId, cancellationToken)
                     ?? throw new InvalidOperationException("Draft not found.");
         var players = await drafts.GetPlayersAsync(cancellationToken);
         var format = FantasyDataFormat.FromLeague(state.ScoringRules, state.RosterSlots);
-        var sourceKey = FantasyDataSourcePicker.Pick(await fantasyData.GetSourceKeysAsync(cancellationToken), format);
+        sourceKey = string.IsNullOrWhiteSpace(sourceKey)
+            ? FantasyDataSourcePicker.Pick(await fantasyData.GetSourceKeysAsync(cancellationToken), format)
+            : sourceKey.Trim();
         var rankings = await fantasyData.GetRankingsAsync(sourceKey, cancellationToken);
         var adp = await fantasyData.GetAdpAsync(sourceKey, cancellationToken);
         if (rankings.Count == 0)

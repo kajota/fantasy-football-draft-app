@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using Avalonia;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FantasyDraftAssistant.Core.Ai;
@@ -14,6 +15,7 @@ using FantasyDraftAssistant.Core.Interfaces;
 using FantasyDraftAssistant.Core.Models;
 using FantasyDraftAssistant.Core.Query;
 using FantasyDraftAssistant.Core.Results;
+using FantasyDraftAssistant.Core.Serialization;
 
 namespace FantasyDraftAssistant.App.ViewModels;
 
@@ -146,6 +148,23 @@ public sealed class AiConversationTurn
     public required string Response { get; init; }
     public required string When { get; init; }
     public string Header => $"{When} · {Provider}";
+}
+
+public sealed class AiHistoryRow
+{
+    public required DateTimeOffset StartedAt { get; init; }
+    public required string When { get; init; }
+    public required string Provider { get; init; }
+    public required string Model { get; init; }
+    public required string PromptKind { get; init; }
+    public required string Prompt { get; init; }
+    public required string Response { get; init; }
+    public int StateVersion { get; init; }
+
+    public string Header => string.IsNullOrWhiteSpace(Model)
+        ? $"{When} · {Provider} · {PromptKind}"
+        : $"{When} · {Provider} · {Model} · {PromptKind}";
+    public string VersionLabel => $"State v{StateVersion}";
 }
 
 public sealed class BoardRow
@@ -344,6 +363,7 @@ public partial class DraftRoomViewModel : PageViewModel
     private AnalyticsSnapshot? _pendingBoardReaction;
     private bool _pauseMock;
     private string? _revealedSearchName;
+    private TeamId? _currentPortraitTeam;
 
     private static readonly TimeSpan PracticePickRevealDelay = TimeSpan.FromMilliseconds(750);
 
@@ -380,6 +400,7 @@ public partial class DraftRoomViewModel : PageViewModel
         _mock = mock;
         _session = session;
         _notifier.DraftChanged += OnDraftChanged;
+        _portraits.Changed += OnPortraitChanged;
     }
 
     public ObservableCollection<BoardRow> Board { get; } = [];
@@ -394,6 +415,7 @@ public partial class DraftRoomViewModel : PageViewModel
     public ObservableCollection<string> Alerts { get; } = [];
     public ObservableCollection<AiAnalystPanel> Analysts { get; } = [];
     public ObservableCollection<AiConversationTurn> Conversation { get; } = [];
+    public ObservableCollection<AiHistoryRow> AiHistory { get; } = [];
     public ObservableCollection<string> DataSources { get; } = [];
 
     [ObservableProperty] private string _leagueName = "No draft open";
@@ -401,6 +423,8 @@ public partial class DraftRoomViewModel : PageViewModel
     [ObservableProperty] private string _roundPick = "—";
     [ObservableProperty] private string _selectingTeam = "—";
     [ObservableProperty] private string? _selectingTeamKey;
+    [ObservableProperty] private Bitmap? _currentTeamPortrait;
+    [ObservableProperty] private bool _hasCurrentTeamPortrait;
     [ObservableProperty] private Bitmap? _selectedRosterPortrait;
     [ObservableProperty] private bool _hasSelectedRosterPortrait;
     [ObservableProperty] private string _userNext = "—";
@@ -421,6 +445,9 @@ public partial class DraftRoomViewModel : PageViewModel
     [ObservableProperty] private string _aiPrompt = "";
     [ObservableProperty] private string _aiContextLine = "Advice uses this league's scoring and the closest cached ranks.";
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasDataSourceWarning))]
+    private string _dataSourceWarning = "";
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AiModeHint))]
     private bool _aiDeepMode;
     [ObservableProperty] private bool _autoAskEnabled;
@@ -437,6 +464,7 @@ public partial class DraftRoomViewModel : PageViewModel
     [NotifyPropertyChangedFor(nameof(AiTileVertical))]
     private bool _aiStackVertically;
     [ObservableProperty] private int _selectedTabIndex;
+    [ObservableProperty] private bool _hasAiHistory;
     [ObservableProperty] private bool _canReset;
     [ObservableProperty] private int _pickCount;
 
@@ -445,6 +473,7 @@ public partial class DraftRoomViewModel : PageViewModel
     private bool _resetArmed;
 
     public string ResetLabel => ResetArmed ? "Clear board?" : "Reset board";
+    public bool HasDataSourceWarning => !string.IsNullOrWhiteSpace(DataSourceWarning);
 
     /// <summary>Tab order in DraftRoomView. Clicking a player name jumps here.</summary>
     private const int AvailablePlayersTab = 3;
@@ -530,6 +559,7 @@ public partial class DraftRoomViewModel : PageViewModel
             LeagueName = "No draft open";
             LocationLine = "Open a league first. Draft Room will create that league's draft if it does not have one yet.";
             StatusMessage = "Open a league from Leagues first.";
+            DataSourceWarning = "";
             CurrentBoardRow = null;
             BoardTeams = [];
             BoardRounds = [];
@@ -537,13 +567,16 @@ public partial class DraftRoomViewModel : PageViewModel
             OverviewRoster.Clear();
             RosterTeams.Clear();
             TauntTargets.Clear();
+            AiHistory.Clear();
             HasRosterBoard = false;
+            HasAiHistory = false;
             HasMultipleRosterTeams = false;
             RosterNeedsLine = "";
             HasTauntTarget = false;
             SelectedRosterTeam = null;
             SelectedTauntTarget = null;
             SelectingTeamKey = null;
+            SetCurrentTeamPortrait(null);
             SetSelectedRosterPortrait(null);
             HasMockSession = false;
             CanPlayMock = false;
@@ -588,6 +621,7 @@ public partial class DraftRoomViewModel : PageViewModel
             : MockPersonalityCatalog.LabelWithPersonality(onClockTeam.Label, onClockPolicy);
         SelectingTeam = team ?? "—";
         SelectingTeamKey = snapshot.CurrentTeamId?.ToString();
+        SetCurrentTeamPortrait(snapshot.CurrentTeamId);
         var currentSlot = state.CurrentSlot;
         LocationLine = currentSlot is null
             ? $"{state.League.Name} · draft complete · {state.ActiveSelections.Count} picks"
@@ -697,7 +731,10 @@ public partial class DraftRoomViewModel : PageViewModel
             })
             .ToList();
 
-        await EnsureDataSourcesAsync(FantasyDataFormat.FromLeague(state.ScoringRules, state.RosterSlots));
+        var leagueFormat = FantasyDataFormat.FromLeague(state.ScoringRules, state.RosterSlots);
+        await EnsureDataSourcesAsync(leagueFormat);
+        DataSourceWarning = FantasyDataSourcePicker.CompatibilityWarning(SourceKeyFor(DataSource), leagueFormat) ?? "";
+        context = ContextFor(draftId, state.ActiveBranch.BranchId);
         await RefreshAvailableAsync(context);
 
         Queue.Clear();
@@ -780,9 +817,8 @@ public partial class DraftRoomViewModel : PageViewModel
         QueueEmpty = Queue.Count == 0;
         RosterEmpty = Roster.Count == 0;
         HasAlerts = Alerts.Count > 0;
-        var format = FantasyDataFormat.FromLeague(state.ScoringRules, state.RosterSlots);
         var sourceKey = SourceKeyFor(DataSource);
-        AiContextLine = $"Advice uses {FantasyDataSourcePicker.Describe(sourceKey, format)} ranks, ADP, and this league's scoring.";
+        AiContextLine = $"Advice uses {FantasyDataSourcePicker.Describe(sourceKey, leagueFormat)} ranks, ADP, and this league's scoring.";
         await RefreshDecisionBoardAsync(context);
         await RefreshAnalystsAsync();
         await ReactToBoardAsync(snapshot);
@@ -794,7 +830,7 @@ public partial class DraftRoomViewModel : PageViewModel
         {
             if (_session.DraftId is not { } draftId || _session.BranchId is not { } branchId)
                 return;
-            context = new QueryContext { DraftId = draftId, BranchId = branchId };
+            context = ContextFor(draftId, branchId);
         }
 
         var providerIds = await _fantasyData.GetProviderIdsAsync();
@@ -846,6 +882,28 @@ public partial class DraftRoomViewModel : PageViewModel
 
         if (SelectedPlayer is null || Available.All(p => !p.PlayerId.Equals(SelectedPlayer.PlayerId)))
             SelectedPlayer = Available.FirstOrDefault();
+    }
+
+    private QueryContext ContextFor(DraftId draftId, BranchId branchId, string? prompt = null) => new()
+    {
+        DraftId = draftId,
+        BranchId = branchId,
+        SourceKey = SelectedSourceKey(),
+        Prompt = prompt
+    };
+
+    private string? SelectedSourceKey()
+    {
+        var key = string.IsNullOrWhiteSpace(DataSource) ? null : SourceKeyFor(DataSource);
+        if (!string.IsNullOrWhiteSpace(key))
+            return key;
+        return string.IsNullOrWhiteSpace(_session.DataSourceKey) ? null : _session.DataSourceKey;
+    }
+
+    private async Task<string> BuildDecisionContextJsonAsync(DraftId draftId, BranchId branchId, string prompt)
+    {
+        var context = await _queries.GetDecisionContextAsync(ContextFor(draftId, branchId, prompt));
+        return DraftJson.Serialize(context);
     }
 
     /// <summary>
@@ -1043,6 +1101,22 @@ public partial class DraftRoomViewModel : PageViewModel
         HasSelectedRosterPortrait = SelectedRosterPortrait is not null;
     }
 
+    private void SetCurrentTeamPortrait(TeamId? teamId)
+    {
+        _currentPortraitTeam = teamId;
+        CurrentTeamPortrait?.Dispose();
+        CurrentTeamPortrait = null;
+        if (teamId is { } id && _portraits.ExistingPath(id) is { } path)
+            CurrentTeamPortrait = new Bitmap(path);
+        HasCurrentTeamPortrait = CurrentTeamPortrait is not null;
+    }
+
+    private void OnPortraitChanged(object? sender, TeamId teamId)
+    {
+        if (_currentPortraitTeam is { } current && current.Equals(teamId))
+            Dispatcher.UIThread.Post(() => SetCurrentTeamPortrait(teamId));
+    }
+
     [RelayCommand]
     private async Task ExportSelectedRosterPortraitAsync()
     {
@@ -1062,6 +1136,32 @@ public partial class DraftRoomViewModel : PageViewModel
             return;
         _portraits.CopyTo(team.TeamId, dest);
         StatusMessage = $"Saved {team.Label} to {dest}.";
+    }
+
+    [RelayCommand]
+    private async Task ExportAiHistoryAsync()
+    {
+        if (_session.DraftId is not { } draftId || _session.BranchId is not { } branchId)
+        {
+            StatusMessage = "Open a draft before exporting AI history.";
+            return;
+        }
+
+        var saved = await _responses.ListAsync(draftId, branchId);
+        if (saved.Count == 0)
+        {
+            StatusMessage = "No AI history to export for this draft branch.";
+            return;
+        }
+
+        var dest = await _files.PickSavePathAsync(
+            $"{SafeFileName(LeagueName)}-ai-history.md",
+            "md");
+        if (dest is null)
+            return;
+
+        await File.WriteAllTextAsync(dest, BuildAiHistoryMarkdown(saved), CancellationToken.None);
+        StatusMessage = $"Exported AI history to {dest}.";
     }
 
     [RelayCommand]
@@ -1415,6 +1515,7 @@ public partial class DraftRoomViewModel : PageViewModel
             """;
         var styles = TauntStyles.Assign(enabled.Select(panel => panel.ProviderKey));
         var version = StateVersion;
+        var decisionContextJson = await BuildDecisionContextJsonAsync(draftId, branchId, prompt);
         StatusMessage = $"Asking for a taunt of {target.Label}.";
         var tasks = enabled.Select(panel => AskOneAsync(
             panel,
@@ -1424,7 +1525,8 @@ public partial class DraftRoomViewModel : PageViewModel
             prompt,
             TauntStyles.PromptKind,
             styles.GetValueOrDefault(panel.ProviderKey, TauntStyles.Melville),
-            target.Label));
+            target.Label,
+            decisionContextJson: decisionContextJson));
         await Task.WhenAll(tasks);
     }
 
@@ -1437,6 +1539,7 @@ public partial class DraftRoomViewModel : PageViewModel
         string? promptKind = null,
         string? tauntStyle = null,
         string? tauntTarget = null,
+        string? decisionContextJson = null,
         bool includeConversation = false)
     {
         var adapter = _ai.Get(panel.ProviderKey);
@@ -1487,6 +1590,7 @@ public partial class DraftRoomViewModel : PageViewModel
                 PromptKind = promptKind,
                 TauntStyle = tauntStyle,
                 TauntTarget = tauntTarget,
+                DecisionContextJson = decisionContextJson,
                 RecentTurns = recentTurns
             }))
             {
@@ -1511,7 +1615,7 @@ public partial class DraftRoomViewModel : PageViewModel
 
             if (!string.IsNullOrWhiteSpace(panel.Response) && panel.Status is not "Failed")
             {
-                await _responses.SaveAsync(new AiSavedResponse
+                var saved = new AiSavedResponse
                 {
                     ResponseId = Guid.NewGuid().ToString("D"),
                     DraftId = draftId,
@@ -1524,7 +1628,8 @@ public partial class DraftRoomViewModel : PageViewModel
                     RequestStartedAt = started,
                     ResponseCompletedAt = DateTimeOffset.UtcNow,
                     PromptKind = promptKind
-                });
+                };
+                await _responses.SaveAsync(saved);
                 Conversation.Add(new AiConversationTurn
                 {
                     Provider = panel.Title,
@@ -1532,6 +1637,7 @@ public partial class DraftRoomViewModel : PageViewModel
                     Response = panel.Response,
                     When = LocalClock.Format(started)
                 });
+                AddAiHistory(saved);
                 var spent = await _usage.EstimatedDraftSpendAsync(draftId, panel.ProviderKey);
                 panel.SpendLabel = spent > 0 ? AiCostEstimate.Label(spent) : "";
             }
@@ -1561,6 +1667,7 @@ public partial class DraftRoomViewModel : PageViewModel
             }
 
             saved = await _responses.ListAsync(draftId, branchId);
+            FillAiHistory(saved);
             if (Conversation.Count == 0)
             {
                 foreach (var turn in saved)
@@ -1611,6 +1718,82 @@ public partial class DraftRoomViewModel : PageViewModel
         }
 
         OnPropertyChanged(nameof(AiModeHint));
+    }
+
+    private void FillAiHistory(IReadOnlyList<AiSavedResponse> saved)
+    {
+        AiHistory.Clear();
+        foreach (var row in saved.OrderByDescending(row => row.RequestStartedAt))
+            AiHistory.Add(ToHistoryRow(row));
+        HasAiHistory = AiHistory.Count > 0;
+    }
+
+    private void AddAiHistory(AiSavedResponse response)
+    {
+        AiHistory.Insert(0, ToHistoryRow(response));
+        HasAiHistory = true;
+    }
+
+    private static AiHistoryRow ToHistoryRow(AiSavedResponse response) => new()
+    {
+        StartedAt = response.RequestStartedAt,
+        When = LocalClock.Format(response.RequestStartedAt),
+        Provider = Core.Ai.AiProviderCatalog.Find(response.Provider)?.ProductName ?? response.Provider,
+        Model = response.Model,
+        PromptKind = PromptKindLabel(response.PromptKind),
+        Prompt = string.IsNullOrWhiteSpace(response.Prompt) ? "(earlier question)" : response.Prompt,
+        Response = response.Body,
+        StateVersion = response.AnalyzedStateVersion
+    };
+
+    private string BuildAiHistoryMarkdown(IReadOnlyList<AiSavedResponse> saved)
+    {
+        var builder = new System.Text.StringBuilder();
+        builder.AppendLine($"# AI History - {LeagueName}");
+        if (!string.IsNullOrWhiteSpace(_session.DraftName))
+            builder.AppendLine();
+        if (!string.IsNullOrWhiteSpace(_session.DraftName))
+            builder.AppendLine($"Draft: {_session.DraftName}");
+        builder.AppendLine($"Exported: {LocalClock.Format(DateTimeOffset.UtcNow)}");
+        builder.AppendLine();
+
+        foreach (var response in saved.OrderBy(row => row.RequestStartedAt))
+        {
+            var provider = Core.Ai.AiProviderCatalog.Find(response.Provider)?.ProductName ?? response.Provider;
+            var model = string.IsNullOrWhiteSpace(response.Model) ? "" : $" / {response.Model}";
+            builder.AppendLine($"## {LocalClock.Format(response.RequestStartedAt)} - {provider}{model}");
+            builder.AppendLine();
+            builder.AppendLine($"Kind: {PromptKindLabel(response.PromptKind)}");
+            builder.AppendLine($"State version: {response.AnalyzedStateVersion}");
+            builder.AppendLine();
+            builder.AppendLine("Prompt:");
+            builder.AppendLine();
+            builder.AppendLine("```text");
+            builder.AppendLine(string.IsNullOrWhiteSpace(response.Prompt) ? "(earlier question)" : response.Prompt);
+            builder.AppendLine("```");
+            builder.AppendLine();
+            builder.AppendLine("Response:");
+            builder.AppendLine();
+            builder.AppendLine(response.Body);
+            builder.AppendLine();
+        }
+
+        return builder.ToString();
+    }
+
+    private static string PromptKindLabel(string? promptKind)
+    {
+        if (string.Equals(promptKind, DraftWatcherTrigger.PromptKind, StringComparison.OrdinalIgnoreCase))
+            return "Draft Watcher";
+        if (string.Equals(promptKind, TauntStyles.PromptKind, StringComparison.OrdinalIgnoreCase))
+            return "Taunt";
+        return "Advice";
+    }
+
+    private static string SafeFileName(string? name)
+    {
+        var cleaned = string.Join("_", (name ?? "draft").Split(Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries)).Trim();
+        return string.IsNullOrWhiteSpace(cleaned) ? "draft" : cleaned;
     }
 
     private async Task ReactToBoardAsync(AnalyticsSnapshot snapshot)
@@ -1700,12 +1883,14 @@ public partial class DraftRoomViewModel : PageViewModel
             StatusMessage = "On the clock — asking advisors.";
         }
         var version = StateVersion;
+        var decisionContextJson = await BuildDecisionContextJsonAsync(draftId, branchId, prompt);
         await Task.WhenAll(advisors.Select(panel => AskOneAsync(
             panel,
             draftId,
             branchId,
             version,
             prompt,
+            decisionContextJson: decisionContextJson,
             includeConversation: !auto)));
     }
 
@@ -1720,13 +1905,15 @@ public partial class DraftRoomViewModel : PageViewModel
         var prompt = string.Join("\n", events.Select(item => $"- {item.Message}"));
         StatusMessage = "Board event — asking the Draft Watcher.";
         var version = StateVersion;
+        var decisionContextJson = await BuildDecisionContextJsonAsync(draftId, branchId, prompt);
         await Task.WhenAll(watchers.Select(panel => AskOneAsync(
             panel,
             draftId,
             branchId,
             version,
             prompt,
-            DraftWatcherTrigger.PromptKind)));
+            DraftWatcherTrigger.PromptKind,
+            decisionContextJson: decisionContextJson)));
     }
 
     private string WatcherHint(string core)

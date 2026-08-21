@@ -1,3 +1,4 @@
+using FantasyDraftAssistant.Core.Ai;
 using FantasyDraftAssistant.Core.Analytics;
 using FantasyDraftAssistant.Core.Engine;
 using FantasyDraftAssistant.Core.Ids;
@@ -21,7 +22,7 @@ public sealed class DraftQueryService(
     public async Task<DraftStatusDto> GetDraftStatusAsync(QueryContext context, CancellationToken cancellationToken = default)
     {
         var state = await Require(context, cancellationToken);
-        var snapshot = await analytics.GetSnapshotAsync(context.DraftId, context.BranchId, cancellationToken);
+        var snapshot = await analytics.GetSnapshotAsync(context.DraftId, context.BranchId, cancellationToken, context.SourceKey);
         return MapStatus(state, snapshot);
     }
 
@@ -82,7 +83,7 @@ public sealed class DraftQueryService(
 
     public async Task<PositionSummaryDto> GetPositionSummaryAsync(QueryContext context, CancellationToken cancellationToken = default)
     {
-        var snapshot = await analytics.GetSnapshotAsync(context.DraftId, context.BranchId, cancellationToken);
+        var snapshot = await analytics.GetSnapshotAsync(context.DraftId, context.BranchId, cancellationToken, context.SourceKey);
         return new PositionSummaryDto
         {
             Drafted = snapshot.DraftedByPosition.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value),
@@ -92,7 +93,7 @@ public sealed class DraftQueryService(
 
     public async Task<RemainingTiersDto> GetRemainingTiersAsync(QueryContext context, CancellationToken cancellationToken = default)
     {
-        var snapshot = await analytics.GetSnapshotAsync(context.DraftId, context.BranchId, cancellationToken);
+        var snapshot = await analytics.GetSnapshotAsync(context.DraftId, context.BranchId, cancellationToken, context.SourceKey);
         return new RemainingTiersDto { RemainingByTier = snapshot.RemainingByTier };
     }
 
@@ -161,10 +162,17 @@ public sealed class DraftQueryService(
     public async Task<DecisionContextDto> GetDecisionContextAsync(QueryContext context, CancellationToken cancellationToken = default)
     {
         var state = await Require(context, cancellationToken);
-        var snapshot = await analytics.GetSnapshotAsync(context.DraftId, context.BranchId, cancellationToken);
         var format = FantasyDataFormat.FromLeague(state.ScoringRules, state.RosterSlots);
-        var sourceKey = FantasyDataSourcePicker.Pick(await fantasyData.GetSourceKeysAsync(cancellationToken), format);
-        var available = await Available(state, new PlayerFilter { MaxResults = AvailablePoolSize, SourceKey = sourceKey }, cancellationToken);
+        var sourceKey = string.IsNullOrWhiteSpace(context.SourceKey)
+            ? FantasyDataSourcePicker.Pick(await fantasyData.GetSourceKeysAsync(cancellationToken), format)
+            : context.SourceKey.Trim();
+        var playerData = await LoadPlayerDataAsync(sourceKey, cancellationToken);
+        var snapshot = await analytics.GetSnapshotAsync(context.DraftId, context.BranchId, cancellationToken, sourceKey);
+        var available = await Available(
+            state,
+            new PlayerFilter { MaxResults = AvailablePoolSize, SourceKey = sourceKey },
+            cancellationToken,
+            playerData);
         var user = state.League.UserTeamId ?? state.Teams[0].TeamId;
         var players = (await drafts.GetPlayersAsync(cancellationToken)).ToDictionary(p => p.PlayerId);
         var queued = state.Queue
@@ -173,11 +181,17 @@ public sealed class DraftQueryService(
             .Where(p => p is not null)
             .Select(p => p!)
             .ToList();
-        var queue = await MapPlayers(state, queued, cancellationToken, sourceKey);
+        var queue = await MapPlayers(state, queued, cancellationToken, sourceKey, playerData);
+        var mentioned = await MentionedPlayersAsync(state, players.Values.ToList(), context.Prompt, sourceKey, cancellationToken, playerData);
         var userNeeds = snapshot.TeamNeeds.FirstOrDefault(team => team.TeamId.Equals(user));
 
         var outlook = PickOutlookWindow(state, user);
-        Annotate(available, queue, snapshot, outlook.TargetOverallPick, outlook.InterveningPicks);
+        Annotate(
+            available,
+            queue.Concat(mentioned.Select(player => player.Summary)).ToList(),
+            snapshot,
+            outlook.TargetOverallPick,
+            outlook.InterveningPicks);
 
         var topAvailable = available.Take(TopAvailableCount).ToList();
         var rookies = available.Where(player => player.IsRookie).Take(RookieCount).ToList();
@@ -196,6 +210,7 @@ public sealed class DraftQueryService(
             League = MapLeague(state),
             MyRoster = MapRoster(state, players, user),
             MyRemainingNeeds = FormatNeeds(userNeeds),
+            MyRosterNeeds = RosterNeeds(state, players, user),
             Queue = new MyQueueDto { Players = queue },
             TopAvailable = topAvailable,
             AvailableRookies = rookies,
@@ -210,9 +225,12 @@ public sealed class DraftQueryService(
             AllTeamNeeds = snapshot.TeamNeeds
                 .Select(t => $"{t.TeamName}: {string.Join(", ", t.RemainingNeeds.Select(n => $"{n.Value} {n.Key}"))}")
                 .ToList(),
+            AllTeamRosterNeeds = AllTeamRosterNeeds(state, players),
             Alerts = snapshot.Alerts.Select(a => a.Message).ToList(),
-            RankingsSource = FantasyDataSourcePicker.Describe(sourceKey, format),
+            RankingsSource = FantasyDataSourcePicker.Describe(playerData.RankingsSourceKey ?? sourceKey, format),
+            DataSourcesUsed = DataSourcesUsed(playerData, refreshes),
             StateVersion = state.Draft.CurrentStateVersion,
+            MentionedPlayers = mentioned,
             RecentPicks = board.Picks.TakeLast(RecentPickCount).ToList(),
             UpcomingPicks = UpcomingPicks(state, user, UpcomingPickCount),
             MyUpcomingPicks = MyUpcomingPicks(state, user),
@@ -368,7 +386,8 @@ public sealed class DraftQueryService(
                             .TakeLast(RecentAdditionCount)
                             .Select(p => $"{p.Name} ({p.Position}, {p.RoundPick})")
                             .ToList(),
-                    RemainingNeeds = FormatNeeds(needsByTeam.GetValueOrDefault(group.Key))
+                    RemainingNeeds = FormatNeeds(needsByTeam.GetValueOrDefault(group.Key)),
+                    RosterNeeds = RosterNeeds(state, players, group.Key)
                 };
             })
             .ToList();
@@ -404,24 +423,88 @@ public sealed class DraftQueryService(
 
     private async Task<IReadOnlyList<PlayerSummaryDto>> Available(DraftWorkingState state, PlayerFilter filter, CancellationToken cancellationToken)
     {
+        return await Available(state, filter, cancellationToken, null);
+    }
+
+    private async Task<IReadOnlyList<PlayerSummaryDto>> Available(
+        DraftWorkingState state,
+        PlayerFilter filter,
+        CancellationToken cancellationToken,
+        PlayerDataSources? playerData)
+    {
         var players = (await drafts.GetPlayersAsync(cancellationToken))
             .Where(p => !state.UnavailablePlayers.Contains(p.PlayerId))
             .Where(p => filter.Position is null || p.PrimaryPosition == filter.Position)
             .Where(p => string.IsNullOrWhiteSpace(filter.Search) ||
                         p.Name.Contains(filter.Search, StringComparison.OrdinalIgnoreCase));
-        var mapped = await MapPlayers(state, players.ToList(), cancellationToken, filter.SourceKey);
+        var mapped = await MapPlayers(state, players.ToList(), cancellationToken, filter.SourceKey, playerData);
         return PlayerListSorter.Sort(mapped, filter.SortBy, filter.SortDescending, filter.MaxResults ?? 40);
+    }
+
+    private async Task<IReadOnlyList<MentionedPlayerDto>> MentionedPlayersAsync(
+        DraftWorkingState state,
+        IReadOnlyList<Core.Models.Player> catalog,
+        string? prompt,
+        string? sourceKey,
+        CancellationToken cancellationToken,
+        PlayerDataSources? playerData = null)
+    {
+        if (string.IsNullOrWhiteSpace(prompt))
+            return [];
+
+        var index = PlayerMentionIndex.Build(
+            catalog.Select(player => new PlayerMentionCandidate(player.PlayerId.ToString(), player.Name)));
+        var mentionedIds = index.Scan(prompt)
+            .Select(mention => PlayerId.Parse(mention.PlayerId))
+            .Distinct()
+            .ToList();
+        if (mentionedIds.Count == 0)
+            return [];
+
+        var byId = catalog.ToDictionary(player => player.PlayerId);
+        var namedPlayers = mentionedIds
+            .Select(id => byId.GetValueOrDefault(id))
+            .Where(player => player is not null)
+            .Select(player => player!)
+            .ToList();
+        if (namedPlayers.Count == 0)
+            return [];
+
+        var summaries = (await MapPlayers(state, namedPlayers, cancellationToken, sourceKey, playerData))
+            .ToDictionary(player => PlayerId.Parse(player.PlayerId));
+        return mentionedIds
+            .Where(summaries.ContainsKey)
+            .Select(id =>
+            {
+                var selection = state.ActiveSelections.Values.FirstOrDefault(pick => pick.PlayerId.Equals(id));
+                var team = selection is null
+                    ? null
+                    : state.Teams.FirstOrDefault(row => row.TeamId.Equals(selection.TeamId));
+                return new MentionedPlayerDto
+                {
+                    Summary = summaries[id],
+                    IsAvailable = selection is null,
+                    DraftedBy = team?.Label,
+                    DraftedRoundPick = selection is null
+                        ? null
+                        : DraftSlotGenerator.FormatRoundPick(selection.Round, selection.RoundPick),
+                    DraftedOverallPick = selection?.OverallPick
+                };
+            })
+            .ToList();
     }
 
     private async Task<List<PlayerSummaryDto>> MapPlayers(
         DraftWorkingState state,
         IReadOnlyList<Core.Models.Player> players,
         CancellationToken cancellationToken,
-        string? sourceKey = null)
+        string? sourceKey = null,
+        PlayerDataSources? playerData = null)
     {
-        var rankings = await LoadPreferredAsync(fantasyData.GetRankingsAsync, sourceKey, cancellationToken);
-        var adp = await LoadPreferredAsync(fantasyData.GetAdpAsync, sourceKey, cancellationToken);
-        var projections = await LoadPreferredAsync(fantasyData.GetProjectionsAsync, sourceKey, cancellationToken);
+        playerData ??= await LoadPlayerDataAsync(sourceKey, cancellationToken);
+        var rankings = playerData.Rankings;
+        var adp = playerData.Adp;
+        var projections = playerData.Projections;
         var catalog = (await drafts.GetPlayersAsync(cancellationToken)).ToDictionary(player => player.PlayerId);
         var roster = HandcuffRoster(state, catalog, rankings, adp);
         var byeRoster = UserByeRoster(state, catalog);
@@ -510,7 +593,21 @@ public sealed class DraftQueryService(
             .ToList();
     }
 
-    private static async Task<IReadOnlyDictionary<PlayerId, T>> LoadPreferredAsync<T>(
+    private async Task<PlayerDataSources> LoadPlayerDataAsync(string? sourceKey, CancellationToken cancellationToken)
+    {
+        var rankings = await LoadPreferredAsync(fantasyData.GetRankingsAsync, sourceKey, cancellationToken);
+        var adp = await LoadPreferredAsync(fantasyData.GetAdpAsync, sourceKey, cancellationToken);
+        var projections = await LoadPreferredAsync(fantasyData.GetProjectionsAsync, sourceKey, cancellationToken);
+        return new PlayerDataSources(
+            rankings.Rows,
+            rankings.SourceKey,
+            adp.Rows,
+            adp.SourceKey,
+            projections.Rows,
+            projections.SourceKey);
+    }
+
+    private static async Task<PreferredRows<T>> LoadPreferredAsync<T>(
         Func<string?, CancellationToken, Task<IReadOnlyDictionary<PlayerId, T>>> load,
         string? sourceKey,
         CancellationToken cancellationToken)
@@ -519,7 +616,7 @@ public sealed class DraftQueryService(
         {
             var exact = await load(sourceKey, cancellationToken);
             if (exact.Count > 0)
-                return exact;
+                return new PreferredRows<T>(exact, sourceKey);
         }
 
         foreach (var fallback in new[] { "fantasypros", "sleeper", "seed" })
@@ -528,10 +625,33 @@ public sealed class DraftQueryService(
                 continue;
             var rows = await load(fallback, cancellationToken);
             if (rows.Count > 0)
-                return rows;
+                return new PreferredRows<T>(rows, fallback);
         }
 
-        return await load(null, cancellationToken);
+        var all = await load(null, cancellationToken);
+        return new PreferredRows<T>(all, SourceKeyFromRows(all.Values));
+    }
+
+    private static string? SourceKeyFromRows<T>(IEnumerable<T> rows)
+    {
+        var keys = rows
+            .Select(row => row switch
+            {
+                Core.Models.PlayerRanking ranking => ranking.SourceKey,
+                Core.Models.PlayerAdp adp => adp.SourceKey,
+                Core.Models.PlayerProjection projection => projection.SourceKey,
+                _ => null
+            })
+            .Where(key => !string.IsNullOrWhiteSpace(key))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return keys.Count switch
+        {
+            0 => null,
+            1 => keys[0],
+            _ => "mixed"
+        };
     }
 
     private static IReadOnlyList<string> FormatNeeds(TeamNeedSummary? needs) =>
@@ -542,6 +662,64 @@ public sealed class DraftQueryService(
                 .OrderByDescending(need => need.Value)
                 .Select(need => $"{need.Value} {need.Key}")
                 .ToList();
+
+    private static IReadOnlyList<RosterNeedDto> RosterNeeds(
+        DraftWorkingState state,
+        IReadOnlyDictionary<PlayerId, Core.Models.Player> players,
+        TeamId teamId)
+    {
+        var drafted = state.SelectionsForTeam(teamId)
+            .Select(selection => players.GetValueOrDefault(selection.PlayerId)?.PrimaryPosition)
+            .Where(position => position is not null)
+            .Select(position => position!.Value)
+            .ToList();
+        return RosterRules.RemainingRosterNeeds(state.RosterSlots, drafted)
+            .Select(need => new RosterNeedDto
+            {
+                SlotCode = need.SlotCode,
+                Count = need.Count,
+                EligiblePositions = need.EligiblePositions.Select(position => position.ToString()).ToList()
+            })
+            .ToList();
+    }
+
+    private static IReadOnlyList<TeamRosterNeedsDto> AllTeamRosterNeeds(
+        DraftWorkingState state,
+        IReadOnlyDictionary<PlayerId, Core.Models.Player> players) =>
+        state.Teams
+            .OrderBy(team => team.DraftPosition)
+            .Select(team => new TeamRosterNeedsDto
+            {
+                TeamName = team.Label,
+                TeamId = team.TeamId.ToString(),
+                RosterNeeds = RosterNeeds(state, players, team.TeamId)
+            })
+            .ToList();
+
+    private static DataSourcesUsedDto DataSourcesUsed(
+        PlayerDataSources playerData,
+        IReadOnlyList<Core.Models.FantasyDataRefreshInfo> refreshes) =>
+        new()
+        {
+            Rankings = playerData.RankingsSourceKey,
+            Adp = playerData.AdpSourceKey,
+            Projections = playerData.ProjectionsSourceKey,
+            PlayerStatus = PlayerStatusSource(refreshes)
+        };
+
+    private static string? PlayerStatusSource(IReadOnlyList<Core.Models.FantasyDataRefreshInfo> refreshes)
+    {
+        var playerRefreshes = refreshes
+            .Where(refresh => string.Equals(refresh.Dataset, "players", StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(refresh => refresh.RefreshedAt)
+            .ToList();
+        if (playerRefreshes.Count == 0)
+            return null;
+
+        var sleeper = playerRefreshes.FirstOrDefault(refresh =>
+            string.Equals(refresh.ProviderKey, "sleeper", StringComparison.OrdinalIgnoreCase));
+        return (sleeper ?? playerRefreshes[0]).ProviderKey;
+    }
 
     private static LeagueSettingsDto MapLeague(DraftWorkingState state) => new()
     {
@@ -595,4 +773,16 @@ public sealed class DraftQueryService(
             PicksUntilUser = snapshot.PicksUntilUser
         };
     }
+
+    private sealed record PreferredRows<T>(
+        IReadOnlyDictionary<PlayerId, T> Rows,
+        string? SourceKey);
+
+    private sealed record PlayerDataSources(
+        IReadOnlyDictionary<PlayerId, Core.Models.PlayerRanking> Rankings,
+        string? RankingsSourceKey,
+        IReadOnlyDictionary<PlayerId, Core.Models.PlayerAdp> Adp,
+        string? AdpSourceKey,
+        IReadOnlyDictionary<PlayerId, Core.Models.PlayerProjection> Projections,
+        string? ProjectionsSourceKey);
 }

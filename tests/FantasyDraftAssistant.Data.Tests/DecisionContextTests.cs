@@ -101,6 +101,21 @@ public class DecisionContextTests : IDisposable
     }
 
     [Fact]
+    public async Task Decision_context_carries_flex_aware_roster_needs()
+    {
+        var (draftId, first) = await CreateStartedDraftAsync();
+        var commands = _services.GetRequiredService<IDraftCommandService>();
+        Assert.True((await commands.DraftPlayerAsync(new DraftPlayerCommand(draftId, first))).Succeeded);
+
+        var context = await GetContextAsync(draftId);
+
+        Assert.Contains(context.MyRosterNeeds, IsStandardFlexNeed);
+        Assert.All(context.InterveningTeams, team => Assert.Contains(team.RosterNeeds, IsStandardFlexNeed));
+        Assert.NotEmpty(context.AllTeamRosterNeeds);
+        Assert.All(context.AllTeamRosterNeeds, team => Assert.Contains(team.RosterNeeds, IsStandardFlexNeed));
+    }
+
+    [Fact]
     public async Task Current_team_roster_tracks_the_team_on_the_clock()
     {
         var (draftId, first) = await CreateStartedDraftAsync();
@@ -141,6 +156,35 @@ public class DecisionContextTests : IDisposable
         Assert.All(withAdp, p => Assert.NotNull(p.NextPickOutlook));
         Assert.Contains(context.TopAvailable, p => p.PointsAboveReplacement is not null);
         Assert.NotEmpty(context.TierCliffs);
+    }
+
+    [Fact]
+    public async Task Prompt_mentioned_players_include_available_and_drafted_status()
+    {
+        var (draftId, first) = await CreateStartedDraftAsync();
+        var commands = _services.GetRequiredService<IDraftCommandService>();
+        Assert.True((await commands.DraftPlayerAsync(new DraftPlayerCommand(draftId, first))).Succeeded);
+
+        var state = await _services.GetRequiredService<IDraftStateService>().GetWorkingStateAsync(draftId);
+        Assert.NotNull(state);
+        var context = await _services.GetRequiredService<IDraftQueryService>().GetDecisionContextAsync(
+            new QueryContext
+            {
+                DraftId = draftId,
+                BranchId = state.ActiveBranch.BranchId,
+                Prompt = "Should I take Bijan Robinson or Saquon Barkley?"
+            });
+
+        var bijan = Assert.Single(context.MentionedPlayers, player => player.Summary.Name == "Bijan Robinson");
+        Assert.False(bijan.IsAvailable);
+        Assert.Equal(1, bijan.DraftedOverallPick);
+        Assert.Equal("1.01", bijan.DraftedRoundPick);
+        Assert.False(string.IsNullOrWhiteSpace(bijan.DraftedBy));
+
+        var saquon = Assert.Single(context.MentionedPlayers, player => player.Summary.Name == "Saquon Barkley");
+        Assert.True(saquon.IsAvailable);
+        Assert.Null(saquon.DraftedBy);
+        Assert.Null(saquon.DraftedOverallPick);
     }
 
     [Fact]
@@ -293,4 +337,8 @@ public class DecisionContextTests : IDisposable
         Assert.True(start.Succeeded, start.Error);
         return (draft.DraftId, PlayerId.FromName("Bijan Robinson", "RB"));
     }
+
+    private static bool IsStandardFlexNeed(RosterNeedDto need) =>
+        need is { SlotCode: "W/R/T", Count: 1 }
+        && need.EligiblePositions.SequenceEqual(["WR", "RB", "TE"]);
 }

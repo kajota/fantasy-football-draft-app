@@ -83,6 +83,46 @@ public static class RosterRules
         return remaining;
     }
 
+    public static IReadOnlyList<RosterSlotNeed> RemainingRosterNeeds(
+        IReadOnlyList<RosterSlot> slots,
+        IReadOnlyList<PlayerPosition> draftedPositions)
+    {
+        var assigned = draftedPositions.ToList();
+        var needs = new Dictionary<string, RosterSlotNeed>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var slot in slots
+                     .Where(s => s.SlotKind is SlotKind.Required or SlotKind.Flex)
+                     .OrderBy(s => s.SlotKind == SlotKind.Required ? 0 : 1)
+                     .ThenBy(s => s.EligiblePositions.Count)
+                     .ThenBy(s => CanonicalSlotCode(s.SlotCode, s.EligiblePositions), StringComparer.Ordinal))
+        {
+            var code = CanonicalSlotCode(slot.SlotCode, slot.EligiblePositions);
+            for (var i = 0; i < slot.Count; i++)
+            {
+                var match = assigned.FindIndex(p => slot.EligiblePositions.Contains(p));
+                if (match >= 0)
+                {
+                    assigned.RemoveAt(match);
+                    continue;
+                }
+
+                if (needs.TryGetValue(code, out var existing))
+                {
+                    needs[code] = existing with { Count = existing.Count + 1 };
+                }
+                else
+                {
+                    needs[code] = new RosterSlotNeed(code, 1, slot.EligiblePositions);
+                }
+            }
+        }
+
+        return needs.Values
+            .OrderBy(need => need.EligiblePositions.Count)
+            .ThenBy(need => need.SlotCode, StringComparer.Ordinal)
+            .ToList();
+    }
+
     public static IReadOnlyList<YahooRosterSlot> YahooSlotCatalog { get; } =
     [
         new("QB", "Quarterback", "QB", SlotKind.Required, [PlayerPosition.QB], 4),
@@ -163,6 +203,11 @@ public static class RosterRules
 public sealed record RosterSlotSpecPreset(
     string SlotCode,
     SlotKind SlotKind,
+    int Count,
+    IReadOnlyList<PlayerPosition> EligiblePositions);
+
+public sealed record RosterSlotNeed(
+    string SlotCode,
     int Count,
     IReadOnlyList<PlayerPosition> EligiblePositions);
 

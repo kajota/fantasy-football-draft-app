@@ -1061,6 +1061,119 @@ public class PersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Decision_context_honors_explicit_source_key()
+    {
+        var (draftId, _) = await CreateStartedDraftAsync();
+        await WriteSplitRankingsAsync();
+
+        var writer = _services.GetRequiredService<IFantasyDataWriter>();
+        var bijan = PlayerId.FromName("Bijan Robinson", "RB");
+        var allen = PlayerId.FromName("Josh Allen", "QB");
+        var now = DateTimeOffset.UtcNow;
+        await writer.WriteAsync("sleeper",
+            [
+                new Player
+                {
+                    PlayerId = bijan,
+                    Name = "Bijan Robinson",
+                    NflTeam = "ATL",
+                    PrimaryPosition = PlayerPosition.RB,
+                    EligiblePositions = [PlayerPosition.RB]
+                },
+                new Player
+                {
+                    PlayerId = allen,
+                    Name = "Josh Allen",
+                    NflTeam = "BUF",
+                    PrimaryPosition = PlayerPosition.QB,
+                    EligiblePositions = [PlayerPosition.QB]
+                }
+            ],
+            [],
+            [
+                new PlayerRanking { PlayerId = allen, SourceKey = "sleeper", OverallRank = 1, CachedAt = now },
+                new PlayerRanking { PlayerId = bijan, SourceKey = "sleeper", OverallRank = 12, CachedAt = now }
+            ],
+            [],
+            [],
+            CancellationToken.None);
+
+        var state = await _services.GetRequiredService<IDraftStateService>().GetWorkingStateAsync(draftId);
+        Assert.NotNull(state);
+        var context = await _services.GetRequiredService<IDraftQueryService>().GetDecisionContextAsync(
+            new QueryContext
+            {
+                DraftId = draftId,
+                BranchId = state.ActiveBranch.BranchId,
+                SourceKey = "sleeper"
+            });
+
+        Assert.Equal("Sleeper", context.RankingsSource);
+        Assert.Equal("Josh Allen", context.TopAvailable[0].Name);
+        Assert.Equal(1, context.TopAvailable[0].OverallRank);
+    }
+
+    [Fact]
+    public async Task Decision_context_reports_actual_data_sources_used_after_fallback()
+    {
+        var (draftId, _) = await CreateStartedDraftAsync();
+        var writer = _services.GetRequiredService<IFantasyDataWriter>();
+        var bijan = PlayerId.FromName("Bijan Robinson", "RB");
+        var saquon = PlayerId.FromName("Saquon Barkley", "RB");
+        var now = DateTimeOffset.UtcNow;
+
+        static Player Player(PlayerId id, string name) => new()
+        {
+            PlayerId = id,
+            Name = name,
+            NflTeam = "FA",
+            PrimaryPosition = PlayerPosition.RB,
+            EligiblePositions = [PlayerPosition.RB]
+        };
+
+        await writer.WriteAsync(
+            "fantasypros",
+            [Player(bijan, "Bijan Robinson"), Player(saquon, "Saquon Barkley")],
+            [],
+            [
+                new PlayerRanking { PlayerId = bijan, SourceKey = "fantasypros", OverallRank = 1, CachedAt = now },
+                new PlayerRanking { PlayerId = saquon, SourceKey = "fantasypros", OverallRank = 2, CachedAt = now }
+            ],
+            [],
+            [],
+            CancellationToken.None);
+
+        await writer.WriteAsync(
+            "sleeper",
+            [Player(bijan, "Bijan Robinson"), Player(saquon, "Saquon Barkley")],
+            [],
+            [],
+            [
+                new PlayerAdp { PlayerId = bijan, SourceKey = "sleeper", OverallAdp = 1.2, CachedAt = now },
+                new PlayerAdp { PlayerId = saquon, SourceKey = "sleeper", OverallAdp = 2.4, CachedAt = now }
+            ],
+            [],
+            CancellationToken.None);
+
+        var state = await _services.GetRequiredService<IDraftStateService>().GetWorkingStateAsync(draftId);
+        Assert.NotNull(state);
+        var context = await _services.GetRequiredService<IDraftQueryService>().GetDecisionContextAsync(
+            new QueryContext
+            {
+                DraftId = draftId,
+                BranchId = state.ActiveBranch.BranchId,
+                SourceKey = "missing-source"
+            });
+
+        Assert.NotNull(context.DataSourcesUsed);
+        Assert.StartsWith("FantasyPros", context.RankingsSource, StringComparison.Ordinal);
+        Assert.Equal("fantasypros", context.DataSourcesUsed.Rankings);
+        Assert.Equal("sleeper", context.DataSourcesUsed.Adp);
+        Assert.Equal("seed", context.DataSourcesUsed.Projections);
+        Assert.Equal("sleeper", context.DataSourcesUsed.PlayerStatus);
+    }
+
+    [Fact]
     public async Task Ai_conversation_persists_for_a_draft_branch()
     {
         var (draftId, _) = await CreateStartedDraftAsync();
@@ -1146,6 +1259,49 @@ public class PersistenceTests : IDisposable
             .Single(row => row.PlayerId.Equals(playerId));
         Assert.Equal("Hamstring", loaded.InjuryBodyPart);
         Assert.Equal("Limited Wednesday", loaded.InjuryNotes);
+    }
+
+    [Fact]
+    public async Task Sleeper_active_refresh_clears_stale_injury_notes()
+    {
+        var writer = _services.GetRequiredService<IFantasyDataWriter>();
+        var playerId = PlayerId.FromName("Recovered", "WR");
+        await writer.WriteAsync("sleeper",
+        [
+            new Player
+            {
+                PlayerId = playerId,
+                Name = "Recovered",
+                NflTeam = "KC",
+                PrimaryPosition = PlayerPosition.WR,
+                EligiblePositions = [PlayerPosition.WR],
+                Status = PlayerStatus.Questionable,
+                InjuryBodyPart = "Hamstring",
+                InjuryNotes = "Limited Wednesday",
+                InjuryStartedOn = "2026-08-10"
+            }
+        ], [], [], [], [], CancellationToken.None);
+
+        await writer.WriteAsync("sleeper",
+        [
+            new Player
+            {
+                PlayerId = playerId,
+                Name = "Recovered",
+                NflTeam = "KC",
+                PrimaryPosition = PlayerPosition.WR,
+                EligiblePositions = [PlayerPosition.WR],
+                Status = PlayerStatus.Active
+            }
+        ], [], [], [], [], CancellationToken.None);
+
+        var loaded = (await _services.GetRequiredService<IDraftStateService>().GetPlayersAsync())
+            .Single(row => row.PlayerId.Equals(playerId));
+        Assert.Equal(PlayerStatus.Active, loaded.Status);
+        Assert.Null(loaded.InjuryBodyPart);
+        Assert.Null(loaded.InjuryNotes);
+        Assert.Null(loaded.InjuryStartedOn);
+        Assert.Equal("", loaded.InjuryLine);
     }
 
     [Fact]

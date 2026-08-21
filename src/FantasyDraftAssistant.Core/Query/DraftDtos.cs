@@ -9,6 +9,8 @@ public sealed class QueryContext
 {
     public required DraftId DraftId { get; init; }
     public required BranchId BranchId { get; init; }
+    public string? SourceKey { get; init; }
+    public string? Prompt { get; init; }
 }
 
 public sealed class LeagueSettingsDto
@@ -169,6 +171,7 @@ public sealed class InterveningTeamDto
     public IReadOnlyDictionary<string, int>? RosterPositionCounts { get; init; }
     public IReadOnlyList<string> RecentAdditions { get; init; } = [];
     public required IReadOnlyList<string> RemainingNeeds { get; init; }
+    public IReadOnlyList<RosterNeedDto> RosterNeeds { get; init; } = [];
 }
 
 public sealed class DataFreshnessDto
@@ -185,23 +188,58 @@ public sealed class DataFreshnessItemDto
     public int RecordCount { get; init; }
 }
 
+public sealed class DataSourcesUsedDto
+{
+    public string? Rankings { get; init; }
+    public string? Adp { get; init; }
+    public string? Projections { get; init; }
+    public string? PlayerStatus { get; init; }
+}
+
+public sealed class RosterNeedDto
+{
+    public required string SlotCode { get; init; }
+    public required int Count { get; init; }
+    public required IReadOnlyList<string> EligiblePositions { get; init; }
+}
+
+public sealed class TeamRosterNeedsDto
+{
+    public required string TeamName { get; init; }
+    public string TeamId { get; init; } = "";
+    public required IReadOnlyList<RosterNeedDto> RosterNeeds { get; init; }
+}
+
+public sealed class MentionedPlayerDto
+{
+    public required PlayerSummaryDto Summary { get; init; }
+    public required bool IsAvailable { get; init; }
+    public string? DraftedBy { get; init; }
+    public string? DraftedRoundPick { get; init; }
+    public int? DraftedOverallPick { get; init; }
+}
+
 public sealed class DecisionContextDto
 {
     public required DraftStatusDto Status { get; init; }
     public required LeagueSettingsDto League { get; init; }
     public required RosterDto MyRoster { get; init; }
     public required IReadOnlyList<string> MyRemainingNeeds { get; init; }
+    public IReadOnlyList<RosterNeedDto> MyRosterNeeds { get; init; } = [];
     public required MyQueueDto Queue { get; init; }
     public required IReadOnlyList<PlayerSummaryDto> TopAvailable { get; init; }
     public required PositionSummaryDto Positions { get; init; }
     public required RemainingTiersDto Tiers { get; init; }
     public required IReadOnlyList<string> RecentPositions { get; init; }
     public required IReadOnlyList<string> AllTeamNeeds { get; init; }
+    public IReadOnlyList<TeamRosterNeedsDto> AllTeamRosterNeeds { get; init; } = [];
     public required IReadOnlyList<string> Alerts { get; init; }
     public required string RankingsSource { get; init; }
+    public DataSourcesUsedDto? DataSourcesUsed { get; init; }
     public required IReadOnlyList<PlayerSummaryDto> AvailableRookies { get; init; }
     public required IReadOnlyList<PlayerSummaryDto> InjuredAvailable { get; init; }
     public required int StateVersion { get; init; }
+    public IReadOnlyList<MentionedPlayerDto> MentionedPlayers { get; init; } = [];
 
     // Additive live-draft context. Defaults keep older callers compiling.
     public IReadOnlyList<PickDto> RecentPicks { get; init; } = [];

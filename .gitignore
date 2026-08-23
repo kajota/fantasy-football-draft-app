@@ -67,6 +67,8 @@ desktop.ini
 !.env.example
 credentials.dat
 **/fantasy-draft-assistant/
+deploy/nginx/draft-token.map
+
 
 ## Test / coverage
 TestResults/

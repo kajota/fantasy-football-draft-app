@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Draft board</title>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --text: #f4fff4;
+      --muted: #8b97a8;
+      --header: #2e7d32;
+      --header-text: #f4fff4;
+      --mine: #e8a317;
+      --mine-text: #1a1204;
+      --round: #1b5e20;
+      --empty: #1c2638;
+      --current-empty: #3a3018;
+      --border: #0b1220;
+      --qb: #00acc1; --rb: #e53935; --wr: #43a047;
+      --te: #1e88e5; --k: #8e24aa; --def: #f9a825; --other: #546e7a;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; }
+    body { padding: 12px; }
+    .banner { display: none; background: var(--mine); color: var(--mine-text); font-weight: 800; letter-spacing: .12em;
+      text-align: center; padding: 8px; margin: -12px -12px 12px; }
+    .banner.on { display: block; }
+    .now { margin-bottom: 12px; }
+    .now-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+    .more { color: var(--mine); text-decoration: none; font-weight: 700; font-size: .95rem; white-space: nowrap; }
+    .now h1 { font-size: 1.4rem; margin: 0 0 4px; }
+    .now .meta { color: var(--muted); font-size: .95rem; }
+    .now .clock { font-size: 1.15rem; font-weight: 700; margin-top: 6px; }
+    .now .last { margin-top: 4px; }
+    .swatches { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 12px; font-size: .8rem; font-weight: 700; }
+    .swatches span { padding: 2px 8px; border-radius: 3px; }
+    .board-wrap { overflow: auto; }
+    table { border-collapse: separate; border-spacing: 2px; width: max-content; }
+    th, td { width: 7.2rem; min-width: 5.5rem; padding: 4px 6px; text-align: center; border-radius: 3px; font-size: .82rem; font-weight: 650; }
+    th { background: var(--header); color: var(--header-text); height: 2.2rem; }
+    th.mine { background: var(--mine); color: var(--mine-text); }
+    th.round, td.round { width: 2.4rem; min-width: 2.4rem; background: var(--round); color: #f4fff4; font-weight: 800; }
+    td { height: 3rem; vertical-align: middle; color: #fff; background: var(--empty); color: var(--muted); }
+    td.filled { color: #fff; }
+    td.QB { background: var(--qb); } td.RB { background: var(--rb); } td.WR { background: var(--wr); }
+    td.TE { background: var(--te); } td.K { background: var(--k); } td.DEF { background: var(--def); }
+    td.other { background: var(--other); }
+    td.current { outline: 3px solid var(--mine); background: var(--current-empty); color: var(--mine); }
+    td.current.filled { color: #fff; }
+    .recent { display: none; margin-top: 16px; }
+    .recent h2 { font-size: 1rem; margin: 0 0 8px; }
+    .recent ol { margin: 0; padding-left: 1.2rem; }
+    .recent li { margin: 4px 0; }
+    .stale { color: var(--muted); font-size: .8rem; margin-top: 10px; }
+    .ver { position: fixed; right: 10px; bottom: 8px; color: var(--muted); font-size: .75rem;
+      background: var(--bg); padding: 2px 8px; z-index: 5; }
+    @media (max-width: 800px) {
+      th, td { width: 6.2rem; font-size: .75rem; height: 2.6rem; }
+      .recent { display: block; }
+    }
+  </style>
+</head>
+<body>
+  <div id="practice" class="banner">PRACTICE</div>
+  <div class="now">
+    <div class="now-top">
+      <h1 id="league">Draft board</h1>
+      <a class="more" href="more.html">More</a>
+    </div>
+    <div class="meta" id="meta"></div>
+    <div class="clock" id="clock"></div>
+    <div class="last" id="last"></div>
+  </div>
+  <div class="swatches">
+    <span class="QB" style="background:var(--qb)">QB</span>
+    <span class="RB" style="background:var(--rb)">RB</span>
+    <span class="WR" style="background:var(--wr)">WR</span>
+    <span class="TE" style="background:var(--te)">TE</span>
+    <span class="K" style="background:var(--k)">K</span>
+    <span class="DEF" style="background:var(--def)">DEF</span>
+  </div>
+  <div class="board-wrap"><table id="board"></table></div>
+  <div class="recent">
+    <h2>Recent picks</h2>
+    <ol id="recent"></ol>
+  </div>
+  <div class="stale" id="stale"></div>
+  <div class="ver">v__APP_VERSION__</div>
+  <script>
+    const posClass = p => ({QB:1,RB:1,WR:1,TE:1,K:1,DEF:1}[p] ? p : (p ? 'other' : ''));
+    function render(data) {
+      document.title = data.league + ' draft board';
+      document.getElementById('practice').classList.toggle('on', !!data.practice);
+      document.getElementById('league').textContent = data.league;
+      const pick = data.pick ? ('Pick ' + data.pick) : 'Draft complete';
+      document.getElementById('meta').textContent = pick + (data.practice ? ' · practice' : '');
+      const clock = data.onTheClock
+        ? (data.onTheClock.team + (data.onTheClock.isMine ? ' (you)' : '') + ' on the clock')
+        : '';
+      document.getElementById('clock').textContent = clock;
+      document.getElementById('last').textContent = data.lastPick
+        ? ('Last: ' + data.lastPick.roundPick + ' ' + data.lastPick.player + ' (' + data.lastPick.position + ') · ' + data.lastPick.team)
+        : '';
+      const table = document.getElementById('board');
+      table.innerHTML = '';
+      const head = document.createElement('tr');
+      head.innerHTML = '<th class="round"></th>' + (data.teams || []).map(t =>
+        '<th class="' + (t.isMine ? 'mine' : '') + '">' + escapeHtml(t.label) + '</th>').join('');
+      table.appendChild(head);
+      const recent = [];
+      (data.rounds || []).forEach(round => {
+        const tr = document.createElement('tr');
+        let html = '<td class="round">' + round.round + '</td>';
+        (round.cells || []).forEach(cell => {
+          const cls = ['cell'];
+          if (!cell.isEmpty) { cls.push('filled'); cls.push(posClass(cell.position)); recent.push(cell); }
+          if (cell.isCurrent) cls.push('current');
+          const label = cell.isEmpty
+            ? (cell.isCurrent ? 'On the clock' : escapeHtml(cell.roundPick))
+            : (escapeHtml(cell.player) + (cell.position ? '<br>' + escapeHtml(cell.position) : ''));
+          html += '<td class="' + cls.join(' ') + '">' + label + '</td>';
+        });
+        tr.innerHTML = html;
+        table.appendChild(tr);
+      });
+      const ol = document.getElementById('recent');
+      ol.innerHTML = recent.slice(-8).reverse().map(c =>
+        '<li>' + escapeHtml(c.roundPick + ' · ' + c.player + (c.position ? ' ' + c.position : '')) + '</li>').join('');
+      const updated = data.updatedAt ? new Date(data.updatedAt) : null;
+      document.getElementById('stale').textContent = updated
+        ? ('Updated ' + updated.toLocaleTimeString()) : '';
+    }
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+    }
+    async function poll() {
+      try {
+        const res = await fetch('board.json', { cache: 'no-store' });
+        if (!res.ok) throw new Error(res.status);
+        render(await res.json());
+      } catch (err) {
+        document.getElementById('stale').textContent = 'Waiting for board data…';
+      }
+    }
+    poll();
+    setInterval(poll, 2000);
+  </script>
+</body>
+</html>

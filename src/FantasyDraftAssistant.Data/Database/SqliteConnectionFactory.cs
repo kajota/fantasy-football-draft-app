@@ -30,4 +30,22 @@ public sealed class SqliteConnectionFactory(AppPaths paths)
         connection.Open();
         return connection;
     }
+
+    /// <summary>
+    /// Flushes WAL into <c>draft.db</c> and truncates the sidecar files so a
+    /// folder sync (Synology Drive, etc.) copies one complete database.
+    /// </summary>
+    public void Checkpoint()
+    {
+        SqliteConnection.ClearAllPools();
+        if (!File.Exists(Paths.DatabasePath))
+            return;
+
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+        cmd.ExecuteNonQuery();
+        connection.Close();
+        SqliteConnection.ClearAllPools();
+    }
 }

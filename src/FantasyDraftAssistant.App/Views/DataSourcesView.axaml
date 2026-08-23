@@ -41,6 +41,30 @@
 
       <Border Classes="card">
         <StackPanel Spacing="8">
+          <TextBlock Text="Web draft board" Classes="h2" />
+          <TextBlock Text="After each pick the app PUTs board.json to this URL plus the league slug. The token is the same bearer value as /etc/nginx/draft-token.map. Enable publishing per league on League Setup."
+                     Classes="muted" TextWrapping="Wrap" />
+          <TextBlock Text="Base URL" FontWeight="SemiBold" />
+          <TextBox Text="{Binding BoardBaseUrl}"
+                   ToolTip.Tip="Default is https://kellynorton.com/draft. Do not include the league slug." />
+          <TextBlock Text="Bearer token" FontWeight="SemiBold" />
+          <TextBox Text="{Binding BoardToken}" PasswordChar="•"
+                   ToolTip.Tip="Leave blank to keep a token that is already saved." />
+          <TextBlock IsVisible="{Binding BoardTokenSaved}"
+                     Text="A publish token is already saved."
+                     Classes="muted" />
+          <TextBlock Text="{Binding BoardPublishStatus}" Classes="muted" TextWrapping="Wrap" />
+          <WrapPanel>
+            <Button Content="Save board settings" Classes="ghost" Margin="0,0,8,8"
+                    Command="{Binding SaveBoardPublishCommand}" />
+            <Button Content="Publish now" Classes="ghost" Margin="0,0,8,8"
+                    Command="{Binding PublishBoardNowCommand}" />
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="card">
+        <StackPanel Spacing="8">
           <TextBlock Text="Cache contents" Classes="h2" />
           <TextBlock Text="{Binding CacheTimeZoneNote}" Classes="muted" FontSize="11" TextWrapping="Wrap" />
           <ItemsControl ItemsSource="{Binding Rows}">

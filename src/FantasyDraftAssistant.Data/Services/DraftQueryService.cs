@@ -67,6 +67,29 @@ public sealed class DraftQueryService(
         return new PlayerListDto { Players = summaries };
     }
 
+    public async Task<RemainingPlayersSnapshot> GetRemainingPlayersAsync(QueryContext context, CancellationToken cancellationToken = default)
+    {
+        var state = await Require(context, cancellationToken);
+        var summaries = await Available(state, new PlayerFilter
+        {
+            SortBy = PlayerListSort.Rank,
+            MaxResults = 10_000
+        }, cancellationToken);
+        return new RemainingPlayersSnapshot
+        {
+            UpdatedAt = DateTimeOffset.UtcNow,
+            League = state.League.Name,
+            Practice = state.ActiveBranch.ParentBranchId is not null,
+            Players = summaries.Select(player => new RemainingPlayerRow
+            {
+                Rank = player.OverallRank,
+                Name = player.Name,
+                Position = player.Position,
+                NflTeam = player.NflTeam
+            }).ToList()
+        };
+    }
+
     public async Task<PlayerDetailsDto> GetPlayerDetailsAsync(QueryContext context, PlayerId playerId, CancellationToken cancellationToken = default)
     {
         var state = await Require(context, cancellationToken);

@@ -161,9 +161,11 @@ public partial class LeagueSetupViewModel(
     SessionState session,
     ITeamPortraitGenerator portraits,
     ITeamPortraitStore portraitStore,
-    IFileSavePicker files) : PageViewModel
+    IFileSavePicker files,
+    IAppSettingsStore settings) : PageViewModel
 {
     private bool _loading;
+    private string _publishBaseUrl = BoardSlug.DefaultBaseUrl;
 
     public ObservableCollection<TeamRow> Teams { get; } = [];
     public ObservableCollection<RosterSlotEditor> Roster { get; } = [];
@@ -180,6 +182,11 @@ public partial class LeagueSetupViewModel(
     [ObservableProperty] private int _season = 2026;
     [ObservableProperty] private int _roundCount = 15;
     [ObservableProperty] private string _draftGuidelines = "";
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(BoardPublicUrl))]
+    private string _webSlug = "";
+    [ObservableProperty] private bool _publishBoard;
+    [ObservableProperty] private string _boardPublicUrl = "";
     [ObservableProperty] private string _rosterSummary = "";
     [ObservableProperty] private string _scoringSummary = "";
     [ObservableProperty]
@@ -190,6 +197,15 @@ public partial class LeagueSetupViewModel(
     [ObservableProperty] private PortraitAiOption? _selectedPortraitProvider;
 
     public bool HasSaveNotice => !string.IsNullOrWhiteSpace(SaveNotice);
+
+    partial void OnWebSlugChanged(string value) =>
+        BoardPublicUrl = BoardSlug.PublicUrl(_publishBaseUrl, value) ?? "";
+
+    private async Task RefreshBoardUrlAsync()
+    {
+        _publishBaseUrl = await settings.GetAsync(BoardSlug.BaseUrlSettingKey) ?? BoardSlug.DefaultBaseUrl;
+        BoardPublicUrl = BoardSlug.PublicUrl(_publishBaseUrl, WebSlug) ?? "";
+    }
 
     public override async Task OnNavigatedToAsync()
     {
@@ -210,6 +226,9 @@ public partial class LeagueSetupViewModel(
         Season = league.Season;
         RoundCount = league.RoundCount;
         DraftGuidelines = league.DraftGuidelines ?? "";
+        WebSlug = league.BoardSlug ?? "";
+        PublishBoard = league.PublishBoard;
+        await RefreshBoardUrlAsync();
         if (league.Platform == FantasyPlatform.Yahoo)
         {
             StatusMessage = "Imported from Yahoo. Verify team names, first-round seats, and keepers before you start. A later Yahoo refresh will not overwrite draft order or keepers unless you ask it to.";
@@ -323,7 +342,21 @@ public partial class LeagueSetupViewModel(
             return;
         }
 
+        if (!string.IsNullOrWhiteSpace(WebSlug) && !BoardSlug.TryNormalize(WebSlug, out _))
+        {
+            StatusMessage = "Web board slug may contain only lowercase letters, numbers, and hyphens.";
+            return;
+        }
+
+        if (PublishBoard && string.IsNullOrWhiteSpace(WebSlug))
+        {
+            StatusMessage = "Set a web board slug before turning on publishing.";
+            return;
+        }
+
         await leagues.SaveLeagueDetailsAsync(id, LeagueName, Season, RoundCount, DraftGuidelines);
+        await leagues.SaveBoardPublishAsync(id, WebSlug, PublishBoard);
+        await RefreshBoardUrlAsync();
         await PersistTeamsAsync();
         await leagues.SaveRosterAsync(new SaveRosterRequest
         {
@@ -349,8 +382,8 @@ public partial class LeagueSetupViewModel(
 
         session.LeagueName = LeagueName;
         SaveNotice = CanReorderTeams
-            ? "Saved. First-round seats and the Draft Room board were updated."
-            : "Saved. League settings are stored.";
+            ? $"Saved. First-round seats and the Draft Room board ({RoundCount} rounds) were updated."
+            : $"Saved. The Draft Room board now has {RoundCount} rounds.";
         StatusMessage = SaveNotice;
     }
 

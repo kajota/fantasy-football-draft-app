@@ -722,6 +722,125 @@ public class PersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Saving_roster_with_ir_does_not_add_a_draft_round()
+    {
+        var leagues = _services.GetRequiredService<ILeagueService>();
+        var league = await leagues.CreateLeagueAsync(new CreateLeagueRequest
+        {
+            Name = "IR Rounds",
+            Season = 2026,
+            TeamCount = 4,
+            RoundCount = 15,
+            UserTeamName = "My Team"
+        });
+
+        await leagues.SaveRosterAsync(new SaveRosterRequest
+        {
+            LeagueId = league.LeagueId,
+            Slots = RosterRules.DefaultYahooRoster().Select(slot => new RosterSlotSpec
+            {
+                SlotCode = slot.SlotCode,
+                SlotKind = slot.SlotKind,
+                Count = slot.Count,
+                EligiblePositions = slot.EligiblePositions
+            }).ToList()
+        });
+
+        var saved = await leagues.GetLeagueAsync(league.LeagueId);
+        Assert.NotNull(saved);
+        Assert.Equal(15, saved.RoundCount);
+        Assert.Equal(17, saved.RosterSize);
+        Assert.Contains(await leagues.GetRosterSlotsAsync(league.LeagueId), slot => slot.SlotCode == "IR");
+    }
+
+    [Fact]
+    public async Task Saving_more_rounds_appends_board_slots_after_a_live_pick()
+    {
+        var (draftId, player) = await CreateStartedDraftAsync();
+        var commands = _services.GetRequiredService<IDraftCommandService>();
+        var leagues = _services.GetRequiredService<ILeagueService>();
+        var states = _services.GetRequiredService<IDraftStateService>();
+
+        Assert.True((await commands.DraftPlayerAsync(new DraftPlayerCommand(draftId, player))).Succeeded);
+        var before = await states.GetWorkingStateAsync(draftId);
+        Assert.NotNull(before);
+        Assert.Equal(4, before.Slots.Max(slot => slot.Round));
+        var firstSlotId = before.Slots[0].DraftSlotId;
+
+        await leagues.SaveLeagueDetailsAsync(
+            before.League.LeagueId,
+            before.League.Name,
+            before.League.Season,
+            6,
+            before.League.DraftGuidelines);
+
+        var after = await states.GetWorkingStateAsync(draftId);
+        Assert.NotNull(after);
+        Assert.Equal(6, after.League.RoundCount);
+        Assert.Equal(6, after.Slots.Max(slot => slot.Round));
+        Assert.Equal(24, after.Slots.Count);
+        Assert.Equal(firstSlotId, after.Slots[0].DraftSlotId);
+        Assert.Single(after.ActiveSelections);
+        Assert.Equal(player, after.ActiveSelections[1].PlayerId);
+
+        var roundFive = after.Slots.Where(slot => slot.Round == 5).OrderBy(slot => slot.RoundPick).Select(slot => slot.TeamId);
+        var roundOne = after.Slots.Where(slot => slot.Round == 1).OrderBy(slot => slot.RoundPick).Select(slot => slot.TeamId);
+        Assert.Equal(roundOne, roundFive);
+    }
+
+    [Fact]
+    public async Task Saving_fewer_rounds_drops_empty_extra_slots()
+    {
+        var (draftId, _, _) = await CreateUnstartedDraftAsync();
+        var leagues = _services.GetRequiredService<ILeagueService>();
+        var states = _services.GetRequiredService<IDraftStateService>();
+        var before = await states.GetWorkingStateAsync(draftId);
+        Assert.NotNull(before);
+
+        await leagues.SaveLeagueDetailsAsync(
+            before.League.LeagueId,
+            before.League.Name,
+            before.League.Season,
+            2,
+            before.League.DraftGuidelines);
+
+        var after = await states.GetWorkingStateAsync(draftId);
+        Assert.NotNull(after);
+        Assert.Equal(2, after.League.RoundCount);
+        Assert.Equal(2, after.Slots.Max(slot => slot.Round));
+        Assert.Equal(8, after.Slots.Count);
+    }
+
+    [Fact]
+    public async Task Saving_fewer_rounds_keeps_slots_held_by_keepers()
+    {
+        var (draftId, player, firstTeam) = await CreateUnstartedDraftAsync();
+        var leagues = _services.GetRequiredService<ILeagueService>();
+        var states = _services.GetRequiredService<IDraftStateService>();
+
+        await leagues.SaveKeepersAsync(new SaveKeepersRequest
+        {
+            DraftId = draftId,
+            Keepers = [new KeeperSpec { TeamId = firstTeam, PlayerId = player, RoundCost = 4 }]
+        });
+
+        var before = await states.GetWorkingStateAsync(draftId);
+        Assert.NotNull(before);
+        await leagues.SaveLeagueDetailsAsync(
+            before.League.LeagueId,
+            before.League.Name,
+            before.League.Season,
+            2,
+            before.League.DraftGuidelines);
+
+        var after = await states.GetWorkingStateAsync(draftId);
+        Assert.NotNull(after);
+        Assert.Equal(2, after.League.RoundCount);
+        Assert.Equal(4, after.Slots.Max(slot => slot.Round));
+        Assert.Contains(after.Slots, slot => slot.IsKeeperSlot && slot.Round == 4);
+    }
+
+    [Fact]
     public async Task Draft_board_query_uses_player_names_not_ids()
     {
         var (draftId, player) = await CreateStartedDraftAsync();

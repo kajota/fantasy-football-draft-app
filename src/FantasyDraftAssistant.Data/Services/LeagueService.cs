@@ -155,16 +155,48 @@ public sealed class LeagueService(SqliteConnectionFactory factory, IBackupServic
     public Task SaveLeagueDetailsAsync(LeagueId leagueId, string name, int season, int roundCount, string? draftGuidelines = null, CancellationToken cancellationToken = default)
     {
         var notes = string.IsNullOrWhiteSpace(draftGuidelines) ? null : draftGuidelines.Trim();
+        var rounds = Math.Max(1, roundCount);
         using var db = factory.Open();
-        using var cmd = db.Cmd("""
+        using var tx = db.BeginTransaction();
+        using (var cmd = db.Cmd("""
             UPDATE Leagues
             SET Name = $name, Season = $season, RoundCount = $rounds, DraftGuidelines = $notes
             WHERE LeagueId = $id;
-            """)
+            """, tx)
             .Bind("$name", name.Trim())
             .Bind("$season", season)
-            .Bind("$rounds", roundCount)
+            .Bind("$rounds", rounds)
             .Bind("$notes", notes)
+            .Bind("$id", leagueId.ToString()))
+        {
+            cmd.ExecuteNonQuery();
+        }
+
+        var changed = SyncDraftSlotsToRoundCount(db, tx, leagueId, rounds);
+        tx.Commit();
+        NotifyDrafts(changed);
+        return Task.CompletedTask;
+    }
+
+    public Task SaveBoardPublishAsync(LeagueId leagueId, string? boardSlug, bool publishBoard, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        string? slug = null;
+        if (!string.IsNullOrWhiteSpace(boardSlug))
+        {
+            if (!BoardSlug.TryNormalize(boardSlug, out var normalized))
+                throw new ArgumentException("Web board slug may contain only lowercase letters, numbers, and hyphens.");
+            slug = normalized;
+        }
+
+        using var db = factory.Open();
+        using var cmd = db.Cmd("""
+            UPDATE Leagues
+            SET BoardSlug = $slug, PublishBoard = $pub
+            WHERE LeagueId = $id;
+            """)
+            .Bind("$slug", slug)
+            .Bind("$pub", publishBoard ? 1 : 0)
             .Bind("$id", leagueId.ToString());
         cmd.ExecuteNonQuery();
         return Task.CompletedTask;
@@ -238,10 +270,10 @@ public sealed class LeagueService(SqliteConnectionFactory factory, IBackupServic
         using (var cmd = db.Cmd("DELETE FROM RosterSlots WHERE LeagueId = $id;", tx).Bind("$id", request.LeagueId.ToString()))
             cmd.ExecuteNonQuery();
 
-        var size = 0;
+        var rosterSize = 0;
         foreach (var spec in request.Slots)
         {
-            size += spec.Count;
+            rosterSize += spec.Count;
             InsertRosterSlot(db, tx, new RosterSlot
             {
                 RosterSlotId = RosterSlotId.New(),
@@ -253,14 +285,21 @@ public sealed class LeagueService(SqliteConnectionFactory factory, IBackupServic
             });
         }
 
-        using (var cmd = db.Cmd("UPDATE Leagues SET RosterSize = $s, RoundCount = CASE WHEN RoundCount < $s THEN $s ELSE RoundCount END WHERE LeagueId = $id;", tx)
-                   .Bind("$s", size)
+        var draftedSpots = RosterRules.DraftedRosterSpots(request.Slots);
+        var league = LoadLeague(db, tx, request.LeagueId)
+                     ?? throw new InvalidOperationException("League not found.");
+        var rounds = Math.Max(league.RoundCount, Math.Max(1, draftedSpots));
+        using (var cmd = db.Cmd("UPDATE Leagues SET RosterSize = $s, RoundCount = $rounds WHERE LeagueId = $id;", tx)
+                   .Bind("$s", rosterSize)
+                   .Bind("$rounds", rounds)
                    .Bind("$id", request.LeagueId.ToString()))
         {
             cmd.ExecuteNonQuery();
         }
 
+        var changed = SyncDraftSlotsToRoundCount(db, tx, request.LeagueId, rounds);
         tx.Commit();
+        NotifyDrafts(changed);
         return Task.CompletedTask;
     }
 
@@ -726,7 +765,9 @@ public sealed class LeagueService(SqliteConnectionFactory factory, IBackupServic
             DraftSourcePreference = Enum.Parse<DraftSourcePreference>(reader.GetString(reader.GetOrdinal("DraftSourcePreference"))),
             DraftGuidelines = reader.GetNullString(reader.GetOrdinal("DraftGuidelines")),
             CreatedAt = reader.GetTime(reader.GetOrdinal("CreatedAt")),
-            ArchivedAt = reader.GetNullTime(reader.GetOrdinal("ArchivedAt"))
+            ArchivedAt = reader.GetNullTime(reader.GetOrdinal("ArchivedAt")),
+            BoardSlug = reader.GetNullString(reader.GetOrdinal("BoardSlug")),
+            PublishBoard = reader.GetInt32(reader.GetOrdinal("PublishBoard")) != 0
         };
     }
 
@@ -1246,6 +1287,118 @@ public sealed class LeagueService(SqliteConnectionFactory factory, IBackupServic
             .Bind("$cat", rule.Category.ToString())
             .Bind("$pts", rule.Points.ToString(System.Globalization.CultureInfo.InvariantCulture));
         cmd.ExecuteNonQuery();
+    }
+
+    private void NotifyDrafts(IEnumerable<Draft> drafts)
+    {
+        foreach (var draft in drafts)
+            notifier.Notify(draft.DraftId, draft.ActiveBranchId, draft.CurrentStateVersion);
+    }
+
+    private static List<Draft> SyncDraftSlotsToRoundCount(
+        SqliteConnection db,
+        SqliteTransaction tx,
+        LeagueId leagueId,
+        int roundCount)
+    {
+        var changed = new List<Draft>();
+        var league = LoadLeague(db, tx, leagueId);
+        if (league is null)
+            return changed;
+
+        var teams = LoadTeams(db, tx, leagueId);
+        foreach (var draft in LoadDraftsForLeague(db, tx, leagueId))
+        {
+            if (draft.Status == DraftStatus.Completed)
+                continue;
+            if (AlignDraftSlots(db, tx, draft, league.DraftType, teams, roundCount))
+                changed.Add(draft);
+        }
+
+        return changed;
+    }
+
+    private static bool AlignDraftSlots(
+        SqliteConnection db,
+        SqliteTransaction tx,
+        Draft draft,
+        DraftType draftType,
+        IReadOnlyList<Team> teams,
+        int roundCount)
+    {
+        var existing = LoadSlots(db, tx, draft.DraftId);
+        var keepers = LoadKeepers(db, tx, draft.DraftId);
+        var occupied = MaxOccupiedRound(db, tx, draft.DraftId, keepers);
+        var target = Math.Max(Math.Max(1, roundCount), occupied);
+        var ordered = SlotTeamOrder(existing, teams);
+        if (ordered.Count == 0)
+            return false;
+
+        var generated = DraftSlotGenerator.Generate(draftType, ordered, target);
+        var byOverall = existing.ToDictionary(slot => slot.OverallPick);
+        var inserted = false;
+        foreach (var slot in DraftSlotGenerator.ToDraftSlots(draft.DraftId, generated))
+        {
+            if (byOverall.ContainsKey(slot.OverallPick))
+                continue;
+            InsertSlot(db, tx, slot);
+            inserted = true;
+        }
+
+        var extra = existing.Any(slot => slot.Round > target);
+        if (extra)
+        {
+            using var cmd = db.Cmd("DELETE FROM DraftSlots WHERE DraftId = $id AND Round > $round;", tx)
+                .Bind("$id", draft.DraftId.ToString())
+                .Bind("$round", target);
+            cmd.ExecuteNonQuery();
+        }
+
+        return inserted || extra;
+    }
+
+    private static int MaxOccupiedRound(
+        SqliteConnection db,
+        SqliteTransaction tx,
+        DraftId draftId,
+        IReadOnlyList<Keeper> keepers)
+    {
+        var max = keepers.Count == 0 ? 0 : keepers.Max(keeper => keeper.RoundCost);
+        using var cmd = db.Cmd("SELECT MAX(Round) FROM ActiveDraftSelections WHERE DraftId = $id;", tx)
+            .Bind("$id", draftId.ToString());
+        var value = cmd.ExecuteScalar();
+        if (value is not null and not DBNull)
+            max = Math.Max(max, Convert.ToInt32(value));
+        return max;
+    }
+
+    private static List<TeamDraftPosition> SlotTeamOrder(IReadOnlyList<DraftSlot> slots, IReadOnlyList<Team> teams)
+    {
+        var byId = teams.ToDictionary(team => team.TeamId);
+        var roundOne = slots.Where(slot => slot.Round == 1).OrderBy(slot => slot.RoundPick).ToList();
+        if (roundOne.Count > 0)
+        {
+            return roundOne.Select(slot =>
+            {
+                byId.TryGetValue(slot.TeamId, out var team);
+                return new TeamDraftPosition
+                {
+                    TeamId = slot.TeamId,
+                    Name = team?.Name ?? $"Team {slot.RoundPick}",
+                    DraftPosition = slot.RoundPick
+                };
+            }).ToList();
+        }
+
+        return teams
+            .OrderBy(team => team.DraftPosition)
+            .Select(team => new TeamDraftPosition
+            {
+                TeamId = team.TeamId,
+                Name = team.Name,
+                DraftPosition = team.DraftPosition
+            })
+            .ToList();
     }
 
     private static void ReplaceSlots(

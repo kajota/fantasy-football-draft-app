@@ -9,7 +9,7 @@ public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddFantasyDraftData(this IServiceCollection services, string? dataRoot = null)
     {
-        services.AddSingleton(new AppPaths(dataRoot));
+        services.AddSingleton(new AppPaths(AppDataRoot.ResolveFromEnvironment(dataRoot)));
         services.AddSingleton<SqliteConnectionFactory>();
         services.AddSingleton<MigrationRunner>();
         services.AddSingleton<IDraftChangeNotifier, DraftChangeNotifier>();
@@ -26,6 +26,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IAiUsageService, AiUsageService>();
         services.AddSingleton<IAiResponseStore, AiResponseStore>();
         services.AddSingleton<ITeamPortraitStore, TeamPortraitStore>();
+        services.AddSingleton<IAppSettingsStore, AppSettingsStore>();
+        services.AddSingleton<IBoardPublisher, NoOpBoardPublisher>();
         services.AddSingleton<FileCredentialStore>();
         services.AddSingleton<ICredentialStore>(sp =>
         {

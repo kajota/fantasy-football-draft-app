@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Players left</title>
+  <style>
+    :root {
+      --bg: #0b1220; --text: #f4fff4; --muted: #8b97a8; --mine: #e8a317; --mine-text: #1a1204;
+      --card: #1c2638; --qb: #00acc1; --rb: #e53935; --wr: #43a047; --te: #1e88e5; --k: #8e24aa; --def: #f9a825;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; }
+    body { padding: 12px; max-width: 40rem; }
+    .banner { display: none; background: var(--mine); color: var(--mine-text); font-weight: 800; letter-spacing: .12em;
+      text-align: center; padding: 8px; margin: -12px -12px 12px; }
+    .banner.on { display: block; }
+    .top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+    .more { color: var(--mine); text-decoration: none; font-weight: 700; }
+    h1 { font-size: 1.4rem; margin: 0 0 4px; }
+    .meta { color: var(--muted); margin-bottom: 10px; }
+    input { width: 100%; padding: 10px 12px; border: 0; border-radius: 6px; background: var(--card); color: var(--text);
+      font-size: 1rem; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+    .chips button { background: var(--card); color: var(--text); border: 0; border-radius: 999px; padding: 8px 12px;
+      font-weight: 700; font-size: .85rem; }
+    .chips button.on { outline: 2px solid var(--mine); color: var(--mine); }
+    ol { list-style: none; padding: 0; margin: 0; }
+    li { display: grid; grid-template-columns: 3rem 2.4rem 1fr auto; gap: 8px; align-items: baseline;
+      padding: 8px 4px; border-bottom: 1px solid #1c2638; }
+    .rank { color: var(--muted); text-align: right; }
+    .pos { font-weight: 800; font-size: .8rem; }
+    .pos.QB { color: var(--qb); } .pos.RB { color: var(--rb); } .pos.WR { color: var(--wr); }
+    .pos.TE { color: var(--te); } .pos.K { color: var(--k); } .pos.DEF { color: var(--def); }
+    .name { font-weight: 650; }
+    .nfl { color: var(--muted); font-size: .85rem; }
+    .stale { color: var(--muted); font-size: .8rem; margin-top: 12px; }
+    .ver { position: fixed; right: 10px; bottom: 8px; color: var(--muted); font-size: .75rem;
+      background: var(--bg); padding: 2px 8px; z-index: 5; }
+  </style>
+</head>
+<body>
+  <div id="practice" class="banner">PRACTICE</div>
+  <div class="top">
+    <h1>Players left</h1>
+    <a class="more" href="more.html">More</a>
+  </div>
+  <div class="meta" id="meta"></div>
+  <input id="search" type="search" placeholder="Search a name" autocomplete="off" />
+  <div class="chips" id="chips"></div>
+  <ol id="list"></ol>
+  <div class="stale" id="stale"></div>
+  <div class="ver">v__APP_VERSION__</div>
+  <script>
+    const POS = ['All','QB','RB','WR','TE','K','DEF'];
+    let data = { players: [] };
+    let chip = 'All';
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+    }
+    function render() {
+      const q = document.getElementById('search').value.trim().toLowerCase();
+      const rows = (data.players || []).filter(p => {
+        if (chip !== 'All' && p.position !== chip) return false;
+        if (q && !(p.name || '').toLowerCase().includes(q)) return false;
+        return true;
+      });
+      document.getElementById('list').innerHTML = rows.map(p =>
+        '<li><span class="rank">' + (p.rank ?? '—') + '</span><span class="pos ' + escapeHtml(p.position) + '">' +
+        escapeHtml(p.position) + '</span><span class="name">' + escapeHtml(p.name) +
+        '</span><span class="nfl">' + escapeHtml(p.nflTeam || '') + '</span></li>').join('');
+      document.getElementById('meta').textContent =
+        (data.league || '') + ' · ' + rows.length + ' left' + (data.practice ? ' · practice' : '');
+      document.getElementById('practice').classList.toggle('on', !!data.practice);
+      document.title = (data.league || 'Draft') + ' · Players left';
+      const updated = data.updatedAt ? new Date(data.updatedAt) : null;
+      document.getElementById('stale').textContent = updated ? ('Updated ' + updated.toLocaleTimeString()) : '';
+    }
+    document.getElementById('chips').innerHTML = POS.map(p =>
+      '<button type="button" data-pos="' + p + '">' + p + '</button>').join('');
+    document.getElementById('chips').addEventListener('click', ev => {
+      const btn = ev.target.closest('button');
+      if (!btn) return;
+      chip = btn.getAttribute('data-pos');
+      document.querySelectorAll('.chips button').forEach(b => b.classList.toggle('on', b === btn));
+      render();
+    });
+    document.querySelector('.chips button').classList.add('on');
+    document.getElementById('search').addEventListener('input', render);
+    async function poll() {
+      try {
+        const res = await fetch('available.json', { cache: 'no-store' });
+        if (!res.ok) throw new Error(res.status);
+        data = await res.json();
+        render();
+      } catch (err) {
+        document.getElementById('stale').textContent = 'Waiting for player list…';
+      }
+    }
+    poll();
+    setInterval(poll, 2000);
+  </script>
+</body>
+</html>

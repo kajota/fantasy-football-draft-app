@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FantasyDraftAssistant.Core.Analytics;
+using FantasyDraftAssistant.Core.Engine;
 using FantasyDraftAssistant.Core.Interfaces;
 using FantasyDraftAssistant.Core.Results;
 using FantasyDraftAssistant.Providers.FantasyData;
@@ -24,12 +25,18 @@ public partial class DataSourcesViewModel(
     IFantasyDataWriter writer,
     ICredentialStore credentials,
     ILeagueService leagues,
-    SessionState session) : PageViewModel
+    SessionState session,
+    IAppSettingsStore settings,
+    IBoardPublisher publisher) : PageViewModel
 {
     public ObservableCollection<FantasyDataProviderRow> Providers { get; } = [];
     public ObservableCollection<string> Rows { get; } = [];
 
     [ObservableProperty] private string _cacheTimeZoneNote = LocalClock.ZoneNote();
+    [ObservableProperty] private string _boardBaseUrl = BoardSlug.DefaultBaseUrl;
+    [ObservableProperty] private string _boardToken = "";
+    [ObservableProperty] private bool _boardTokenSaved;
+    [ObservableProperty] private string _boardPublishStatus = "";
 
     public override async Task OnNavigatedToAsync()
     {
@@ -56,6 +63,52 @@ public partial class DataSourcesViewModel(
         }
 
         await RefreshListAsync();
+        await LoadBoardPublishAsync();
+    }
+
+    private async Task LoadBoardPublishAsync()
+    {
+        BoardBaseUrl = await settings.GetAsync(BoardSlug.BaseUrlSettingKey) ?? BoardSlug.DefaultBaseUrl;
+        var token = await credentials.GetSecretAsync(BoardSlug.CredentialScope, BoardSlug.CredentialKey);
+        BoardTokenSaved = !string.IsNullOrWhiteSpace(token);
+        BoardPublishStatus = publisher.LastStatus;
+    }
+
+    [RelayCommand]
+    private async Task SaveBoardPublishAsync()
+    {
+        var url = string.IsNullOrWhiteSpace(BoardBaseUrl) ? BoardSlug.DefaultBaseUrl : BoardBaseUrl.Trim().TrimEnd('/');
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp))
+        {
+            StatusMessage = "Board publish URL must be an http or https address.";
+            return;
+        }
+
+        await settings.SetAsync(BoardSlug.BaseUrlSettingKey, url);
+        BoardBaseUrl = url;
+        if (!string.IsNullOrWhiteSpace(BoardToken))
+        {
+            await credentials.SaveSecretAsync(BoardSlug.CredentialScope, BoardSlug.CredentialKey, BoardToken.Trim());
+            BoardToken = "";
+            BoardTokenSaved = true;
+        }
+
+        StatusMessage = "Board publish settings saved. Enable publishing on League Setup for each league.";
+        BoardPublishStatus = publisher.LastStatus;
+    }
+
+    [RelayCommand]
+    private async Task PublishBoardNowAsync()
+    {
+        if (session.DraftId is not { } draftId)
+        {
+            StatusMessage = "Open a league draft first, then publish.";
+            return;
+        }
+
+        await publisher.PublishNowAsync(draftId, session.BranchId);
+        BoardPublishStatus = publisher.LastStatus;
+        StatusMessage = publisher.LastStatus;
     }
 
     [RelayCommand]

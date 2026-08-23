@@ -1,0 +1,12 @@
+# Copy to /etc/nginx/draft-token.map on nginx-server.
+# chmod 600, root:root. Never commit the live file.
+#
+#   openssl rand -hex 32
+#
+# Put that value after "Bearer " below, one space, no quotes around the token
+# other than the nginx string quotes wrapping the whole header value.
+
+map $http_authorization $draft_publish_ok {
+    default 0;
+    "Bearer CHANGE_ME" 1;
+}

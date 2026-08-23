@@ -348,6 +348,7 @@ public partial class DraftRoomViewModel : PageViewModel
     private readonly ITeamPortraitStore _portraits;
     private readonly IFileSavePicker _files;
     private readonly IMockDraftService _mock;
+    private readonly IBoardPublisher _publisher;
     private readonly SessionState _session;
     private bool _muteExternalReload;
     private bool _suppressSourceReload;
@@ -382,6 +383,7 @@ public partial class DraftRoomViewModel : PageViewModel
         ITeamPortraitStore portraits,
         IFileSavePicker files,
         IMockDraftService mock,
+        IBoardPublisher publisher,
         SessionState session)
     {
         _commands = commands;
@@ -398,6 +400,7 @@ public partial class DraftRoomViewModel : PageViewModel
         _portraits = portraits;
         _files = files;
         _mock = mock;
+        _publisher = publisher;
         _session = session;
         _notifier.DraftChanged += OnDraftChanged;
         _portraits.Changed += OnPortraitChanged;
@@ -543,6 +546,8 @@ public partial class DraftRoomViewModel : PageViewModel
     {
         Title = "Draft Room";
         await ReloadAsync();
+        if (_session.DraftId is { } draftId)
+            _ = _publisher.PublishNowAsync(draftId, _session.BranchId);
     }
 
     [RelayCommand]

@@ -1,3 +1,4 @@
+using FantasyDraftAssistant.Core.Commands;
 using FantasyDraftAssistant.Core.Enums;
 using FantasyDraftAssistant.Core.Models;
 
@@ -19,8 +20,17 @@ public static class RosterRules
     public static int TotalRosterSpots(IReadOnlyList<RosterSlot> slots) =>
         slots.Sum(s => s.Count);
 
-    public static int DraftedRosterSpots(IReadOnlyList<RosterSlotSpecPreset> slots) =>
-        slots.Where(s => s.SlotKind != SlotKind.Inactive).Sum(s => s.Count);
+    public static int DraftedRosterSpots(IEnumerable<RosterSlot> slots) =>
+        CountDrafted(slots.Select(s => (s.SlotKind, s.Count)));
+
+    public static int DraftedRosterSpots(IEnumerable<RosterSlotSpec> slots) =>
+        CountDrafted(slots.Select(s => (s.SlotKind, s.Count)));
+
+    public static int DraftedRosterSpots(IEnumerable<RosterSlotSpecPreset> slots) =>
+        CountDrafted(slots.Select(s => (s.SlotKind, s.Count)));
+
+    private static int CountDrafted(IEnumerable<(SlotKind Kind, int Count)> slots) =>
+        slots.Where(s => s.Kind != SlotKind.Inactive).Sum(s => s.Count);
 
     public static bool IsSuperflexOrMultiQb(IReadOnlyList<RosterSlot> slots) =>
         QbDemand(slots) >= 2;

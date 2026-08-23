@@ -19,6 +19,8 @@ public sealed class League
     public string? DraftGuidelines { get; set; }
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? ArchivedAt { get; set; }
+    public string? BoardSlug { get; set; }
+    public bool PublishBoard { get; set; }
 }
 
 public sealed class Team

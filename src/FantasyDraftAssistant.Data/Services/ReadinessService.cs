@@ -1,7 +1,9 @@
+using FantasyDraftAssistant.Core.Engine;
 using FantasyDraftAssistant.Core.Enums;
 using FantasyDraftAssistant.Core.Ids;
 using FantasyDraftAssistant.Core.Interfaces;
 using FantasyDraftAssistant.Core.Results;
+using FantasyDraftAssistant.Data.Database;
 
 namespace FantasyDraftAssistant.Data.Services;
 
@@ -11,11 +13,14 @@ public sealed class ReadinessService(
     IFantasyDataWriter fantasyData,
     IBackupService backups,
     IAiConfigStore aiConfigs,
-    ICredentialStore credentials) : IReadinessService
+    ICredentialStore credentials,
+    AppPaths paths,
+    IBoardPublisher publisher) : IReadinessService
 {
     public async Task<IReadOnlyList<ReadinessItem>> CheckAsync(DraftId? draftId, CancellationToken cancellationToken = default)
     {
         var items = new List<ReadinessItem>();
+        items.Add(Item("Data directory", ReadinessLevel.Ready, paths.Root, false));
 
         if (draftId is { } id)
         {
@@ -127,6 +132,13 @@ public sealed class ReadinessService(
         items.Add(Item("Credential store",
             credentials.IsSecure ? ReadinessLevel.Ready : ReadinessLevel.Attention,
             credentials.Description,
+            false));
+        var publishToken = await credentials.GetSecretAsync(BoardSlug.CredentialScope, BoardSlug.CredentialKey, cancellationToken);
+        items.Add(Item("Web draft board",
+            string.IsNullOrWhiteSpace(publishToken) ? ReadinessLevel.Optional : ReadinessLevel.Ready,
+            string.IsNullOrWhiteSpace(publishToken)
+                ? "No bearer token. Save one on Player Data if you want the TV board."
+                : publisher.LastStatus,
             false));
 
         return items;

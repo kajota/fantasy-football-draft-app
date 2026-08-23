@@ -60,6 +60,7 @@ public interface ILeagueService
     Task DeleteLeaguePermanentlyAsync(LeagueId leagueId, CancellationToken cancellationToken = default);
     Task<League> CreateLeagueAsync(CreateLeagueRequest request, CancellationToken cancellationToken = default);
     Task SaveLeagueDetailsAsync(LeagueId leagueId, string name, int season, int roundCount, string? draftGuidelines = null, CancellationToken cancellationToken = default);
+    Task SaveBoardPublishAsync(LeagueId leagueId, string? boardSlug, bool publishBoard, CancellationToken cancellationToken = default);
     Task<League?> GetLeagueAsync(LeagueId leagueId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Team>> GetTeamsAsync(LeagueId leagueId, CancellationToken cancellationToken = default);
     Task SaveTeamsAsync(SaveTeamsRequest request, CancellationToken cancellationToken = default);
@@ -94,6 +95,7 @@ public interface IDraftQueryService
     Task<RosterDto> GetMyRosterAsync(QueryContext context, CancellationToken cancellationToken = default);
     Task<RosterDto> GetTeamRosterAsync(QueryContext context, TeamId teamId, CancellationToken cancellationToken = default);
     Task<PlayerListDto> GetAvailablePlayersAsync(QueryContext context, PlayerFilter filter, CancellationToken cancellationToken = default);
+    Task<RemainingPlayersSnapshot> GetRemainingPlayersAsync(QueryContext context, CancellationToken cancellationToken = default);
     Task<PlayerDetailsDto> GetPlayerDetailsAsync(QueryContext context, PlayerId playerId, CancellationToken cancellationToken = default);
     Task<RecentPicksDto> GetRecentPicksAsync(QueryContext context, int count, CancellationToken cancellationToken = default);
     Task<PositionSummaryDto> GetPositionSummaryAsync(QueryContext context, CancellationToken cancellationToken = default);
@@ -189,6 +191,20 @@ public interface IAiProviderRegistry
 {
     IReadOnlyList<IAiProviderAdapter> All { get; }
     IAiProviderAdapter? Get(string providerKey);
+}
+
+public interface IAppSettingsStore
+{
+    Task<string?> GetAsync(string key, CancellationToken cancellationToken = default);
+    Task SetAsync(string key, string value, CancellationToken cancellationToken = default);
+}
+
+public interface IBoardPublisher
+{
+    string LastStatus { get; }
+    event EventHandler? StatusChanged;
+    void Schedule(DraftId draftId, BranchId branchId);
+    Task PublishNowAsync(DraftId draftId, BranchId? branchId = null, CancellationToken cancellationToken = default);
 }
 
 public interface ICredentialStore

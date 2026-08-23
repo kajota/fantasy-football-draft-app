@@ -6,6 +6,7 @@ using FantasyDraftAssistant.App.Views;
 using FantasyDraftAssistant.Core.Interfaces;
 using FantasyDraftAssistant.Data;
 using FantasyDraftAssistant.Data.Database;
+using FantasyDraftAssistant.Data.Services;
 using FantasyDraftAssistant.Providers.AI;
 using FantasyDraftAssistant.Providers.FantasyData;
 using FantasyDraftAssistant.Providers.Yahoo;
@@ -25,6 +26,24 @@ public partial class App : Application
     {
         var services = new ServiceCollection();
         services.AddFantasyDraftData();
+        services.AddHttpClient(HttpsBoardPublisher.HttpClientName, client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(20);
+            client.DefaultRequestHeaders.TryAddWithoutValidation(
+                "User-Agent",
+                "FantasyDraftAssistant/0.1 (board publish)");
+        });
+        services.AddSingleton<IBoardPublisher>(sp =>
+        {
+            var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient(HttpsBoardPublisher.HttpClientName);
+            return new HttpsBoardPublisher(
+                http,
+                sp.GetRequiredService<IDraftStateService>(),
+                sp.GetRequiredService<IDraftQueryService>(),
+                sp.GetRequiredService<IAppSettingsStore>(),
+                sp.GetRequiredService<ICredentialStore>(),
+                sp.GetRequiredService<IDraftChangeNotifier>());
+        });
         services.AddHttpClient("sleeper", client =>
         {
             client.BaseAddress = new Uri("https://api.sleeper.app/v1/");
@@ -104,6 +123,7 @@ public partial class App : Application
         Services = services.BuildServiceProvider();
 
         Services.GetRequiredService<MigrationRunner>().Apply();
+        _ = Services.GetRequiredService<IBoardPublisher>();
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
@@ -111,8 +131,21 @@ public partial class App : Application
             {
                 DataContext = Services.GetRequiredService<ShellViewModel>()
             };
+            desktop.Exit += (_, _) => CheckpointOnExit();
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private static void CheckpointOnExit()
+    {
+        try
+        {
+            Services.GetRequiredService<SqliteConnectionFactory>().Checkpoint();
+        }
+        catch (Exception)
+        {
+            // Never block process exit on a checkpoint.
+        }
     }
 }

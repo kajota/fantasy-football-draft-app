@@ -58,6 +58,31 @@ public class YahooLeagueMapperTests
     }
 
     [Fact]
+    public void Inferred_round_count_excludes_ir()
+    {
+        var snapshot = SampleSnapshot() with
+        {
+            DraftRounds = null,
+            Roster =
+            [
+                new YahooRosterPosition { Position = "QB", Count = 1 },
+                new YahooRosterPosition { Position = "WR", Count = 2 },
+                new YahooRosterPosition { Position = "RB", Count = 2 },
+                new YahooRosterPosition { Position = "TE", Count = 1 },
+                new YahooRosterPosition { Position = "W/R/T", Count = 1 },
+                new YahooRosterPosition { Position = "K", Count = 1 },
+                new YahooRosterPosition { Position = "DEF", Count = 1 },
+                new YahooRosterPosition { Position = "BN", Count = 6 },
+                new YahooRosterPosition { Position = "IR", Count = 2 }
+            ]
+        };
+
+        var mapped = YahooLeagueMapper.Map(snapshot);
+        Assert.Equal(15, mapped.Request.RoundCount);
+        Assert.Equal(2, mapped.Request.Roster.Single(s => s.SlotCode == "IR").Count);
+    }
+
+    [Fact]
     public void Uses_defaults_when_yahoo_omits_roster_and_scoring()
     {
         var snapshot = SampleSnapshot() with { Roster = [], Stats = [], DraftRounds = null };

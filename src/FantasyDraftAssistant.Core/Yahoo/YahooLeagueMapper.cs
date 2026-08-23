@@ -138,7 +138,7 @@ public static class YahooLeagueMapper
         if (teams.TrueForAll(t => !t.IsUserTeam))
             teams[0] = teams[0] with { IsUserTeam = true };
 
-        var draftedSpots = roster.Where(s => s.SlotKind != SlotKind.Inactive).Sum(s => s.Count);
+        var draftedSpots = RosterRules.DraftedRosterSpots(roster);
         var rounds = snapshot.DraftRounds is > 0
             ? snapshot.DraftRounds.Value
             : Math.Max(1, draftedSpots);

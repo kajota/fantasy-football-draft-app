@@ -33,9 +33,21 @@ src/FantasyDraftAssistant.Providers.Yahoo
 src/FantasyDraftAssistant.Providers.AI  xAI adapter (https://api.x.ai/v1)
 ```
 
-Local data lives in `~/.local/share/fantasy-draft-assistant/`.
+Local data lives in `~/.local/share/fantasy-draft-assistant/` unless you point it elsewhere. To share leagues across computers (one writer at a time), put the folder on Synology Drive and tell the app where it is:
+
+1. Close the app.
+2. Copy `draft.db` and `team-portraits/` into a Drive folder that is **not** the code backup. A sibling such as `~/SynologyDrive/fantasy-draft-assistant/` is enough.
+3. Write that path as the only non-comment line in `~/.config/fantasy-draft-assistant/data-root`. `~` is expanded. `#` lines are ignored.
+4. On each other computer, wait until Drive is idle, then either `cat HOW-TO` in that folder or run `./setup-this-computer.sh` (writes `data-root` for this machine's Drive path).
+5. Re-enter API keys once per computer. Keys are machine-local (OS secret store, or `credentials.dat` encrypted with this machine's name) and will not unlock elsewhere. The setup script reminds you of that.
+
+`FANTASY_DRAFT_ASSISTANT_DATA` overrides the config file for one process. The **Readiness** page shows the resolved directory.
+
+Close the app and wait for Drive to go idle before opening it on another computer. On quit the app checkpoints SQLite WAL so Drive copies one complete `draft.db` instead of a live `-wal` sidecar.
 
 xAI keys are stored through Linux Secret Service when `secret-tool` is available, otherwise a file-based fallback with a readiness warning. Set the key in **AI Providers**. Default model: `grok-4.6`.
+
+The public draft-board URLs (`/draft/<league>/` on kellynorton.com) are nginx config in `deploy/nginx/`. The app PUTs `board.json` and `index.html` there when a league has publishing enabled (League Setup) and a bearer token is saved (Player Data).
 
 ## Keyboard (Draft Room)
 

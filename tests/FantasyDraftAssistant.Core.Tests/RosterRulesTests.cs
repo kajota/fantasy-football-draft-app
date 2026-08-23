@@ -1,3 +1,4 @@
+using FantasyDraftAssistant.Core.Commands;
 using FantasyDraftAssistant.Core.Engine;
 using FantasyDraftAssistant.Core.Enums;
 
@@ -89,5 +90,36 @@ public class RosterRulesTests
         Assert.Equal(15, RosterRules.DraftedRosterSpots(slots));
         Assert.Equal(1, slots.Single(s => s.SlotCode == "W/R/T").Count);
         Assert.DoesNotContain(slots, s => s.SlotCode == "Q/W/R/T");
+    }
+
+    [Fact]
+    public void Drafted_roster_spots_exclude_ir()
+    {
+        var specs = new[]
+        {
+            new RosterSlotSpec
+            {
+                SlotCode = "QB",
+                SlotKind = SlotKind.Required,
+                Count = 1,
+                EligiblePositions = [PlayerPosition.QB]
+            },
+            new RosterSlotSpec
+            {
+                SlotCode = "BN",
+                SlotKind = SlotKind.Bench,
+                Count = 6,
+                EligiblePositions = [PlayerPosition.RB]
+            },
+            new RosterSlotSpec
+            {
+                SlotCode = "IR",
+                SlotKind = SlotKind.Inactive,
+                Count = 2,
+                EligiblePositions = [PlayerPosition.RB]
+            }
+        };
+
+        Assert.Equal(7, RosterRules.DraftedRosterSpots(specs));
     }
 }

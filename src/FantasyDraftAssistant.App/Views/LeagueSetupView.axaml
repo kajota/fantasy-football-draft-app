@@ -29,7 +29,7 @@
             <TextBlock Text="Draft rounds" FontWeight="SemiBold" />
             <TextBox Text="{Binding RoundCount}"
                      ToolTip.Tip="How many rounds the draft lasts. This is not the number of teams. A 12-team standard roster is usually 15 rounds; Superflex is usually 16." />
-            <TextBlock Text="How many picks each team makes. This is not the number of teams — that is the list below. Standard 1-QB is usually 15; Superflex is usually 16."
+            <TextBlock Text="How many picks each team makes. This is not the number of teams — that is the list below. IR is not a draft round. Standard 1-QB is usually 15; Superflex is usually 16."
                        Classes="muted" TextWrapping="Wrap" />
           </StackPanel>
           <StackPanel Spacing="4">
@@ -79,6 +79,15 @@
                      MinHeight="110"
                      PlaceholderText="Don't suggest a K or DEF until the last two rounds.&#x0a;Don't suggest a backup QB or TE unless the value is clearly too good to pass."
                      ToolTip.Tip="The analysts read this on every Ask. Example: wait on K/DEF; skip backup QB/TE unless the value is obvious." />
+          </StackPanel>
+          <StackPanel Spacing="4">
+            <TextBlock Text="Web board slug" FontWeight="SemiBold" />
+            <TextBox Text="{Binding WebSlug}"
+                     PlaceholderText="filthymothers"
+                     ToolTip.Tip="URL folder on kellynorton.com/draft/. Lowercase letters, numbers, and hyphens." />
+            <CheckBox IsChecked="{Binding PublishBoard}"
+                      Content="Publish this league's board to the web" />
+            <TextBlock Text="{Binding BoardPublicUrl}" Classes="muted" TextWrapping="Wrap" />
           </StackPanel>
         </StackPanel>
       </Border>

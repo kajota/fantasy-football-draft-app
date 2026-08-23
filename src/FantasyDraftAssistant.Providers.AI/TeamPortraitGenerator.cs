@@ -18,7 +18,9 @@ public sealed class TeamPortraitGenerator(
             request.OwnerName,
             request.Tone,
             request.TeamId,
-            request.PortraitNotes);
+            request.PortraitNotes,
+            request.Spin,
+            request.ArtStyleKey);
         var provider = string.IsNullOrWhiteSpace(request.ProviderKey)
             ? AiProviderCatalog.Xai
             : request.ProviderKey.Trim();
@@ -65,7 +67,7 @@ public sealed class TeamPortraitGenerator(
             ["prompt"] = prompt,
             ["aspect_ratio"] = "1:1",
             ["resolution"] = "1k",
-            ["quality"] = "low",
+            ["quality"] = "medium",
             ["response_format"] = "b64_json"
         };
         return await SendAsync(

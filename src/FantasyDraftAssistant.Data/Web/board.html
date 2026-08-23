@@ -49,6 +49,18 @@
     td.other { background: var(--other); }
     td.current { outline: 3px solid var(--mine); background: var(--current-empty); color: var(--mine); }
     td.current.filled { color: #fff; }
+    td.heat-steal { background: #1b7a3a; }
+    td.heat-mild-steal { background: #2e7d32; }
+    td.heat-fair { background: #3d4a5c; }
+    td.heat-mild-reach { background: #c45c26; }
+    td.heat-reach { background: #b71c1c; }
+    td.heat-keeper, td.heat-unknown { background: #455a64; }
+    .mode { display: flex; gap: 8px; margin: 8px 0; }
+    .mode button { background: #1c2638; color: var(--text); border: 0; border-radius: 999px; padding: 6px 12px; font-weight: 700; }
+    .mode button.on { outline: 2px solid var(--mine); color: var(--mine); }
+    .swatches.value { display: none; }
+    body.value .swatches.pos { display: none; }
+    body.value .swatches.value { display: flex; }
     .recent { display: none; margin-top: 16px; }
     .recent h2 { font-size: 1rem; margin: 0 0 8px; }
     .recent ol { margin: 0; padding-left: 1.2rem; }
@@ -73,13 +85,24 @@
     <div class="clock" id="clock"></div>
     <div class="last" id="last"></div>
   </div>
-  <div class="swatches">
+  <div class="mode">
+    <button type="button" id="mode-pos" class="on">Position</button>
+    <button type="button" id="mode-val">Value (ADP)</button>
+  </div>
+  <div class="swatches pos">
     <span class="QB" style="background:var(--qb)">QB</span>
     <span class="RB" style="background:var(--rb)">RB</span>
     <span class="WR" style="background:var(--wr)">WR</span>
     <span class="TE" style="background:var(--te)">TE</span>
     <span class="K" style="background:var(--k)">K</span>
     <span class="DEF" style="background:var(--def)">DEF</span>
+  </div>
+  <div class="swatches value">
+    <span style="background:#1b7a3a">Steal</span>
+    <span style="background:#2e7d32">Slight steal</span>
+    <span style="background:#3d4a5c">Fair</span>
+    <span style="background:#c45c26">Slight reach</span>
+    <span style="background:#b71c1c">Reach</span>
   </div>
   <div class="board-wrap"><table id="board"></table></div>
   <div class="recent">
@@ -90,7 +113,22 @@
   <div class="ver">v__APP_VERSION__</div>
   <script>
     const posClass = p => ({QB:1,RB:1,WR:1,TE:1,K:1,DEF:1}[p] ? p : (p ? 'other' : ''));
+    let colorValue = false;
+    let boardData = null;
+    function cellClass(cell) {
+      const extra = cell.isCurrent ? ' current' : '';
+      if (cell.isEmpty) return extra.trim();
+      if (!colorValue) return 'filled ' + posClass(cell.position) + extra;
+      return 'filled heat-' + (cell.heat || 'unknown') + extra;
+    }
+    document.getElementById('mode-pos').onclick = () => { colorValue = false; document.body.classList.remove('value'); syncMode(); if (boardData) render(boardData); };
+    document.getElementById('mode-val').onclick = () => { colorValue = true; document.body.classList.add('value'); syncMode(); if (boardData) render(boardData); };
+    function syncMode() {
+      document.getElementById('mode-pos').classList.toggle('on', !colorValue);
+      document.getElementById('mode-val').classList.toggle('on', colorValue);
+    }
     function render(data) {
+      boardData = data;
       document.title = data.league + ' draft board';
       document.getElementById('practice').classList.toggle('on', !!data.practice);
       document.getElementById('league').textContent = data.league;
@@ -114,9 +152,8 @@
         const tr = document.createElement('tr');
         let html = '<td class="round">' + round.round + '</td>';
         (round.cells || []).forEach(cell => {
-          const cls = ['cell'];
-          if (!cell.isEmpty) { cls.push('filled'); cls.push(posClass(cell.position)); recent.push(cell); }
-          if (cell.isCurrent) cls.push('current');
+          const cls = ['cell'].concat(cellClass(cell).split(' ').filter(Boolean));
+          if (!cell.isEmpty) recent.push(cell);
           const label = cell.isEmpty
             ? (cell.isCurrent ? 'On the clock' : escapeHtml(cell.roundPick))
             : (escapeHtml(cell.player) + (cell.position ? '<br>' + escapeHtml(cell.position) : ''));

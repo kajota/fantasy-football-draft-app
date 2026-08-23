@@ -233,7 +233,8 @@ public sealed class LeagueService(SqliteConnectionFactory factory, IBackupServic
                 PortraitNotes = spec.PortraitNotes,
                 DraftPosition = spec.DraftPosition,
                 ExternalTeamId = spec.ExternalTeamId,
-                PracticePersonality = spec.PracticePersonality
+                PracticePersonality = spec.PracticePersonality,
+                PortraitArtStyle = spec.PortraitArtStyle
             });
         }
 
@@ -790,7 +791,8 @@ public sealed class LeagueService(SqliteConnectionFactory factory, IBackupServic
                 ExternalTeamId = reader.GetNullString(reader.GetOrdinal("ExternalTeamId")),
                 PracticePersonality = reader.GetNullString(reader.GetOrdinal("PracticePersonality")) is { } personality
                     ? Enum.Parse<MockPersonality>(personality)
-                    : null
+                    : null,
+                PortraitArtStyle = reader.GetNullString(reader.GetOrdinal("PortraitArtStyle"))
             });
         }
 
@@ -1235,8 +1237,8 @@ public sealed class LeagueService(SqliteConnectionFactory factory, IBackupServic
     private static void InsertTeam(SqliteConnection db, SqliteTransaction tx, Team team)
     {
         using var cmd = db.Cmd("""
-            INSERT INTO Teams(TeamId, LeagueId, Name, OwnerName, DisplayLabel, PortraitNotes, DraftPosition, ExternalTeamId, PracticePersonality)
-            VALUES ($id, $league, $name, $owner, $label, $notes, $pos, $ext, $cpu);
+            INSERT INTO Teams(TeamId, LeagueId, Name, OwnerName, DisplayLabel, PortraitNotes, DraftPosition, ExternalTeamId, PracticePersonality, PortraitArtStyle)
+            VALUES ($id, $league, $name, $owner, $label, $notes, $pos, $ext, $cpu, $art);
             """, tx)
             .Bind("$id", team.TeamId.ToString())
             .Bind("$league", team.LeagueId.ToString())
@@ -1246,7 +1248,8 @@ public sealed class LeagueService(SqliteConnectionFactory factory, IBackupServic
             .Bind("$notes", team.PortraitNotes)
             .Bind("$pos", team.DraftPosition)
             .Bind("$ext", team.ExternalTeamId)
-            .Bind("$cpu", team.PracticePersonality?.ToString());
+            .Bind("$cpu", team.PracticePersonality?.ToString())
+            .Bind("$art", team.PortraitArtStyle);
         cmd.ExecuteNonQuery();
     }
 

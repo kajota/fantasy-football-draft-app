@@ -16,6 +16,7 @@ public sealed class HttpsBoardPublisher : IBoardPublisher
     private readonly HttpClient _http;
     private readonly IDraftStateService _drafts;
     private readonly IDraftQueryService _queries;
+    private readonly IFantasyDataWriter _fantasyData;
     private readonly IAppSettingsStore _settings;
     private readonly ICredentialStore _credentials;
     private readonly TimeProvider _clock;
@@ -26,6 +27,7 @@ public sealed class HttpsBoardPublisher : IBoardPublisher
         HttpClient http,
         IDraftStateService drafts,
         IDraftQueryService queries,
+        IFantasyDataWriter fantasyData,
         IAppSettingsStore settings,
         ICredentialStore credentials,
         IDraftChangeNotifier notifier,
@@ -34,6 +36,7 @@ public sealed class HttpsBoardPublisher : IBoardPublisher
         _http = http;
         _drafts = drafts;
         _queries = queries;
+        _fantasyData = fantasyData;
         _settings = settings;
         _credentials = credentials;
         _clock = clock ?? TimeProvider.System;
@@ -105,7 +108,8 @@ public sealed class HttpsBoardPublisher : IBoardPublisher
 
             var players = await _drafts.GetPlayersAsync(cancellationToken).ConfigureAwait(false);
             var now = _clock.GetUtcNow();
-            var snapshot = BoardSnapshotBuilder.Build(state, players, now);
+            var adp = await _fantasyData.GetAdpAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+            var snapshot = BoardSnapshotBuilder.Build(state, players, now, adp);
             var remaining = await _queries.GetRemainingPlayersAsync(new QueryContext
             {
                 DraftId = draftId,

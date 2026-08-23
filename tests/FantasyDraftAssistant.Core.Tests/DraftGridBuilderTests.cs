@@ -1,3 +1,4 @@
+using FantasyDraftAssistant.Core.Analytics;
 using FantasyDraftAssistant.Core.Engine;
 using FantasyDraftAssistant.Core.Ids;
 using FantasyDraftAssistant.Core.Models;
@@ -35,6 +36,25 @@ public class DraftGridBuilderTests
         Assert.True(grid.Rounds[1].Cells[0].IsEmpty);
         Assert.Equal("Chase", grid.Rounds[1].Cells[1].Player);
         Assert.Equal("WR", grid.Rounds[1].Cells[1].Position);
+    }
+
+    [Fact]
+    public void Filled_cell_gets_adp_heat()
+    {
+        var a = Team("Matt", 1);
+        var b = Team("Mike", 2);
+        var slots = new[]
+        {
+            Slot(1, 1, 1, a),
+            Slot(2, 1, 2, b)
+        };
+        var picks = new Dictionary<int, DraftGridPick>
+        {
+            [1] = new(1, a.TeamId, 1, "Jeanty", "RB", Adp: 40)
+        };
+        var grid = DraftGridBuilder.Build([a, b], slots, picks, currentOverallPick: 2, userTeamId: a.TeamId);
+        Assert.Equal(PickHeat.Reach, grid.Rounds[0].Cells[0].Heat);
+        Assert.Equal(PickHeat.Empty, grid.Rounds[0].Cells[1].Heat);
     }
 
     private static Team Team(string name, int position) => new()

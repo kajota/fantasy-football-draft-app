@@ -202,6 +202,21 @@
   <Style Selector="TextBlock.board-swatch.def">
     <Setter Property="Background" Value="#F9A825" />
   </Style>
+  <Style Selector="TextBlock.board-swatch.steal">
+    <Setter Property="Background" Value="#1B7A3A" />
+  </Style>
+  <Style Selector="TextBlock.board-swatch.mild-steal">
+    <Setter Property="Background" Value="#2E7D32" />
+  </Style>
+  <Style Selector="TextBlock.board-swatch.fair">
+    <Setter Property="Background" Value="#3D4A5C" />
+  </Style>
+  <Style Selector="TextBlock.board-swatch.mild-reach">
+    <Setter Property="Background" Value="#C45C26" />
+  </Style>
+  <Style Selector="TextBlock.board-swatch.reach">
+    <Setter Property="Background" Value="#B71C1C" />
+  </Style>
 
   <Style Selector="TextBox.readonly">
     <Setter Property="Background" Value="Transparent" />

@@ -29,6 +29,7 @@ public class BoardPublishTests : IDisposable
             new HttpClient(_http) { Timeout = TimeSpan.FromSeconds(5) },
             sp.GetRequiredService<IDraftStateService>(),
             sp.GetRequiredService<IDraftQueryService>(),
+            sp.GetRequiredService<IFantasyDataWriter>(),
             sp.GetRequiredService<IAppSettingsStore>(),
             sp.GetRequiredService<ICredentialStore>(),
             sp.GetRequiredService<IDraftChangeNotifier>()));

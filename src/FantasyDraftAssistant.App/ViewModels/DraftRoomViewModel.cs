@@ -226,22 +226,42 @@ public sealed class DraftBoardCell
     public bool IsCurrent { get; init; }
     public bool IsEmpty { get; init; }
     public bool IsMine { get; init; }
-    public IBrush Fill => DraftBoardPalette.Fill(Position, IsEmpty, IsCurrent);
+    public bool ColorByValue { get; init; }
+    public PickHeat Heat { get; init; }
+    public double? Adp { get; init; }
+    public IBrush Fill => ColorByValue
+        ? DraftBoardPalette.Heat(Heat, IsEmpty, IsCurrent)
+        : DraftBoardPalette.Fill(Position, IsEmpty, IsCurrent);
     public IBrush Border => IsCurrent ? DraftBoardPalette.CurrentBorder : DraftBoardPalette.CellBorder;
     public Thickness BorderThickness => IsCurrent ? new Thickness(2) : new Thickness(1);
     public IBrush Foreground => IsEmpty && !IsCurrent ? DraftBoardPalette.EmptyText : DraftBoardPalette.CellText;
-    public string Tooltip => string.IsNullOrWhiteSpace(Player)
-        ? RoundPick
-        : string.IsNullOrWhiteSpace(Position) ? $"{RoundPick} · {Player}" : $"{RoundPick} · {Position} · {Player}";
+    public string Tooltip
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(Player))
+                return RoundPick;
+            var line = string.IsNullOrWhiteSpace(Position) ? $"{RoundPick} · {Player}" : $"{RoundPick} · {Position} · {Player}";
+            if (Adp is > 0)
+                line += $" · ADP {Adp:0.0}";
+            var heat = PickValueHeat.Label(Heat);
+            if (!string.IsNullOrEmpty(heat))
+                line += $" · {heat}";
+            return line;
+        }
+    }
 
-    public static DraftBoardCell From(DraftGridCell cell) => new()
+    public static DraftBoardCell From(DraftGridCell cell, bool colorByValue) => new()
     {
         Player = cell.Player,
         Position = cell.Position,
         RoundPick = cell.RoundPick,
         IsCurrent = cell.IsCurrent,
         IsEmpty = cell.IsEmpty,
-        IsMine = cell.IsMine
+        IsMine = cell.IsMine,
+        ColorByValue = colorByValue,
+        Heat = cell.Heat,
+        Adp = cell.Adp
     };
 }
 
@@ -265,6 +285,30 @@ public static class DraftBoardPalette
     public static readonly IBrush K = Brush("#8E24AA");
     public static readonly IBrush Def = Brush("#F9A825");
     public static readonly IBrush Other = Brush("#546E7A");
+
+    public static readonly IBrush HeatSteal = Brush("#1B7A3A");
+    public static readonly IBrush HeatMildSteal = Brush("#2E7D32");
+    public static readonly IBrush HeatFair = Brush("#3D4A5C");
+    public static readonly IBrush HeatMildReach = Brush("#C45C26");
+    public static readonly IBrush HeatReach = Brush("#B71C1C");
+    public static readonly IBrush HeatUnknown = Brush("#455A64");
+    public static readonly IBrush HeatKeeper = Brush("#5D4E37");
+
+    public static IBrush Heat(PickHeat heat, bool isEmpty, bool isCurrent)
+    {
+        if (isEmpty)
+            return isCurrent ? CurrentEmpty : Empty;
+        return heat switch
+        {
+            PickHeat.Steal => HeatSteal,
+            PickHeat.MildSteal => HeatMildSteal,
+            PickHeat.Fair => HeatFair,
+            PickHeat.MildReach => HeatMildReach,
+            PickHeat.Reach => HeatReach,
+            PickHeat.Keeper => HeatKeeper,
+            _ => HeatUnknown
+        };
+    }
 
     public static IBrush Fill(string position, bool isEmpty, bool isCurrent)
     {
@@ -409,6 +453,30 @@ public partial class DraftRoomViewModel : PageViewModel
     public ObservableCollection<BoardRow> Board { get; } = [];
     [ObservableProperty] private IReadOnlyList<DraftBoardTeamHeader> _boardTeams = [];
     [ObservableProperty] private IReadOnlyList<DraftBoardRoundRow> _boardRounds = [];
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowPositionLegend))]
+    [NotifyPropertyChangedFor(nameof(ShowValueLegend))]
+    private bool _boardValueHeat;
+    private DraftGrid? _boardGrid;
+
+    public bool ShowPositionLegend => !BoardValueHeat;
+    public bool ShowValueLegend => BoardValueHeat;
+
+    partial void OnBoardValueHeatChanged(bool value)
+    {
+        if (_boardGrid is null)
+            return;
+        BoardRounds = MapBoardRounds(_boardGrid, value);
+    }
+
+    private static IReadOnlyList<DraftBoardRoundRow> MapBoardRounds(DraftGrid grid, bool colorByValue) =>
+        grid.Rounds
+            .Select(round => new DraftBoardRoundRow
+            {
+                Round = round.Round,
+                Cells = round.Cells.Select(cell => DraftBoardCell.From(cell, colorByValue)).ToList()
+            })
+            .ToList();
     public ObservableCollection<PlayerRow> Available { get; } = [];
     public ObservableCollection<PlayerRow> Queue { get; } = [];
     public ObservableCollection<RosterSlotRow> Roster { get; } = [];
@@ -568,6 +636,7 @@ public partial class DraftRoomViewModel : PageViewModel
             CurrentBoardRow = null;
             BoardTeams = [];
             BoardRounds = [];
+            _boardGrid = null;
             Roster.Clear();
             OverviewRoster.Clear();
             RosterTeams.Clear();
@@ -698,16 +767,22 @@ public partial class DraftRoomViewModel : PageViewModel
         CurrentBoardRow = Board.FirstOrDefault(row => row.IsCurrent)
                           ?? Board.LastOrDefault(row => row.Player.Length > 0);
 
+        var adp = await _fantasyData.GetAdpAsync(SourceKeyFor(DataSource));
+        if (adp.Count == 0)
+            adp = await _fantasyData.GetAdpAsync();
         var gridPicks = new Dictionary<int, DraftGridPick>();
         foreach (var selection in state.ActiveSelections.Values)
         {
             playersById.TryGetValue(selection.PlayerId, out var pickPlayer);
+            adp.TryGetValue(selection.PlayerId, out var playerAdp);
             gridPicks[selection.OverallPick] = new DraftGridPick(
                 selection.OverallPick,
                 selection.TeamId,
                 selection.Round,
                 pickPlayer?.Name ?? selection.PlayerId.ToString(),
-                pickPlayer?.PrimaryPosition.ToString() ?? "");
+                pickPlayer?.PrimaryPosition.ToString() ?? "",
+                playerAdp?.OverallAdp,
+                selection.Source == PickSource.Keeper);
         }
 
         var grid = DraftGridBuilder.Build(
@@ -728,13 +803,8 @@ public partial class DraftRoomViewModel : PageViewModel
                 };
             })
             .ToList();
-        BoardRounds = grid.Rounds
-            .Select(round => new DraftBoardRoundRow
-            {
-                Round = round.Round,
-                Cells = round.Cells.Select(DraftBoardCell.From).ToList()
-            })
-            .ToList();
+        _boardGrid = grid;
+        BoardRounds = MapBoardRounds(grid, BoardValueHeat);
 
         var leagueFormat = FantasyDataFormat.FromLeague(state.ScoringRules, state.RosterSlots);
         await EnsureDataSourcesAsync(leagueFormat);

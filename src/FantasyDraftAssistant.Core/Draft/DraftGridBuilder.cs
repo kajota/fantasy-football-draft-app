@@ -1,3 +1,4 @@
+using FantasyDraftAssistant.Core.Analytics;
 using FantasyDraftAssistant.Core.Ids;
 using FantasyDraftAssistant.Core.Models;
 
@@ -11,7 +12,9 @@ public sealed record DraftGridCell(
     string RoundPick,
     bool IsCurrent,
     bool IsEmpty,
-    bool IsMine);
+    bool IsMine,
+    PickHeat Heat = PickHeat.Empty,
+    double? Adp = null);
 
 public sealed record DraftGridRound(int Round, IReadOnlyList<DraftGridCell> Cells);
 
@@ -24,7 +27,9 @@ public sealed record DraftGridPick(
     TeamId TeamId,
     int Round,
     string Player,
-    string Position);
+    string Position,
+    double? Adp = null,
+    bool IsKeeper = false);
 
 public static class DraftGridBuilder
 {
@@ -64,7 +69,11 @@ public static class DraftGridBuilder
                     $"{slot.Round}.{slot.RoundPick:00}",
                     isCurrent,
                     pick is null,
-                    userTeamId is { } mine && team.TeamId.Equals(mine)));
+                    userTeamId is { } mine && team.TeamId.Equals(mine),
+                    pick is null
+                        ? PickHeat.Empty
+                        : PickValueHeat.From(slot.OverallPick, pick.Adp, orderedTeams.Count, pick.IsKeeper),
+                    pick?.Adp));
             }
 
             rounds.Add(new DraftGridRound(round, cells));

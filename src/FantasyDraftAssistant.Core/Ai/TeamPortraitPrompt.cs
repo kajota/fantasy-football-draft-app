@@ -216,12 +216,75 @@ public static class TeamPortraitPrompt
         "scratchy zine drawing"
     ];
 
+    public static readonly PortraitArtStyle RandomArtStyle = new("", "Random", "", PortraitMedium.Mixed);
+
+    public static readonly IReadOnlyList<PortraitArtStyle> ArtStyles =
+    [
+        RandomArtStyle,
+        new("graphic-novel", "Graphic novel",
+            "bold graphic-novel ink and flat color, hard black contours, cel shading, comic-book panel, not a painting",
+            PortraitMedium.Ink),
+        new("oil", "Oil portrait",
+            "painterly oil on canvas, visible brushstrokes, gallery lighting, thick paint, not digital, not a photo",
+            PortraitMedium.Paint),
+        new("magazine", "1960s magazine",
+            "clean 1960s print-magazine illustration, limited ink, vintage halftone, Mad Men editorial, not photoreal, not neon",
+            PortraitMedium.Print),
+        new("animation", "Animation still",
+            "2D animation still, clean character lines, studio-cartoon shading, not live action, not oil paint",
+            PortraitMedium.Ink),
+        new("noir", "Noir comic",
+            "black-and-white noir comic, heavy ink shadows, screentone, Sin City linework, almost no color, not a color painting",
+            PortraitMedium.Ink),
+        new("risograph", "Risograph poster",
+            "misregistered risograph poster, 2-3 ink colors, grainy paper, DIY print shop, not cinematic, not photoreal",
+            PortraitMedium.Print),
+        new("gouache", "Storybook gouache",
+            "opaque gouache storybook painting, matte pigment, soft edges, children's-book plate, not a photo, not neon",
+            PortraitMedium.Paint),
+        new("pop-art", "Pop art",
+            "1960s pop art, Ben-Day dots, flat primary colors, thick comic outline, Warhol/Lichtenstein, not painterly realism",
+            PortraitMedium.Print),
+        new("photoreal", "Photoreal",
+            "photoreal cinematic still, natural skin, real camera, sharp detail, not a cartoon, not illustrated, not painted",
+            PortraitMedium.Photo),
+        new("flyer", "Supermarket flyer",
+            "ugly supermarket weekly flyer art, cheap clip-art shading, harsh product lighting, coupon-page character, not cinematic",
+            PortraitMedium.Print),
+        new("cartoon", "Editorial cartoon",
+            "newspaper editorial cartoon: thick black ink, crosshatching, exaggerated caricature, 2-3 flat colors on newsprint, political-cartoon headshot",
+            PortraitMedium.Ink),
+        new("clip-art", "Clip art",
+            "1990s Microsoft clip-art, simple vector shapes, tiny color palette, office-software mascot, not detailed illustration",
+            PortraitMedium.Print),
+        new("watercolor", "Muddy watercolor",
+            "wet muddy watercolor on cheap paper, bleeds and stains, loose pigment, not digital, not photoreal, not neon",
+            PortraitMedium.Paint),
+        new("snapshot", "Phone snapshot",
+            "bad phone snapshot, on-camera flash, awkward selfie angle, jpeg noise, real photography, not illustrated",
+            PortraitMedium.Photo),
+        new("wallpaper", "1998 wallpaper",
+            "1998 Windows desktop wallpaper collage, lens flares, beveled CGI, stock photos pasted together, not a painted portrait",
+            PortraitMedium.Collage),
+        new("studio", "Grocery-store studio",
+            "unkind mall portrait-studio photo, mottled backdrop, flash, stiff pose, real photography, not a painting",
+            PortraitMedium.Photo),
+        new("zine", "Zine drawing",
+            "scratchy photocopied zine drawing, ballpoint and marker, white paper, xerox speckles, not digital paint, not photoreal",
+            PortraitMedium.Ink)
+    ];
+
+    public static PortraitArtStyle StyleByKey(string? key) =>
+        ArtStyles.FirstOrDefault(style => style.Key == key) ?? RandomArtStyle;
+
     public static string Build(
         string teamName,
         string? ownerName,
         TeamPortraitTone tone,
         TeamId teamId,
-        string? portraitNotes = null)
+        string? portraitNotes = null,
+        int spin = 0,
+        string? artStyleKey = null)
     {
         var who = string.IsNullOrWhiteSpace(ownerName) || ownerName == teamName
             ? $"the fantasy football manager of the team \"{teamName}\""
@@ -234,31 +297,34 @@ public static class TeamPortraitPrompt
                 : $"{Pick(WhiteManSubjects, teamId, 0)} in their {Pick(Ages, teamId, 1)}, {Pick(WhiteManFeatures, teamId, 2)}"
             : $"described here: {notes}. Honor that description for age, gender, race, hair, and build. Do not invent a different person";
         var roastFaces = notAMan ? RoastFacesWoman : RoastFacesMan;
+        var style = ResolveStyle(spin, artStyleKey);
+        var outfit = PickSpin(LooksFor(tone, style.Medium), spin, 3);
+        var place = PickSpin(PlacesFor(tone, style.Medium), spin, 4);
 
         if (tone is TeamPortraitTone.Hero or TeamPortraitTone.Normal)
         {
             return $"""
-                Square illustrated portrait of {who} as {subject}.
-                Outfit: {Pick(HeroLooks, teamId, 3)}. Setting: {Pick(HeroPlaces, teamId, 4)}.
-                Mood: {Pick(HeroEnergy, teamId, 5)}. Art style: {Pick(HeroStyles, teamId, 6)}.
+                Art style (mandatory, every pixel): {style.Phrase}.
+                {Ban(style.Medium)}
+                Square image of {who} as {subject}.
+                Outfit: {outfit}. Setting: {place}.
+                Mood: {PickSpin(HeroEnergy, spin, 5)}.
                 Let the team name "{teamName}" flavor the colors and attitude.
-                Over-the-top awesome and specific to this person. Extremely magnetic and good at fantasy football.
-                Distinct face. Do not reuse a generic handsome leading-man. Make them memorable and different.
-                Not a real celebrity. No watermark. No extra panels.
-                {Marking(teamName, ownerName, teamId)}
+                Specific to this person. Distinct face. Not a real celebrity. No watermark. No extra panels.
+                {Marking(teamName, ownerName, spin)}
                 """;
         }
 
         return $"""
-            Square illustrated roast portrait of {who} as {subject}.
-            Face: {Pick(roastFaces, teamId, 3)}. Outfit: {Pick(RoastLooks, teamId, 4)}.
-            Setting: {Pick(RoastPlaces, teamId, 5)}. Caught: {Pick(RoastFails, teamId, 6)}.
-            Art style: {Pick(RoastStyles, teamId, 7)}.
+            Art style (mandatory, every pixel): {style.Phrase}.
+            {Ban(style.Medium)}
+            Square roast of {who} as {subject}.
+            Face: {PickSpin(roastFaces, spin, 3)}. Outfit: {PickSpin(RoastLooks, spin, 4)}.
+            Setting: {PickSpin(PlacesFor(tone, style.Medium), spin, 5)}. Caught: {PickSpin(RoastFails, spin, 6)}.
             Let the team name "{teamName}" flavor the mess.
-            Mean and funny, a unique loser — not the same goofy guy every time.
-            Distinct face and body. Not photoreal, not a real celebrity, not gore.
+            Mean and funny. Distinct face and body. Not a real celebrity, not gore.
             No watermark. No extra panels.
-            {Marking(teamName, ownerName, teamId)}
+            {Marking(teamName, ownerName, spin)}
             """;
     }
 
@@ -282,10 +348,10 @@ public static class TeamPortraitPrompt
             yield return part.Trim();
     }
 
-    public static string Marking(string teamName, string? ownerName, TeamId teamId)
+    public static string Marking(string teamName, string? ownerName, int spin)
     {
         var owner = string.IsNullOrWhiteSpace(ownerName) ? teamName : ownerName;
-        return Pick(
+        return PickSpin(
         [
             "No lettering and no logos this time.",
             "No readable words. Colors only.",
@@ -295,8 +361,67 @@ public static class TeamPortraitPrompt
             $"A background poster or draft board with \"{teamName}\" on it, not the focus.",
             $"Tiny initials for {owner}, easy to miss.",
             "A logo-ish shape only. Skip words."
-        ], teamId, 8);
+        ], spin, 8);
     }
+
+    private static PortraitArtStyle ResolveStyle(int spin, string? artStyleKey)
+    {
+        var picked = StyleByKey(artStyleKey);
+        if (!string.IsNullOrEmpty(picked.Key))
+            return picked;
+        var pool = ArtStyles.Where(style => style.Key.Length > 0).ToArray();
+        return pool[(int)((uint)unchecked(spin * 104729 + 6 * 7919) % (uint)pool.Length)];
+    }
+
+    private static string Ban(PortraitMedium medium) => medium switch
+    {
+        PortraitMedium.Ink => "Forbidden: painterly digital painting, cinematic neon rain, photoreal skin, anime, fashion photography, rim-lit movie still.",
+        PortraitMedium.Paint => "Forbidden: photoreal camera, neon cyberpunk city, 3D CGI, clip-art, screenshot.",
+        PortraitMedium.Photo => "Forbidden: illustration, cartoon outlines, painting, anime, graphic-novel ink.",
+        PortraitMedium.Print => "Forbidden: photoreal, cinematic 3D, neon night-market photography, oil painting.",
+        PortraitMedium.Collage => "Forbidden: a single painted portrait, photoreal beauty lighting, consistent oil technique.",
+        _ => "Do not mix styles. Do not fall back to a generic illustrated sports portrait."
+    };
+
+    private static IReadOnlyList<string> LooksFor(TeamPortraitTone tone, PortraitMedium medium)
+    {
+        if (tone is not TeamPortraitTone.Hero and not TeamPortraitTone.Normal)
+            return RoastLooks;
+        return medium is PortraitMedium.Ink or PortraitMedium.Print
+            ? InkLooks
+            : HeroLooks;
+    }
+
+    private static IReadOnlyList<string> PlacesFor(TeamPortraitTone tone, PortraitMedium medium)
+    {
+        if (medium is PortraitMedium.Ink or PortraitMedium.Print)
+            return InkPlaces;
+        return tone is TeamPortraitTone.Hero or TeamPortraitTone.Normal ? HeroPlaces : RoastPlaces;
+    }
+
+    private static readonly string[] InkLooks =
+    [
+        "a rumpled suit and a too-tight collar",
+        "a bow tie and a patriotic lapel pin",
+        "shirtsleeves and rolled cuffs, ink on the fingers",
+        "a debate-stage blazer",
+        "a plain tee, drawn with three lines",
+        "an oversized jacket and tiny head, caricature proportions",
+        "a newspaper-column headshot collar",
+        "no fancy tailoring — keep the clothes as simple ink shapes"
+    ];
+
+    private static readonly string[] InkPlaces =
+    [
+        "on blank newsprint with a caption box",
+        "as a newspaper editorial-page headshot",
+        "behind a podium on a white page",
+        "on a desk with an inkwell, hatched shadows only",
+        "against a plain background, no city, no rain, no neon",
+        "inside a comic panel with a fat black border",
+        "on a xeroxed flyer, white paper showing",
+        "as a political-cartoon corner portrait, empty space around"
+    ];
 
     private static string Pick(IReadOnlyList<string> items, TeamId teamId, int lane)
     {
@@ -304,4 +429,26 @@ public static class TeamPortraitPrompt
         var index = Math.Abs(bytes[lane % bytes.Length] + bytes[(lane + 7) % bytes.Length] * 13 + lane * 31) % items.Count;
         return items[index];
     }
+
+    private static string PickSpin(IReadOnlyList<string> items, int spin, int lane)
+    {
+        var mixed = unchecked(spin * 104729 + lane * 7919);
+        var index = (int)((uint)mixed % (uint)items.Count);
+        return items[index];
+    }
+}
+
+public sealed record PortraitArtStyle(string Key, string Title, string Phrase, PortraitMedium Medium)
+{
+    public override string ToString() => Title;
+}
+
+public enum PortraitMedium
+{
+    Mixed = 0,
+    Ink = 1,
+    Paint = 2,
+    Photo = 3,
+    Print = 4,
+    Collage = 5
 }

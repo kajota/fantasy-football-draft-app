@@ -40,6 +40,7 @@ public partial class App : Application
                 http,
                 sp.GetRequiredService<IDraftStateService>(),
                 sp.GetRequiredService<IDraftQueryService>(),
+                sp.GetRequiredService<IFantasyDataWriter>(),
                 sp.GetRequiredService<IAppSettingsStore>(),
                 sp.GetRequiredService<ICredentialStore>(),
                 sp.GetRequiredService<IDraftChangeNotifier>());

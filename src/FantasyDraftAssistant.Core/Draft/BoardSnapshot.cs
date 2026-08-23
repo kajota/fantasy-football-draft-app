@@ -48,4 +48,5 @@ public sealed class BoardSnapshotCell
     public required bool IsCurrent { get; init; }
     public required bool IsEmpty { get; init; }
     public required bool IsMine { get; init; }
+    public string Heat { get; init; } = "";
 }

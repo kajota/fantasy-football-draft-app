@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:FantasyDraftAssistant.App.ViewModels"
              xmlns:views="using:FantasyDraftAssistant.App.Views"
+             xmlns:ai="using:FantasyDraftAssistant.Core.Ai"
              x:Class="FantasyDraftAssistant.App.Views.LeagueSetupView"
              x:DataType="vm:LeagueSetupViewModel">
   <ScrollViewer x:Name="PageScroll"
@@ -166,7 +167,7 @@
       <Border Classes="card">
         <StackPanel Spacing="8">
           <TextBlock Text="Teams" Classes="h2" />
-          <TextBlock Text="This list is the number of teams. The # box is the first-round seat — type 6 to move this team to pick 6. Drag the handle, or use the arrows. Save writes the new order. The About box is only for portraits. Hover a name for that team's image. Unchecked rivals get roasted; check Normal image for the same over-the-top hero treatment as you."
+          <TextBlock Text="This list is the number of teams. The # box is the first-round seat — type 6 to move this team to pick 6. Drag the handle, or use the arrows. Save writes the new order. The About box is only for portraits. Art style is separate from roast vs Normal. Random (and New image) picks a new outfit, setting, and style each time. Hover a name for that team's image. Unchecked rivals get roasted; check Normal image for the same over-the-top hero treatment as you."
                      Classes="muted" TextWrapping="Wrap" />
           <StackPanel Orientation="Horizontal" Spacing="10">
             <Button Content="Generate team images" Classes="ghost"
@@ -242,7 +243,7 @@
                             Command="{Binding $parent[ItemsControl].((vm:LeagueSetupViewModel)DataContext).GenerateOnePortraitCommand}"
                             CommandParameter="{Binding}"
                             IsEnabled="{Binding !IsGenerating}"
-                            ToolTip.Tip="Generate a new portrait for this team only." />
+                            ToolTip.Tip="Generate a new portrait for this team only. Random style, outfit, and setting change each click." />
                     <Button Grid.Column="8" Content="Export" Classes="ghost compact"
                             Command="{Binding $parent[ItemsControl].((vm:LeagueSetupViewModel)DataContext).ExportPortraitCommand}"
                             CommandParameter="{Binding}"
@@ -252,12 +253,23 @@
                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                ToolTip.Tip="{Binding PortraitStatus}" />
                   </Grid>
-                  <TextBox Text="{Binding PortraitNotes}"
-                           PlaceholderText="A little about this person for the portrait (age, look, vibe)"
-                           TextWrapping="Wrap"
-                           AcceptsReturn="False"
-                           Margin="132,0,0,0"
-                           ToolTip.Tip="Used only when generating this team's image. Example: Black woman, late 30s, short hair, glasses." />
+                  <Grid ColumnDefinitions="132,168,*" ColumnSpacing="8">
+                    <ComboBox Grid.Column="1" ItemsSource="{Binding ArtStyleOptions}"
+                              SelectedItem="{Binding SelectedArtStyle}"
+                              MinWidth="160"
+                              ToolTip.Tip="Art style for this portrait. Random picks a new style, outfit, and setting each New image. Hero vs roast is still the Normal checkbox.">
+                      <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="ai:PortraitArtStyle">
+                          <TextBlock Text="{Binding Title}" Foreground="{StaticResource TextBrush}" />
+                        </DataTemplate>
+                      </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <TextBox Grid.Column="2" Text="{Binding PortraitNotes}"
+                             PlaceholderText="A little about this person for the portrait (age, look, vibe)"
+                             TextWrapping="Wrap"
+                             AcceptsReturn="False"
+                             ToolTip.Tip="Used only when generating this team's image. Example: Black woman, late 30s, short hair, glasses." />
+                  </Grid>
                 </StackPanel>
               </DataTemplate>
             </ItemsControl.ItemTemplate>

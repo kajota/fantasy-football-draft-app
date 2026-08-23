@@ -37,6 +37,7 @@ public sealed class Team
     // Preferred CPU drafting style for practice/mock drafts. Null means the
     // practice draft deals this seat a random personality.
     public MockPersonality? PracticePersonality { get; set; }
+    public string? PortraitArtStyle { get; set; }
 
     public string Label => string.IsNullOrWhiteSpace(DisplayLabel) ? Name : DisplayLabel;
 }

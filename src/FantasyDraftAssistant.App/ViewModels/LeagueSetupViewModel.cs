@@ -41,6 +41,9 @@ public partial class TeamRow : ObservableObject
     [ObservableProperty] private PersonalityChoice _selectedPersonality = PersonalityChoices[0];
 
     public IReadOnlyList<PersonalityChoice> PersonalityOptions => PersonalityChoices;
+    public IReadOnlyList<PortraitArtStyle> ArtStyleOptions => TeamPortraitPrompt.ArtStyles;
+
+    [ObservableProperty] private PortraitArtStyle _selectedArtStyle = TeamPortraitPrompt.RandomArtStyle;
 
     public void SyncSeatText() => SeatText = DraftPosition.ToString(CultureInfo.InvariantCulture);
     public Core.Ids.TeamId TeamId { get; init; }
@@ -266,7 +269,8 @@ public partial class LeagueSetupViewModel(
                 CanChoosePortraitStyle = !isMine,
                 HasPortrait = portraitStore.Exists(team.TeamId),
                 SelectedPersonality = TeamRow.PersonalityChoices
-                    .First(choice => choice.Personality == team.PracticePersonality)
+                    .First(choice => choice.Personality == team.PracticePersonality),
+                SelectedArtStyle = TeamPortraitPrompt.StyleByKey(team.PortraitArtStyle)
             };
             row.SyncSeatText();
             Teams.Add(row);
@@ -440,7 +444,8 @@ public partial class LeagueSetupViewModel(
             PortraitNotes = string.IsNullOrWhiteSpace(t.PortraitNotes) ? null : t.PortraitNotes.Trim(),
             DraftPosition = index + 1,
             ExternalTeamId = t.ExternalTeamId,
-            PracticePersonality = t.SelectedPersonality.Personality
+            PracticePersonality = t.SelectedPersonality.Personality,
+            PortraitArtStyle = string.IsNullOrEmpty(t.SelectedArtStyle.Key) ? null : t.SelectedArtStyle.Key
         }).ToList();
         await leagues.SaveTeamsAsync(new SaveTeamsRequest
         {
@@ -554,12 +559,14 @@ public partial class LeagueSetupViewModel(
                     PortraitNotes = string.IsNullOrWhiteSpace(row.PortraitNotes) ? null : row.PortraitNotes.Trim(),
                     IsUserTeam = isMine,
                     NormalImage = !isMine && row.NormalImage,
-                    ProviderKey = SelectedPortraitProvider?.ProviderKey
+                    ProviderKey = SelectedPortraitProvider?.ProviderKey,
+                    Spin = Random.Shared.Next(),
+                    ArtStyleKey = row.SelectedArtStyle.Key
                 });
                 row.IsGenerating = false;
                 row.HasPortrait = result.Succeeded || portraitStore.Exists(row.TeamId);
                 row.PortraitStatus = result.Succeeded
-                    ? "Ready"
+                    ? (string.IsNullOrEmpty(row.SelectedArtStyle.Key) ? "Ready · Random" : $"Ready · {row.SelectedArtStyle.Title}")
                     : result.Error ?? "Failed";
                 if (!result.Succeeded)
                     StatusMessage = $"{row.Name}: {row.PortraitStatus}";

@@ -45,6 +45,8 @@ public sealed class TeamPortraitRequest
     public required bool IsUserTeam { get; init; }
     public bool NormalImage { get; init; }
     public string? ProviderKey { get; init; }
+    public int Spin { get; init; }
+    public string? ArtStyleKey { get; init; }
     public TeamPortraitTone Tone => TeamPortraitPrompt.ToneFor(IsUserTeam, NormalImage);
 }
 

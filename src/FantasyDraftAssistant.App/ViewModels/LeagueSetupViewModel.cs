@@ -26,15 +26,29 @@ public partial class TeamRow : ObservableObject
             .Select(personality => new PersonalityChoice(MockPersonalityCatalog.Title(personality), personality))
     ];
 
-    [ObservableProperty] private string _name = "";
-    [ObservableProperty] private string? _ownerName;
-    [ObservableProperty] private string _portraitNotes = "";
-    [ObservableProperty] private int _draftPosition;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplayTeamName))]
+    [NotifyPropertyChangedFor(nameof(NewImagePrompt))]
+    private string _name = "";
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NewImagePrompt))]
+    private string? _ownerName;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NewImagePrompt))]
+    private string _portraitNotes = "";
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplayTeamName))]
+    [NotifyPropertyChangedFor(nameof(NewImagePrompt))]
+    private int _draftPosition;
     [ObservableProperty] private string _seatText = "1";
     [ObservableProperty] private string _portraitStatus = "";
     [ObservableProperty] private bool _isGenerating;
-    [ObservableProperty] private bool _normalImage;
-    [ObservableProperty] private bool _canChoosePortraitStyle;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NewImagePrompt))]
+    private bool _normalImage;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NewImagePrompt))]
+    private bool _canChoosePortraitStyle;
     [ObservableProperty] private bool _hasPortrait;
     [ObservableProperty] private bool _canMoveUp;
     [ObservableProperty] private bool _canMoveDown;
@@ -43,7 +57,40 @@ public partial class TeamRow : ObservableObject
     public IReadOnlyList<PersonalityChoice> PersonalityOptions => PersonalityChoices;
     public IReadOnlyList<PortraitArtStyle> ArtStyleOptions => TeamPortraitPrompt.ArtStyles;
 
-    [ObservableProperty] private PortraitArtStyle _selectedArtStyle = TeamPortraitPrompt.RandomArtStyle;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NewImagePrompt))]
+    private PortraitArtStyle _selectedArtStyle = TeamPortraitPrompt.RandomArtStyle;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NewImagePrompt))]
+    private int _previewSpin = Random.Shared.Next();
+
+    public string DisplayTeamName =>
+        string.IsNullOrWhiteSpace(Name) ? $"Team {DraftPosition}" : Name;
+
+    public string NewImagePrompt => TeamPortraitPrompt.Build(
+        DisplayTeamName,
+        OwnerName,
+        TeamPortraitPrompt.ToneFor(isUserTeam: !CanChoosePortraitStyle, normalImage: NormalImage),
+        TeamId,
+        portraitNotes: null,
+        PreviewSpin,
+        SelectedArtStyle.Key);
+
+    public TeamPortraitRequest ToPortraitRequest(string? providerKey, string? customPrompt = null) => new()
+    {
+        TeamId = TeamId,
+        TeamName = DisplayTeamName,
+        OwnerName = OwnerName,
+        IsUserTeam = !CanChoosePortraitStyle,
+        NormalImage = CanChoosePortraitStyle && NormalImage,
+        ProviderKey = providerKey,
+        Spin = PreviewSpin,
+        ArtStyleKey = SelectedArtStyle.Key,
+        CustomPrompt = string.IsNullOrWhiteSpace(customPrompt) ? null : customPrompt.Trim()
+    };
+
+    public void RerollPreviewSpin() => PreviewSpin = Random.Shared.Next();
 
     public void SyncSeatText() => SeatText = DraftPosition.ToString(CultureInfo.InvariantCulture);
     public Core.Ids.TeamId TeamId { get; init; }
@@ -198,8 +245,12 @@ public partial class LeagueSetupViewModel(
     [ObservableProperty] private bool _isGeneratingPortraits;
     [ObservableProperty] private bool _canReorderTeams = true;
     [ObservableProperty] private PortraitAiOption? _selectedPortraitProvider;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasPortraitPrompt))]
+    private PortraitPromptViewModel? _portraitPrompt;
 
     public bool HasSaveNotice => !string.IsNullOrWhiteSpace(SaveNotice);
+    public bool HasPortraitPrompt => PortraitPrompt is not null;
 
     partial void OnWebSlugChanged(string value) =>
         BoardPublicUrl = BoardSlug.PublicUrl(_publishBaseUrl, value) ?? "";
@@ -213,6 +264,7 @@ public partial class LeagueSetupViewModel(
     public override async Task OnNavigatedToAsync()
     {
         Title = "League Setup";
+        ClosePortraitPrompt();
         Teams.Clear();
         SaveNotice = "";
         SelectedPortraitProvider ??= PortraitProviders[0];
@@ -506,8 +558,37 @@ public partial class LeagueSetupViewModel(
     private Task GenerateAllPortraitsAsync() => GeneratePortraitsAsync(Teams.ToList());
 
     [RelayCommand]
-    private Task GenerateOnePortraitAsync(TeamRow? row) =>
-        row is null ? Task.CompletedTask : GeneratePortraitsAsync([row]);
+    private async Task EditPortraitPromptAsync(TeamRow? row)
+    {
+        if (row is null)
+            return;
+
+        await PersistTeamsAsync();
+        ClosePortraitPrompt();
+        var editor = new PortraitPromptViewModel(
+            row,
+            portraits,
+            portraitStore,
+            PortraitProviders,
+            SelectedPortraitProvider);
+        editor.RequestClose += OnPortraitPromptRequestClose;
+        PortraitPrompt = editor;
+    }
+
+    private void OnPortraitPromptRequestClose(object? sender, EventArgs e) => ClosePortraitPrompt();
+
+    private void ClosePortraitPrompt()
+    {
+        if (PortraitPrompt is not { } editor)
+            return;
+        editor.RequestClose -= OnPortraitPromptRequestClose;
+        var status = editor.IsGenerating ? null : editor.Status;
+        editor.Dispose();
+        PortraitPrompt = null;
+        if (!string.IsNullOrWhiteSpace(status) && status is not "Edit the prompt, copy it, or send it to Grok or ChatGPT.")
+            StatusMessage = status;
+        _ = PersistTeamsAsync();
+    }
 
     [RelayCommand]
     private async Task ExportPortraitAsync(TeamRow? row)
@@ -528,6 +609,28 @@ public partial class LeagueSetupViewModel(
             return;
         portraitStore.CopyTo(row.TeamId, dest);
         StatusMessage = $"Saved {row.Name} to {dest}.";
+    }
+
+    [RelayCommand]
+    private async Task ImportPortraitAsync(TeamRow? row)
+    {
+        if (row is null)
+            return;
+        var picked = await files.PickOpenFileAsync(
+            $"Import image for {DisplayName(row)}",
+            TeamPortraitImage.Extensions);
+        if (picked is null)
+            return;
+        if (TeamPortraitImage.RejectReason(picked.Bytes) is { } reason)
+        {
+            StatusMessage = reason;
+            return;
+        }
+
+        await portraitStore.SaveAsync(row.TeamId, picked.Bytes);
+        row.HasPortrait = true;
+        row.PortraitStatus = "Imported";
+        StatusMessage = $"Imported image for {DisplayName(row)}. Hover the team name.";
     }
 
     private async Task GeneratePortraitsAsync(IReadOnlyList<TeamRow> rows)
@@ -554,13 +657,12 @@ public partial class LeagueSetupViewModel(
                 var result = await portraits.GenerateAsync(new TeamPortraitRequest
                 {
                     TeamId = row.TeamId,
-                    TeamName = string.IsNullOrWhiteSpace(row.Name) ? $"Team {row.DraftPosition}" : row.Name,
+                    TeamName = row.DisplayTeamName,
                     OwnerName = row.OwnerName,
-                    PortraitNotes = string.IsNullOrWhiteSpace(row.PortraitNotes) ? null : row.PortraitNotes.Trim(),
                     IsUserTeam = isMine,
                     NormalImage = !isMine && row.NormalImage,
                     ProviderKey = SelectedPortraitProvider?.ProviderKey,
-                    Spin = Random.Shared.Next(),
+                    Spin = row.PreviewSpin,
                     ArtStyleKey = row.SelectedArtStyle.Key
                 });
                 row.IsGenerating = false;
@@ -568,6 +670,8 @@ public partial class LeagueSetupViewModel(
                 row.PortraitStatus = result.Succeeded
                     ? (string.IsNullOrEmpty(row.SelectedArtStyle.Key) ? "Ready · Random" : $"Ready · {row.SelectedArtStyle.Title}")
                     : result.Error ?? "Failed";
+                if (result.Succeeded)
+                    row.RerollPreviewSpin();
                 if (!result.Succeeded)
                     StatusMessage = $"{row.Name}: {row.PortraitStatus}";
             }

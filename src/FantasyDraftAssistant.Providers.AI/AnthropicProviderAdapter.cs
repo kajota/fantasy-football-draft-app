@@ -12,7 +12,8 @@ public sealed class AnthropicProviderAdapter(
     IDraftQueryService queries,
     IAiUsageService usage) : IAiProviderAdapter
 {
-    public const string DefaultModel = "claude-sonnet-4-6";
+    public static string DefaultModel =>
+        AiProviderCatalog.Find(AiProviderCatalog.Anthropic)?.DefaultModel ?? "claude-sonnet-5";
     public string ProviderKey => AiProviderCatalog.Anthropic;
 
     public async Task<AiConnectionTestResult> TestConnectionAsync(AiProviderConfig config, CancellationToken cancellationToken)

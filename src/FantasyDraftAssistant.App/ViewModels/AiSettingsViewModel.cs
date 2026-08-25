@@ -15,24 +15,49 @@ public partial class AiProviderEditor : ObservableObject
         Title = $"{descriptor.ProductName} ({descriptor.CompanyName})";
         Help = descriptor.CredentialHelp;
         DefaultModel = descriptor.DefaultModel;
-        Model = descriptor.DefaultModel;
         SuggestedModels = descriptor.SuggestedModels;
+        Model = descriptor.DefaultModel;
     }
 
     public string ProviderKey { get; }
     public string Title { get; }
     public string Help { get; }
     public string DefaultModel { get; }
-    public IReadOnlyList<string> SuggestedModels { get; }
+    public IReadOnlyList<AiModelOption> SuggestedModels { get; }
     public IReadOnlyList<string> Roles => AiProviderCatalog.Roles;
 
     [ObservableProperty] private bool _enabled;
     [ObservableProperty] private string _apiKey = "";
     [ObservableProperty] private bool _keySaved;
     [ObservableProperty] private string _model = "";
+    [ObservableProperty] private AiModelOption? _selectedModelOption;
     [ObservableProperty] private string _role = "Fast Advisor";
     [ObservableProperty] private string? _perDraftLimit;
     [ObservableProperty] private string _status = "";
+
+    public string SelectedModelSummary =>
+        SelectedModelOption is { } option
+            ? $"{option.Summary} Listed price is ${FormatUsd(option.InputPerMillion)} in / ${FormatUsd(option.OutputPerMillion)} out per 1M tokens."
+            : "Pick a listed model or type another API model ID, then Save.";
+
+    partial void OnModelChanged(string value)
+    {
+        var match = SuggestedModels.FirstOrDefault(m =>
+            m.Id.Equals(value.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (!Equals(SelectedModelOption, match))
+            SelectedModelOption = match;
+        OnPropertyChanged(nameof(SelectedModelSummary));
+    }
+
+    partial void OnSelectedModelOptionChanged(AiModelOption? value)
+    {
+        if (value is not null && !string.Equals(Model, value.Id, StringComparison.Ordinal))
+            Model = value.Id;
+        OnPropertyChanged(nameof(SelectedModelSummary));
+    }
+
+    private static string FormatUsd(decimal value) =>
+        value == decimal.Truncate(value) ? value.ToString("0") : value.ToString("0.00");
 }
 
 public partial class AiSettingsViewModel(

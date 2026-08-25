@@ -30,6 +30,7 @@ public static class AiOutputBudget
         var key = Normalize(model);
         return key.Contains("opus-5", StringComparison.Ordinal)
             || key.Contains("sonnet-5", StringComparison.Ordinal)
+            || key.Contains("fable-5", StringComparison.Ordinal)
             || key.Contains("opus-4-8", StringComparison.Ordinal);
     }
 

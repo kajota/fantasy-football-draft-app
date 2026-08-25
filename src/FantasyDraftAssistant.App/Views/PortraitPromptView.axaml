@@ -1,0 +1,87 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:FantasyDraftAssistant.App.ViewModels"
+             xmlns:ai="using:FantasyDraftAssistant.Core.Ai"
+             x:Class="FantasyDraftAssistant.App.Views.PortraitPromptView"
+             x:DataType="vm:PortraitPromptViewModel"
+             Focusable="True">
+  <DockPanel LastChildFill="True">
+    <DockPanel DockPanel.Dock="Bottom" Margin="0,14,0,0" LastChildFill="True">
+      <Button DockPanel.Dock="Right" Content="Close" Classes="ghost" Margin="8,0,0,0"
+              Command="{Binding CloseCommand}"
+              IsEnabled="{Binding !IsGenerating}" />
+      <Button DockPanel.Dock="Right" Content="Generate" Classes="primary"
+              Command="{Binding GenerateCommand}"
+              IsEnabled="{Binding CanGenerate}"
+              ToolTip.Tip="Send the prompt in the box to the selected image AI. Billed to that API key." />
+      <TextBlock Text="{Binding Status}" Classes="muted" TextWrapping="Wrap"
+                 VerticalAlignment="Center" Margin="0,0,12,0" />
+    </DockPanel>
+
+    <TextBlock DockPanel.Dock="Top" Text="{Binding Heading}" Classes="h1" />
+    <TextBlock DockPanel.Dock="Top" Margin="0,6,0,12" Classes="muted" TextWrapping="Wrap"
+               Text="Art style and Normal vs roast rewrite the generated prompt. Edit the text for age, look, or anything else, then generate with Grok or ChatGPT. Esc closes this panel." />
+
+    <Grid ColumnDefinitions="*,320" ColumnSpacing="16">
+      <DockPanel>
+        <WrapPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
+          <Button Content="Copy" Classes="ghost" Margin="0,0,8,8"
+                  Command="{Binding CopyCommand}"
+                  ToolTip.Tip="Copy the prompt in the box." />
+          <Button Content="Reset to generated" Classes="ghost" Margin="0,0,8,8"
+                  Command="{Binding ResetPromptCommand}"
+                  ToolTip.Tip="Throw away edits and put back this team's generated prompt." />
+          <Button Content="New variation" Classes="ghost" Margin="0,0,8,8"
+                  Command="{Binding NewVariationCommand}"
+                  ToolTip.Tip="Roll a new generated prompt (outfit, setting, and random style). Discards edits." />
+          <Button Content="Start with previous prompt" Classes="ghost" Margin="0,0,8,8"
+                  Command="{Binding StartWithPreviousPromptCommand}"
+                  IsEnabled="{Binding HasPreviousPrompt}"
+                  ToolTip.Tip="Put back the prompt that was used to generate this team's last image. Import does not save a prompt." />
+        </WrapPanel>
+        <TextBox x:Name="PromptBox" Text="{Binding Prompt}" AcceptsReturn="True" TextWrapping="Wrap"
+                 FontSize="12" MinHeight="280"
+                 PlaceholderText="Prompt sent to the image AI"
+                 IsReadOnly="{Binding IsGenerating}" />
+      </DockPanel>
+
+      <StackPanel Grid.Column="1" Spacing="10">
+        <Border Width="320" Height="320" CornerRadius="8" ClipToBounds="True"
+                Background="{StaticResource ElevatedBrush}"
+                BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
+          <Panel>
+            <TextBlock Text="No image yet" Classes="muted" HorizontalAlignment="Center"
+                       VerticalAlignment="Center" IsVisible="{Binding !HasPortrait}" />
+            <Image Source="{Binding Portrait}" Stretch="UniformToFill"
+                   IsVisible="{Binding HasPortrait}" />
+          </Panel>
+        </Border>
+        <TextBlock Text="Art style" FontWeight="SemiBold" />
+        <ComboBox ItemsSource="{Binding ArtStyleOptions}"
+                  SelectedItem="{Binding SelectedArtStyle}"
+                  HorizontalAlignment="Stretch"
+                  ToolTip.Tip="Art style for this portrait. Random picks a new style, outfit, and setting each New variation. Hero vs roast is the Normal checkbox.">
+          <ComboBox.ItemTemplate>
+            <DataTemplate x:DataType="ai:PortraitArtStyle">
+              <TextBlock Text="{Binding Title}" Foreground="{StaticResource TextBrush}" />
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+        <CheckBox Content="Normal image" IsChecked="{Binding NormalImage}"
+                  IsVisible="{Binding CanChoosePortraitStyle}"
+                  ToolTip.Tip="On: over-the-top handsome genius, same energy as your portrait. Off: the roast. Your team has no checkbox and always looks great." />
+        <TextBlock Text="Image AI" FontWeight="SemiBold" />
+        <ComboBox ItemsSource="{Binding Providers}"
+                  SelectedItem="{Binding SelectedProvider}"
+                  HorizontalAlignment="Stretch"
+                  ToolTip.Tip="Grok Imagine or ChatGPT Images. Needs that provider's API key.">
+          <ComboBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:PortraitAiOption">
+              <TextBlock Text="{Binding Label}" Foreground="{StaticResource TextBrush}" />
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+      </StackPanel>
+    </Grid>
+  </DockPanel>
+</UserControl>

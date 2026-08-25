@@ -26,6 +26,8 @@ public class OpenAiErrorTests
     [InlineData("gpt-5")]
     [InlineData("gpt-5-mini")]
     [InlineData("gpt-5.6-terra")]
+    [InlineData("gpt-5.6-luna")]
+    [InlineData("gpt-5.6-sol")]
     [InlineData("o3-mini")]
     public void Newer_openai_models_use_max_completion_tokens(string model)
     {

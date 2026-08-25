@@ -30,4 +30,22 @@ public class TeamPortraitStoreTests
                 Directory.Delete(root, recursive: true);
         }
     }
+
+    [Fact]
+    public async Task Save_keeps_last_prompt()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "fda-portraits-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new TeamPortraitStore(new AppPaths(root));
+            var id = TeamId.New();
+            await store.SaveAsync(id, [0xFF, 0xD8, 0xFF, 0xE0], "a red helmet");
+            Assert.Equal("a red helmet", store.LastPrompt(id));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
+        }
+    }
 }

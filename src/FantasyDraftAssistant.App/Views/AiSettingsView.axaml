@@ -1,12 +1,13 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:FantasyDraftAssistant.App.ViewModels"
+             xmlns:ai="using:FantasyDraftAssistant.Core.Ai"
              x:Class="FantasyDraftAssistant.App.Views.AiSettingsView"
              x:DataType="vm:AiSettingsViewModel">
   <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
     <StackPanel Spacing="16">
       <TextBlock Text="AI Providers" Classes="h1" />
-      <TextBlock Text="ChatGPT, Claude, and Grok are independent advisors. Each needs its own developer API key. ChatGPT Plus, Claude Pro, and SuperGrok do not pay for these APIs — OpenAI also needs a payment method and API credit at platform.openai.com billing."
+      <TextBlock Text="ChatGPT, Claude, and Grok are independent advisors. Each needs its own developer API key. ChatGPT Plus, Claude Pro, and SuperGrok do not pay for these APIs — OpenAI also needs a payment method and API credit at platform.openai.com billing. Flagship models are overkill here: the app already ranks the board, so the model is reading that context. Recommended value picks are Luna, Sonnet 5, and Grok 4.3."
                  Classes="muted" TextWrapping="Wrap" />
       <TextBlock Text="{Binding StoreDescription}" Classes="muted" TextWrapping="Wrap" />
 
@@ -32,18 +33,18 @@
                 <StackPanel Spacing="4">
                   <TextBlock Text="Model" FontWeight="SemiBold" />
                   <ComboBox ItemsSource="{Binding SuggestedModels}"
-                            SelectedItem="{Binding Model}"
+                            SelectedItem="{Binding SelectedModelOption}"
                             IsEditable="True"
                             Text="{Binding Model}"
-                            ToolTip.Tip="API model ID. Pick a suggested model or type any ID this provider accepts.">
+                            HorizontalAlignment="Stretch"
+                            ToolTip.Tip="Pick a priced model from the list, or type another API model ID this provider accepts.">
                     <ComboBox.ItemTemplate>
-                      <DataTemplate x:DataType="x:String">
-                        <TextBlock Text="{Binding}" Foreground="{StaticResource TextBrush}" />
+                      <DataTemplate x:DataType="ai:AiModelOption">
+                        <TextBlock Text="{Binding DisplayName}" Foreground="{StaticResource TextBrush}" TextWrapping="NoWrap" />
                       </DataTemplate>
                     </ComboBox.ItemTemplate>
                   </ComboBox>
-                  <TextBlock Text="Pick from the list or type another API model ID, then Save. Claude examples: claude-sonnet-5, claude-opus-5, claude-haiku-4-5."
-                             Classes="muted" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding SelectedModelSummary}" Classes="muted" TextWrapping="Wrap" />
                 </StackPanel>
 
                 <StackPanel Spacing="4">

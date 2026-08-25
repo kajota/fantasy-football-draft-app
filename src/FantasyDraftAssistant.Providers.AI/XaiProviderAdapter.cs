@@ -16,7 +16,8 @@ public sealed class XaiProviderAdapter(
     IAiUsageService usage) : IAiProviderAdapter
 {
     public const string Key = "xai";
-    public const string DefaultModel = "grok-4.6";
+    public static string DefaultModel =>
+        AiProviderCatalog.Find(AiProviderCatalog.Xai)?.DefaultModel ?? "grok-4.3";
     public const string BaseUrl = "https://api.x.ai/v1/";
 
     public string ProviderKey => Key;

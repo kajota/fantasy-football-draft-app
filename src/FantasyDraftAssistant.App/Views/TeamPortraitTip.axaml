@@ -4,7 +4,7 @@
   <Border Width="220" Height="220" CornerRadius="8" ClipToBounds="True"
           Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
     <Panel>
-      <TextBlock x:Name="EmptyLabel" Text="No team image yet. Generate them on League Setup."
+      <TextBlock x:Name="EmptyLabel" Text="No team image yet. Generate or import one on League Setup."
                  Classes="muted" TextWrapping="Wrap" Margin="12" TextAlignment="Center"
                  HorizontalAlignment="Center" VerticalAlignment="Center" />
       <Image x:Name="PortraitImage" Stretch="UniformToFill" IsVisible="False" />

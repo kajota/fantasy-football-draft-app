@@ -1,5 +1,6 @@
 using FantasyDraftAssistant.Core.Ai;
 using FantasyDraftAssistant.Core.Ids;
+using FantasyDraftAssistant.Core.Interfaces;
 
 namespace FantasyDraftAssistant.Core.Tests;
 
@@ -9,11 +10,17 @@ public class TeamPortraitPromptTests
     public void User_team_is_flattering()
     {
         var prompt = TeamPortraitPrompt.Build("Blue Steel", "You", TeamPortraitTone.Hero, TeamId.New());
-        Assert.Contains("Art style (mandatory", prompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Art style:", prompt, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Distinct face", prompt, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Blue Steel", prompt);
         Assert.DoesNotContain("terrible at fantasy", prompt, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Square illustrated", prompt, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("mandatory", prompt, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("every pixel", prompt, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Forbidden:", prompt, StringComparison.Ordinal);
+        Assert.DoesNotContain("celebrity", prompt, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("watermark", prompt, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("extra panels", prompt, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -23,7 +30,10 @@ public class TeamPortraitPromptTests
         Assert.Contains("Square roast", prompt, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Mike", prompt);
         Assert.Contains("Team 6", prompt);
-        Assert.Contains("Art style (mandatory", prompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Art style:", prompt, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("gore", prompt, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("watermark", prompt, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Forbidden:", prompt, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -44,7 +54,7 @@ public class TeamPortraitPromptTests
     {
         Assert.Equal(TeamPortraitTone.Hero, TeamPortraitPrompt.ToneFor(isUserTeam: false, normalImage: true));
         var prompt = TeamPortraitPrompt.Build("Team 6", "Mike", TeamPortraitTone.Hero, TeamId.New());
-        Assert.Contains("Art style (mandatory", prompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Art style:", prompt, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("terrible at fantasy", prompt, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Square roast", prompt, StringComparison.OrdinalIgnoreCase);
     }
@@ -88,8 +98,8 @@ public class TeamPortraitPromptTests
         Assert.Contains("white man", b, StringComparison.OrdinalIgnoreCase);
         var outfitA = a.Split("Outfit:")[1].Split('.')[0];
         var outfitB = b.Split("Outfit:")[1].Split('.')[0];
-        var styleA = a.Split("Art style (mandatory, every pixel):")[1].Split('\n')[0];
-        var styleB = b.Split("Art style (mandatory, every pixel):")[1].Split('\n')[0];
+        var styleA = a.Split("Art style:")[1].Split('\n')[0];
+        var styleB = b.Split("Art style:")[1].Split('\n')[0];
         Assert.True(outfitA != outfitB || styleA != styleB);
     }
 
@@ -102,7 +112,7 @@ public class TeamPortraitPromptTests
             TeamPortraitTone.Roast,
             TeamId.New(),
             artStyleKey: "photoreal");
-        Assert.StartsWith("Art style (mandatory, every pixel): photoreal cinematic still", prompt.Trim(), StringComparison.Ordinal);
+        Assert.StartsWith("Art style: photoreal cinematic still", prompt.Trim(), StringComparison.Ordinal);
         Assert.DoesNotContain("supermarket flyer", prompt, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Not photoreal", prompt, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Square illustrated", prompt, StringComparison.OrdinalIgnoreCase);
@@ -134,8 +144,41 @@ public class TeamPortraitPromptTests
             TeamId.New(),
             artStyleKey: "cartoon");
         Assert.Contains("newspaper editorial cartoon", prompt, StringComparison.Ordinal);
-        Assert.Contains("Forbidden: painterly digital painting", prompt, StringComparison.Ordinal);
+        Assert.DoesNotContain("Forbidden:", prompt, StringComparison.Ordinal);
         Assert.DoesNotContain("neon night market", prompt, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("vintage convertible", prompt, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void Custom_prompt_is_used_as_written()
+    {
+        var request = Request(custom: "  a red helmet, no text  ");
+        Assert.Equal("a red helmet, no text", TeamPortraitPrompt.Resolve(request));
+    }
+
+    [Fact]
+    public void Blank_custom_prompt_builds_the_usual_text()
+    {
+        var request = Request(custom: "  ");
+        var built = TeamPortraitPrompt.Build(
+            request.TeamName,
+            request.OwnerName,
+            request.Tone,
+            request.TeamId,
+            request.PortraitNotes,
+            request.Spin,
+            request.ArtStyleKey);
+        Assert.Equal(built, TeamPortraitPrompt.Resolve(request));
+    }
+
+    private static TeamPortraitRequest Request(string? custom) => new()
+    {
+        TeamId = new TeamId(Guid.Parse("11111111-1111-1111-1111-111111111111")),
+        TeamName = "Blue Steel",
+        OwnerName = "Mike",
+        IsUserTeam = true,
+        Spin = 3,
+        ArtStyleKey = "photoreal",
+        CustomPrompt = custom
+    };
 }

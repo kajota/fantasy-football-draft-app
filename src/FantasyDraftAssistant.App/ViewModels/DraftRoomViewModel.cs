@@ -808,7 +808,11 @@ public partial class DraftRoomViewModel : PageViewModel
 
         var leagueFormat = FantasyDataFormat.FromLeague(state.ScoringRules, state.RosterSlots);
         await EnsureDataSourcesAsync(leagueFormat);
-        DataSourceWarning = FantasyDataSourcePicker.CompatibilityWarning(SourceKeyFor(DataSource), leagueFormat) ?? "";
+        var sourceKey = SourceKeyFor(DataSource);
+        var refreshes = await _fantasyData.GetRefreshInfoAsync();
+        DataSourceWarning = PlayerDataFreshness.Combine(
+            FantasyDataSourcePicker.CompatibilityWarning(sourceKey, leagueFormat),
+            PlayerDataFreshness.Warning(refreshes, sourceKey, DateTimeOffset.UtcNow));
         context = ContextFor(draftId, state.ActiveBranch.BranchId);
         await RefreshAvailableAsync(context);
 
@@ -892,7 +896,6 @@ public partial class DraftRoomViewModel : PageViewModel
         QueueEmpty = Queue.Count == 0;
         RosterEmpty = Roster.Count == 0;
         HasAlerts = Alerts.Count > 0;
-        var sourceKey = SourceKeyFor(DataSource);
         AiContextLine = $"Advice uses {FantasyDataSourcePicker.Describe(sourceKey, leagueFormat)} ranks, ADP, and this league's scoring.";
         await RefreshDecisionBoardAsync(context);
         await RefreshAnalystsAsync();
@@ -1188,8 +1191,34 @@ public partial class DraftRoomViewModel : PageViewModel
 
     private void OnPortraitChanged(object? sender, TeamId teamId)
     {
-        if (_currentPortraitTeam is { } current && current.Equals(teamId))
-            Dispatcher.UIThread.Post(() => SetCurrentTeamPortrait(teamId));
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_currentPortraitTeam is { } current && current.Equals(teamId))
+                SetCurrentTeamPortrait(teamId);
+            if (SelectedRosterTeam is { } roster && roster.TeamId.Equals(teamId))
+                SetSelectedRosterPortrait(teamId);
+        });
+    }
+
+    [RelayCommand]
+    private async Task ImportSelectedRosterPortraitAsync()
+    {
+        if (SelectedRosterTeam is not { } team)
+            return;
+        var picked = await _files.PickOpenFileAsync(
+            $"Import image for {team.Label}",
+            TeamPortraitImage.Extensions);
+        if (picked is null)
+            return;
+        if (TeamPortraitImage.RejectReason(picked.Bytes) is { } reason)
+        {
+            StatusMessage = reason;
+            return;
+        }
+
+        await _portraits.SaveAsync(team.TeamId, picked.Bytes);
+        SetSelectedRosterPortrait(team.TeamId);
+        StatusMessage = $"Imported image for {team.Label}.";
     }
 
     [RelayCommand]
@@ -1525,7 +1554,9 @@ public partial class DraftRoomViewModel : PageViewModel
     {
         if (_session.DraftId is not { } draftId || _session.BranchId is not { } branchId)
             return;
-        var prompt = string.IsNullOrWhiteSpace(AiPrompt) ? "Who should I take here?" : AiPrompt.Trim();
+        var prompt = string.IsNullOrWhiteSpace(AiPrompt)
+            ? "Who should the person drafting now pick?"
+            : AiPrompt.Trim();
         var snapshot = await _analytics.GetSnapshotAsync(draftId, branchId);
         var currentUserPick = snapshot.PicksUntilUser == 0 && snapshot.UserNextRoundPick is not null
             ? snapshot.CurrentOverallPick
@@ -1546,16 +1577,16 @@ public partial class DraftRoomViewModel : PageViewModel
 
         if (Analysts.Count == 0)
             await RefreshAnalystsAsync();
-        var enabled = Analysts.Where(panel => panel.Enabled && panel.IncludeInAsk).ToList();
-        if (enabled.Count == 0)
+        var grok = Analysts.FirstOrDefault(panel =>
+            panel.Enabled
+            && panel.ProviderKey.Equals(AiProviderCatalog.Xai, StringComparison.OrdinalIgnoreCase));
+        if (grok is null)
         {
-            StatusMessage = Analysts.Any(panel => panel.Enabled)
-                ? "No analyst is checked. Tick ChatGPT, Claude, and/or Grok next to their names."
-                : "No AI provider is enabled. Configure ChatGPT, Claude, or Grok under AI Providers.";
+            StatusMessage = "Grok is not enabled. Turn on Grok under AI Providers to taunt.";
             return;
         }
 
-        if (enabled.Any(IsBusy))
+        if (IsBusy(grok))
             return;
 
         var state = await _drafts.GetWorkingStateAsync(draftId, branchId);
@@ -1588,21 +1619,19 @@ public partial class DraftRoomViewModel : PageViewModel
             {rosterBlock}
             Remaining needs: {needLine}
             """;
-        var styles = TauntStyles.Assign(enabled.Select(panel => panel.ProviderKey));
         var version = StateVersion;
         var decisionContextJson = await BuildDecisionContextJsonAsync(draftId, branchId, prompt);
-        StatusMessage = $"Asking for a taunt of {target.Label}.";
-        var tasks = enabled.Select(panel => AskOneAsync(
-            panel,
+        StatusMessage = $"Asking Grok to taunt {target.Label}.";
+        await AskOneAsync(
+            grok,
             draftId,
             branchId,
             version,
             prompt,
             TauntStyles.PromptKind,
-            styles.GetValueOrDefault(panel.ProviderKey, TauntStyles.Melville),
+            TauntStyles.LockerRoom,
             target.Label,
-            decisionContextJson: decisionContextJson));
-        await Task.WhenAll(tasks);
+            decisionContextJson: decisionContextJson);
     }
 
     private async Task AskOneAsync(

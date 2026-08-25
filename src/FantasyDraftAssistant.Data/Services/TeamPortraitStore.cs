@@ -20,7 +20,7 @@ public sealed class TeamPortraitStore : ITeamPortraitStore
 
     public string? ExistingPath(TeamId teamId)
     {
-        foreach (var ext in new[] { ".jpg", ".jpeg", ".png", ".webp" })
+        foreach (var ext in TeamPortraitImage.Extensions)
         {
             var path = Path.Combine(_directory, teamId + ext);
             if (File.Exists(path))
@@ -30,11 +30,20 @@ public sealed class TeamPortraitStore : ITeamPortraitStore
         return null;
     }
 
-    public async Task SaveAsync(TeamId teamId, byte[] imageBytes, CancellationToken cancellationToken = default)
+    public string? LastPrompt(TeamId teamId)
     {
-        var ext = Extension(imageBytes);
+        var path = PromptPath(teamId);
+        if (!File.Exists(path))
+            return null;
+        var text = File.ReadAllText(path);
+        return string.IsNullOrWhiteSpace(text) ? null : text.Trim();
+    }
+
+    public async Task SaveAsync(TeamId teamId, byte[] imageBytes, string? prompt = null, CancellationToken cancellationToken = default)
+    {
+        var ext = TeamPortraitImage.ExtensionOrJpeg(imageBytes);
         var path = Path.Combine(_directory, teamId + ext);
-        foreach (var other in new[] { ".jpg", ".jpeg", ".png", ".webp" })
+        foreach (var other in TeamPortraitImage.Extensions)
         {
             var stale = Path.Combine(_directory, teamId + other);
             if (!stale.Equals(path, StringComparison.OrdinalIgnoreCase) && File.Exists(stale))
@@ -42,8 +51,21 @@ public sealed class TeamPortraitStore : ITeamPortraitStore
         }
 
         await File.WriteAllBytesAsync(path, imageBytes, cancellationToken);
+        var promptPath = PromptPath(teamId);
+        if (string.IsNullOrWhiteSpace(prompt))
+        {
+            if (File.Exists(promptPath))
+                File.Delete(promptPath);
+        }
+        else
+        {
+            await File.WriteAllTextAsync(promptPath, prompt.Trim(), cancellationToken);
+        }
+
         Changed?.Invoke(this, teamId);
     }
+
+    private string PromptPath(TeamId teamId) => Path.Combine(_directory, teamId + ".prompt.txt");
 
     public string? CopyTo(TeamId teamId, string destinationPath)
     {
@@ -53,17 +75,5 @@ public sealed class TeamPortraitStore : ITeamPortraitStore
         Directory.CreateDirectory(Path.GetDirectoryName(destinationPath) ?? ".");
         File.Copy(source, destinationPath, overwrite: true);
         return destinationPath;
-    }
-
-    private static string Extension(byte[] bytes)
-    {
-        if (bytes.Length >= 8
-            && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47)
-            return ".png";
-        if (bytes.Length >= 12
-            && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46
-            && bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50)
-            return ".webp";
-        return ".jpg";
     }
 }

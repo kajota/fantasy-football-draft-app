@@ -1,4 +1,5 @@
 using FantasyDraftAssistant.Core.Ids;
+using FantasyDraftAssistant.Core.Interfaces;
 
 namespace FantasyDraftAssistant.Core.Ai;
 
@@ -198,10 +199,19 @@ public static class TeamPortraitPrompt
         "staring at a laptop that is clearly auto-drafting",
         "holding a ranking printout from 2019",
         "celebrating a waiver pickup nobody wanted",
-        "wearing a cheese hat backwards",
         "dropping nachos onto a keyboard",
         "talking into a dead headset",
-        "pointing at the wrong column on a spreadsheet"
+        "pointing at the wrong column on a spreadsheet",
+        "scratching his balls while doomscrolling the waiver wire",
+        "picking his nose and wiping it on the remote",
+        "belching beer foam onto his draft board",
+        "farting then waving the stench toward his face",
+        "adjusting his sweaty crotch mid-trade rant",
+        "spitting sunflower seeds straight into his laptop keyboard",
+        "scratching deep under his ballsack during the draft",
+        "drooling pizza grease down his stained tank top",
+        "yelling with crumbs stuck in his teeth and beard",
+        "burping, scratching his ass, then high-fiving the air"
     ];
 
     private static readonly string[] RoastStyles =
@@ -225,10 +235,10 @@ public static class TeamPortraitPrompt
             "bold graphic-novel ink and flat color, hard black contours, cel shading, comic-book panel, not a painting",
             PortraitMedium.Ink),
         new("oil", "Oil portrait",
-            "painterly oil on canvas, visible brushstrokes, gallery lighting, thick paint, not digital, not a photo",
+            "painterly oil on canvas, visible brushstrokes, gallery lighting, thick paint, not a photo",
             PortraitMedium.Paint),
         new("magazine", "1960s magazine",
-            "clean 1960s print-magazine illustration, limited ink, vintage halftone, Mad Men editorial, not photoreal, not neon",
+            "clean 1960s print-magazine illustration, limited ink, vintage halftone, Mad Men editorial",
             PortraitMedium.Print),
         new("animation", "Animation still",
             "2D animation still, clean character lines, studio-cartoon shading, not live action, not oil paint",
@@ -237,10 +247,10 @@ public static class TeamPortraitPrompt
             "black-and-white noir comic, heavy ink shadows, screentone, Sin City linework, almost no color, not a color painting",
             PortraitMedium.Ink),
         new("risograph", "Risograph poster",
-            "misregistered risograph poster, 2-3 ink colors, grainy paper, DIY print shop, not cinematic, not photoreal",
+            "misregistered risograph poster, 2-3 ink colors, grainy paper, DIY print shop, not cinematic",
             PortraitMedium.Print),
         new("gouache", "Storybook gouache",
-            "opaque gouache storybook painting, matte pigment, soft edges, children's-book plate, not a photo, not neon",
+            "opaque gouache storybook painting, matte pigment, soft edges, children's-book plate, not a photo",
             PortraitMedium.Paint),
         new("pop-art", "Pop art",
             "1960s pop art, Ben-Day dots, flat primary colors, thick comic outline, Warhol/Lichtenstein, not painterly realism",
@@ -258,7 +268,7 @@ public static class TeamPortraitPrompt
             "1990s Microsoft clip-art, simple vector shapes, tiny color palette, office-software mascot, not detailed illustration",
             PortraitMedium.Print),
         new("watercolor", "Muddy watercolor",
-            "wet muddy watercolor on cheap paper, bleeds and stains, loose pigment, not digital, not photoreal, not neon",
+            "wet muddy watercolor on cheap paper, bleeds and stains, loose pigment",
             PortraitMedium.Paint),
         new("snapshot", "Phone snapshot",
             "bad phone snapshot, on-camera flash, awkward selfie angle, jpeg noise, real photography, not illustrated",
@@ -270,12 +280,24 @@ public static class TeamPortraitPrompt
             "unkind mall portrait-studio photo, mottled backdrop, flash, stiff pose, real photography, not a painting",
             PortraitMedium.Photo),
         new("zine", "Zine drawing",
-            "scratchy photocopied zine drawing, ballpoint and marker, white paper, xerox speckles, not digital paint, not photoreal",
+            "scratchy photocopied zine drawing, ballpoint and marker, white paper, xerox speckles",
             PortraitMedium.Ink)
     ];
 
     public static PortraitArtStyle StyleByKey(string? key) =>
         ArtStyles.FirstOrDefault(style => style.Key == key) ?? RandomArtStyle;
+
+    public static string Resolve(TeamPortraitRequest request) =>
+        !string.IsNullOrWhiteSpace(request.CustomPrompt)
+            ? request.CustomPrompt.Trim()
+            : Build(
+                request.TeamName,
+                request.OwnerName,
+                request.Tone,
+                request.TeamId,
+                request.PortraitNotes,
+                request.Spin,
+                request.ArtStyleKey);
 
     public static string Build(
         string teamName,
@@ -304,26 +326,23 @@ public static class TeamPortraitPrompt
         if (tone is TeamPortraitTone.Hero or TeamPortraitTone.Normal)
         {
             return $"""
-                Art style (mandatory, every pixel): {style.Phrase}.
-                {Ban(style.Medium)}
+                Art style: {style.Phrase}.
                 Square image of {who} as {subject}.
                 Outfit: {outfit}. Setting: {place}.
                 Mood: {PickSpin(HeroEnergy, spin, 5)}.
                 Let the team name "{teamName}" flavor the colors and attitude.
-                Specific to this person. Distinct face. Not a real celebrity. No watermark. No extra panels.
+                Specific to this person. Distinct face.
                 {Marking(teamName, ownerName, spin)}
                 """;
         }
 
         return $"""
-            Art style (mandatory, every pixel): {style.Phrase}.
-            {Ban(style.Medium)}
+            Art style: {style.Phrase}.
             Square roast of {who} as {subject}.
             Face: {PickSpin(roastFaces, spin, 3)}. Outfit: {PickSpin(RoastLooks, spin, 4)}.
             Setting: {PickSpin(PlacesFor(tone, style.Medium), spin, 5)}. Caught: {PickSpin(RoastFails, spin, 6)}.
             Let the team name "{teamName}" flavor the mess.
-            Mean and funny. Distinct face and body. Not a real celebrity, not gore.
-            No watermark. No extra panels.
+            Mean and funny. Distinct face and body.
             {Marking(teamName, ownerName, spin)}
             """;
     }
@@ -373,16 +392,6 @@ public static class TeamPortraitPrompt
         return pool[(int)((uint)unchecked(spin * 104729 + 6 * 7919) % (uint)pool.Length)];
     }
 
-    private static string Ban(PortraitMedium medium) => medium switch
-    {
-        PortraitMedium.Ink => "Forbidden: painterly digital painting, cinematic neon rain, photoreal skin, anime, fashion photography, rim-lit movie still.",
-        PortraitMedium.Paint => "Forbidden: photoreal camera, neon cyberpunk city, 3D CGI, clip-art, screenshot.",
-        PortraitMedium.Photo => "Forbidden: illustration, cartoon outlines, painting, anime, graphic-novel ink.",
-        PortraitMedium.Print => "Forbidden: photoreal, cinematic 3D, neon night-market photography, oil painting.",
-        PortraitMedium.Collage => "Forbidden: a single painted portrait, photoreal beauty lighting, consistent oil technique.",
-        _ => "Do not mix styles. Do not fall back to a generic illustrated sports portrait."
-    };
-
     private static IReadOnlyList<string> LooksFor(TeamPortraitTone tone, PortraitMedium medium)
     {
         if (tone is not TeamPortraitTone.Hero and not TeamPortraitTone.Normal)
@@ -417,7 +426,7 @@ public static class TeamPortraitPrompt
         "as a newspaper editorial-page headshot",
         "behind a podium on a white page",
         "on a desk with an inkwell, hatched shadows only",
-        "against a plain background, no city, no rain, no neon",
+        "against a plain background, no city, no rain",
         "inside a comic panel with a fat black border",
         "on a xeroxed flyer, white paper showing",
         "as a political-cartoon corner portrait, empty space around"

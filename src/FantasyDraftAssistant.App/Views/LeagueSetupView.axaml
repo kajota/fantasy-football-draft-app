@@ -2,9 +2,9 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:FantasyDraftAssistant.App.ViewModels"
              xmlns:views="using:FantasyDraftAssistant.App.Views"
-             xmlns:ai="using:FantasyDraftAssistant.Core.Ai"
              x:Class="FantasyDraftAssistant.App.Views.LeagueSetupView"
              x:DataType="vm:LeagueSetupViewModel">
+  <Grid>
   <ScrollViewer x:Name="PageScroll"
                 HorizontalScrollBarVisibility="Disabled"
                 VerticalScrollBarVisibility="Auto"
@@ -167,13 +167,13 @@
       <Border Classes="card">
         <StackPanel Spacing="8">
           <TextBlock Text="Teams" Classes="h2" />
-          <TextBlock Text="This list is the number of teams. The # box is the first-round seat — type 6 to move this team to pick 6. Drag the handle, or use the arrows. Save writes the new order. The About box is only for portraits. Art style is separate from roast vs Normal. Random (and New image) picks a new outfit, setting, and style each time. Hover a name for that team's image. Unchecked rivals get roasted; check Normal image for the same over-the-top hero treatment as you."
+          <TextBlock Text="This list is the number of teams. The # box is the first-round seat — type 6 to move this team to pick 6. Drag the handle, or use the arrows. Save writes the new order. New image opens art style, Normal vs roast, and the prompt so you can copy it, edit it, and try Grok or ChatGPT. Import a JPEG, PNG, or WebP if you would rather use your own photo. Generate team images still sends each team's generated prompt. Hover a name for that team's image."
                      Classes="muted" TextWrapping="Wrap" />
           <StackPanel Orientation="Horizontal" Spacing="10">
             <Button Content="Generate team images" Classes="ghost"
                     Command="{Binding GenerateAllPortraitsCommand}"
                     IsEnabled="{Binding !IsGeneratingPortraits}"
-                    ToolTip.Tip="Generate every team with the selected image AI. Honors each row's Normal image checkbox. Billed per image." />
+                    ToolTip.Tip="Generate every team with the selected image AI. Uses each team's art style and Normal setting from New image. Billed per image." />
             <TextBlock Text="Image AI" VerticalAlignment="Center" Classes="muted" />
             <ComboBox ItemsSource="{Binding PortraitProviders}"
                       SelectedItem="{Binding SelectedPortraitProvider}"
@@ -186,7 +186,7 @@
               </ComboBox.ItemTemplate>
             </ComboBox>
           </StackPanel>
-          <Grid ColumnDefinitions="20,48,56,200,140,120,56,Auto,Auto,*" ColumnSpacing="8">
+          <Grid ColumnDefinitions="20,48,56,200,140,120,Auto,Auto,*" ColumnSpacing="8">
             <TextBlock />
             <TextBlock Grid.Column="1" Text="#" Classes="muted" />
             <TextBlock Grid.Column="2" />
@@ -194,13 +194,11 @@
             <TextBlock Grid.Column="4" Text="Owner" Classes="muted" />
             <TextBlock Grid.Column="5" Text="CPU style" Classes="muted"
                        ToolTip.Tip="How this seat drafts when the CPU controls it in practice drafts. Random deals a personality each practice." />
-            <TextBlock Grid.Column="6" Text="Normal" Classes="muted" />
           </Grid>
           <ItemsControl x:Name="TeamList" ItemsSource="{Binding Teams}">
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:TeamRow">
-                <StackPanel Margin="0,4,0,8" Spacing="4">
-                  <Grid ColumnDefinitions="20,48,56,200,140,120,56,Auto,Auto,*" ColumnSpacing="8">
+                <Grid ColumnDefinitions="20,48,56,200,140,120,Auto,Auto,*" ColumnSpacing="8" Margin="0,4,0,8">
                     <TextBlock Text="≡" Classes="muted" VerticalAlignment="Center" HorizontalAlignment="Center"
                                FontWeight="SemiBold" Cursor="SizeNorthSouth"
                                IsEnabled="{Binding $parent[ItemsControl].((vm:LeagueSetupViewModel)DataContext).CanReorderTeams}"
@@ -235,42 +233,34 @@
                               SelectedItem="{Binding SelectedPersonality}"
                               VerticalAlignment="Center"
                               ToolTip.Tip="Practice drafts only. How this seat drafts when the CPU controls it. Random deals a personality each practice; live drafts ignore this." />
-                    <CheckBox Grid.Column="6" IsChecked="{Binding NormalImage}"
-                              IsVisible="{Binding CanChoosePortraitStyle}"
-                              HorizontalAlignment="Center" VerticalAlignment="Center"
-                              ToolTip.Tip="On: over-the-top handsome genius, same energy as your portrait. Off: the roast. Your team has no checkbox and always looks great." />
-                    <Button Grid.Column="7" Content="New image" Classes="ghost compact"
-                            Command="{Binding $parent[ItemsControl].((vm:LeagueSetupViewModel)DataContext).GenerateOnePortraitCommand}"
+                    <Button Grid.Column="6" Content="New image" Classes="ghost compact"
+                            Command="{Binding $parent[ItemsControl].((vm:LeagueSetupViewModel)DataContext).EditPortraitPromptCommand}"
                             CommandParameter="{Binding}"
-                            IsEnabled="{Binding !IsGenerating}"
-                            ToolTip.Tip="Generate a new portrait for this team only. Random style, outfit, and setting change each click." />
-                    <Button Grid.Column="8" Content="Export" Classes="ghost compact"
-                            Command="{Binding $parent[ItemsControl].((vm:LeagueSetupViewModel)DataContext).ExportPortraitCommand}"
-                            CommandParameter="{Binding}"
-                            IsEnabled="{Binding HasPortrait}"
-                            ToolTip.Tip="Save this team's image to a file you pick." />
-                    <TextBlock Grid.Column="9" Text="{Binding PortraitStatus}" Classes="muted"
+                            IsEnabled="{Binding !IsGenerating}">
+                      <ToolTip.Tip>
+                        <StackPanel MaxWidth="440" Spacing="6">
+                          <TextBlock Text="Opens art style, Normal vs roast, and a prompt you can edit, copy, and send to Grok or ChatGPT."
+                                     FontWeight="SemiBold" TextWrapping="Wrap" />
+                          <TextBlock Text="{Binding NewImagePrompt}" TextWrapping="Wrap" FontSize="11" />
+                        </StackPanel>
+                      </ToolTip.Tip>
+                    </Button>
+                    <StackPanel Grid.Column="7" Orientation="Horizontal" Spacing="4">
+                      <Button Content="Import" Classes="ghost compact"
+                              Command="{Binding $parent[ItemsControl].((vm:LeagueSetupViewModel)DataContext).ImportPortraitCommand}"
+                              CommandParameter="{Binding}"
+                              IsEnabled="{Binding !IsGenerating}"
+                              ToolTip.Tip="Use your own JPEG, PNG, or WebP for this team. Replaces a generated image." />
+                      <Button Content="Export" Classes="ghost compact"
+                              Command="{Binding $parent[ItemsControl].((vm:LeagueSetupViewModel)DataContext).ExportPortraitCommand}"
+                              CommandParameter="{Binding}"
+                              IsEnabled="{Binding HasPortrait}"
+                              ToolTip.Tip="Save this team's image to a file you pick." />
+                    </StackPanel>
+                    <TextBlock Grid.Column="8" Text="{Binding PortraitStatus}" Classes="muted"
                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                ToolTip.Tip="{Binding PortraitStatus}" />
-                  </Grid>
-                  <Grid ColumnDefinitions="132,168,*" ColumnSpacing="8">
-                    <ComboBox Grid.Column="1" ItemsSource="{Binding ArtStyleOptions}"
-                              SelectedItem="{Binding SelectedArtStyle}"
-                              MinWidth="160"
-                              ToolTip.Tip="Art style for this portrait. Random picks a new style, outfit, and setting each New image. Hero vs roast is still the Normal checkbox.">
-                      <ComboBox.ItemTemplate>
-                        <DataTemplate x:DataType="ai:PortraitArtStyle">
-                          <TextBlock Text="{Binding Title}" Foreground="{StaticResource TextBrush}" />
-                        </DataTemplate>
-                      </ComboBox.ItemTemplate>
-                    </ComboBox>
-                    <TextBox Grid.Column="2" Text="{Binding PortraitNotes}"
-                             PlaceholderText="A little about this person for the portrait (age, look, vibe)"
-                             TextWrapping="Wrap"
-                             AcceptsReturn="False"
-                             ToolTip.Tip="Used only when generating this team's image. Example: Black woman, late 30s, short hair, glasses." />
-                  </Grid>
-                </StackPanel>
+                </Grid>
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>
@@ -284,4 +274,14 @@
       </Border>
     </StackPanel>
   </ScrollViewer>
+  <Border IsVisible="{Binding HasPortraitPrompt}"
+          Background="#CC0B1220"
+          HorizontalAlignment="Stretch"
+          VerticalAlignment="Stretch"
+          ZIndex="10">
+    <Border Classes="card" Margin="20" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+      <ContentControl Content="{Binding PortraitPrompt}" />
+    </Border>
+  </Border>
+  </Grid>
 </UserControl>

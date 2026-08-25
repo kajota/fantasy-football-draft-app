@@ -15,7 +15,8 @@ public sealed class OpenAiProviderAdapter(
     IDraftQueryService queries,
     IAiUsageService usage) : IAiProviderAdapter
 {
-    public const string DefaultModel = "gpt-4.1";
+    public static string DefaultModel =>
+        AiProviderCatalog.Find(AiProviderCatalog.OpenAi)?.DefaultModel ?? "gpt-5.6-luna";
     public string ProviderKey => AiProviderCatalog.OpenAi;
 
     public async Task<AiConnectionTestResult> TestConnectionAsync(AiProviderConfig config, CancellationToken cancellationToken)

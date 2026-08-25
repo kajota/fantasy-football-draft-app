@@ -13,14 +13,7 @@ public sealed class TeamPortraitGenerator(
 {
     public async Task<TeamPortraitResult> GenerateAsync(TeamPortraitRequest request, CancellationToken cancellationToken = default)
     {
-        var prompt = TeamPortraitPrompt.Build(
-            request.TeamName,
-            request.OwnerName,
-            request.Tone,
-            request.TeamId,
-            request.PortraitNotes,
-            request.Spin,
-            request.ArtStyleKey);
+        var prompt = TeamPortraitPrompt.Resolve(request);
         var provider = string.IsNullOrWhiteSpace(request.ProviderKey)
             ? AiProviderCatalog.Xai
             : request.ProviderKey.Trim();
@@ -61,20 +54,12 @@ public sealed class TeamPortraitGenerator(
         TeamPortraitRequest request,
         CancellationToken cancellationToken)
     {
-        var payload = new Dictionary<string, object?>
-        {
-            ["model"] = "grok-imagine-image-2.0",
-            ["prompt"] = prompt,
-            ["aspect_ratio"] = "1:1",
-            ["resolution"] = "1k",
-            ["quality"] = "medium",
-            ["response_format"] = "b64_json"
-        };
         return await SendAsync(
             "https://api.x.ai/v1/images/generations",
             apiKey,
-            payload,
+            XaiImageBody(prompt),
             request,
+            prompt,
             AiProviderCatalog.Xai,
             "grok-imagine-image-2.0",
             cancellationToken);
@@ -86,27 +71,44 @@ public sealed class TeamPortraitGenerator(
         TeamPortraitRequest request,
         CancellationToken cancellationToken)
     {
-        var payload = new Dictionary<string, object?>
-        {
-            ["model"] = "gpt-image-1",
-            ["prompt"] = prompt,
-            ["size"] = "1024x1024"
-        };
         return await SendAsync(
             "https://api.openai.com/v1/images/generations",
             apiKey,
-            payload,
+            OpenAiImageBody(prompt),
             request,
+            prompt,
             AiProviderCatalog.OpenAi,
             "gpt-image-1",
             cancellationToken);
     }
+
+    public static Dictionary<string, object?> XaiImageBody(string prompt) => new()
+    {
+        ["model"] = "grok-imagine-image-2.0",
+        ["prompt"] = prompt,
+        ["aspect_ratio"] = "1:1",
+        ["resolution"] = "1k",
+        ["quality"] = "medium",
+        ["response_format"] = "b64_json"
+    };
+
+    /// <summary>
+    /// Pin quality to medium. Leaving it off lets OpenAI's auto pick high (~$0.17 vs ~$0.04).
+    /// </summary>
+    public static Dictionary<string, object?> OpenAiImageBody(string prompt) => new()
+    {
+        ["model"] = "gpt-image-1",
+        ["prompt"] = prompt,
+        ["size"] = "1024x1024",
+        ["quality"] = "medium"
+    };
 
     private async Task<TeamPortraitResult> SendAsync(
         string url,
         string apiKey,
         object payload,
         TeamPortraitRequest request,
+        string prompt,
         string provider,
         string model,
         CancellationToken cancellationToken)
@@ -143,7 +145,7 @@ public sealed class TeamPortraitGenerator(
                 };
             }
 
-            await store.SaveAsync(request.TeamId, bytes, cancellationToken);
+            await store.SaveAsync(request.TeamId, bytes, prompt, cancellationToken);
             return new TeamPortraitResult { Succeeded = true, Provider = provider, Model = model };
         }
         catch (Exception ex)

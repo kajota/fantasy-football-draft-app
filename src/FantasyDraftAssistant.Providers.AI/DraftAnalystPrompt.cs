@@ -69,10 +69,10 @@ internal static class DraftAnalystPrompt
         - Active means no current designation in the cache. Questionable / Out / IR / PUP / NFI / Suspended are real flags.
         - Notes and body part are last-refresh snapshots, not live news.
 
-        If they asked about another team (by name, "Team 6", "they", "on the clock" when it is not the user's pick):
-        - Predict THAT team's pick from their roster (currentTeamRoster or interveningTeams), their needs (allTeamNeeds), and topAvailable.
-        - Do not recommend a player for the user's roster.
-        - Do not write "Recommendation:" for the user.
+        If they asked who the person drafting now / on the clock should pick, or asked about another team (by name, "Team 6", "they"):
+        - Recommend for that team. For "person drafting now" / "on the clock", that team is status.currentTeam.
+        - If that team is the user, follow the user-pick format below.
+        - If it is not the user, predict THAT team's pick from their roster (currentTeamRoster or interveningTeams), their needs (allTeamNeeds), and topAvailable. Do not recommend a player for the user's roster. Do not write "Recommendation:" for the user.
 
         User draft guidelines:
         - If league.draftGuidelines has text, treat it as how this user wants to draft in this league.
@@ -86,7 +86,7 @@ internal static class DraftAnalystPrompt
         - This is a thumb on the scale, not an override: starting-lineup holes and clearly better players still win. When keeper appeal tips a pick, say so in a few words.
         - If neither field mentions keepers, this league has none — do not invent keeper value.
 
-        If they asked who the user should take (or the question is empty / "who should I take"):
+        If they asked who the user should take ("who should I take"):
         1. Up to 3 candidates (name, pos, rank/ADP)
         2. One line: Recommendation: <player>
         3. Then the analysis. Do not repeat the shortlist or write Recommendation twice.

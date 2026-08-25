@@ -67,7 +67,7 @@
             <TextBlock DockPanel.Dock="Right" Text="{Binding Status}" Classes="muted" />
             <CheckBox DockPanel.Dock="Left" IsChecked="{Binding IncludeInAsk}"
                       IsEnabled="{Binding Enabled}" Margin="0,0,6,0"
-                      ToolTip.Tip="Include this analyst when you Ask, Auto-ask, or Taunt." />
+                      ToolTip.Tip="Include this analyst when you Ask or Auto-ask." />
             <TextBlock Text="{Binding Heading}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
                        ToolTip.Tip="{Binding Heading}" />
           </DockPanel>
@@ -609,13 +609,18 @@
               <TextBlock Text="Starting slots first, then flex, bench, and IR. Players land in the tightest slot that fits. Empty starters are needs. Empty bench and IR are open, not needs."
                          Classes="muted" TextWrapping="Wrap" />
               <StackPanel Orientation="Horizontal" Spacing="12">
-                <StackPanel Spacing="6" IsVisible="{Binding HasSelectedRosterPortrait}">
+                <StackPanel Spacing="6" IsVisible="{Binding HasRosterBoard}">
                   <Border Width="140" Height="140" CornerRadius="8" ClipToBounds="True"
-                          Background="{StaticResource ElevatedBrush}">
+                          Background="{StaticResource ElevatedBrush}"
+                          IsVisible="{Binding HasSelectedRosterPortrait}">
                     <Image Source="{Binding SelectedRosterPortrait}" Stretch="UniformToFill" />
                   </Border>
+                  <Button Content="Import image" Classes="ghost compact" HorizontalAlignment="Stretch"
+                          Command="{Binding ImportSelectedRosterPortraitCommand}"
+                          ToolTip.Tip="Use your own JPEG, PNG, or WebP for this team. Replaces a generated image." />
                   <Button Content="Export image" Classes="ghost compact" HorizontalAlignment="Stretch"
                           Command="{Binding ExportSelectedRosterPortraitCommand}"
+                          IsVisible="{Binding HasSelectedRosterPortrait}"
                           ToolTip.Tip="Save this team's image to a file you pick." />
                 </StackPanel>
                 <StackPanel Spacing="6" VerticalAlignment="Center">
@@ -658,7 +663,7 @@
               <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                 <TextBox x:Name="AiPromptBoxTab" Text="{Binding AiPrompt}" MinHeight="56"
                          AcceptsReturn="True" TextWrapping="Wrap"
-                         PlaceholderText="Ask a question…" />
+                         PlaceholderText="Who should the person drafting now pick?" />
                 <StackPanel Grid.Column="1" Spacing="8">
                   <Button Content="Fast" Classes="ghost" Command="{Binding UseFastAiCommand}"
                           HorizontalAlignment="Stretch"
@@ -667,14 +672,15 @@
                           HorizontalAlignment="Stretch"
                           ToolTip.Tip="Same snapshot, longer look. Slower and costs more." />
                   <Button Content="Ask" Classes="primary" Command="{Binding AskAiCommand}"
-                          HorizontalAlignment="Stretch" />
+                          HorizontalAlignment="Stretch"
+                          ToolTip.Tip="Empty box asks who the person on the clock should pick, not who you should take." />
                   <ComboBox ItemsSource="{Binding TauntTargets}" SelectedItem="{Binding SelectedTauntTarget}"
                             IsVisible="{Binding HasTauntTarget}"
                             ItemTemplate="{StaticResource TauntTargetTemplate}"
                             ToolTip.Tip="Manager the taunt is aimed at." />
                   <Button Content="Taunt" Classes="ghost" Command="{Binding TauntManagerCommand}"
                           HorizontalAlignment="Stretch" IsVisible="{Binding HasTauntTarget}"
-                          ToolTip.Tip="Each enabled AI writes a roast of that manager. Claude: Melville. ChatGPT: wrestling promo. Grok: vulgar locker room." />
+                          ToolTip.Tip="Grok writes a vulgar locker-room roast of that manager. Needs Grok enabled under AI Providers." />
                 </StackPanel>
               </Grid>
               <CheckBox Content="Auto-ask when I'm on the clock" IsChecked="{Binding AutoAskEnabled}"

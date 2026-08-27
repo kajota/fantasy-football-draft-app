@@ -1,0 +1,24 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:db="using:FantasyDraftAssistant.Data.Database"
+        x:Class="FantasyDraftAssistant.App.Views.DataLockWindow"
+        x:DataType="db:DataLockDialogContent"
+        Title="Fantasy Draft Assistant"
+        Width="520"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource BgBrush}">
+  <Border Padding="24">
+    <StackPanel Spacing="14">
+      <TextBlock Text="FANTASY DRAFT" FontSize="11" LetterSpacing="1.4" Foreground="{StaticResource AccentBrush}" />
+      <TextBlock Text="{Binding Title}" Classes="h1" TextWrapping="Wrap" />
+      <TextBlock Text="{Binding Body}" TextWrapping="Wrap" />
+      <TextBlock Text="{Binding Detail}" Classes="muted" TextWrapping="Wrap" />
+      <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+        <Button Content="Quit" Classes="primary" Click="QuitClick" />
+        <Button Content="Open anyway" Classes="danger" Click="OpenAnywayClick" />
+      </StackPanel>
+    </StackPanel>
+  </Border>
+</Window>

@@ -8,15 +8,7 @@
       <StackPanel Spacing="16">
         <TextBlock Text="Leagues" Classes="h1" />
         <TextBlock Text="Create a league or jump into a mock. Other seats pick from rankings with a personality. Sleeper refreshes when the network is up." Classes="muted" TextWrapping="Wrap" />
-
-        <Border Classes="card">
-          <StackPanel Spacing="12">
-            <TextBlock Text="Quick start" Classes="h2" />
-            <Button Content="Start 12-team Superflex mock draft" Classes="primary" Command="{Binding StartMockDraftCommand}" HorizontalAlignment="Left" />
-            <Button Content="Import league from Yahoo" Classes="ghost" Command="{Binding ImportFromYahooCommand}" HorizontalAlignment="Left" />
-            <TextBlock Text="{Binding StatusMessage}" Classes="muted" TextWrapping="Wrap" />
-          </StackPanel>
-        </Border>
+        <TextBlock Text="{Binding StatusMessage}" Classes="muted" TextWrapping="Wrap" />
 
         <Border Classes="card">
           <StackPanel Spacing="12">

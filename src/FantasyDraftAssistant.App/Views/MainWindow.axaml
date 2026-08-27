@@ -34,9 +34,16 @@
         </StackPanel>
       </DockPanel>
     </Border>
-    <ContentControl Content="{Binding CurrentPage}" Margin="16"
-                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
-                    VerticalAlignment="Stretch" VerticalContentAlignment="Stretch"
-                    ClipToBounds="True" />
+    <DockPanel>
+      <Border DockPanel.Dock="Top" IsVisible="{Binding HasStolenLock}"
+              Background="#3A1820" BorderBrush="#6B2A35" BorderThickness="0,0,0,1"
+              Padding="16,10">
+        <TextBlock Text="{Binding StolenLockMessage}" Classes="danger" TextWrapping="Wrap" />
+      </Border>
+      <ContentControl Content="{Binding CurrentPage}" Margin="16"
+                      HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                      VerticalAlignment="Stretch" VerticalContentAlignment="Stretch"
+                      ClipToBounds="True" />
+    </DockPanel>
   </DockPanel>
 </Window>

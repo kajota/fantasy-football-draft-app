@@ -10,6 +10,7 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddFantasyDraftData(this IServiceCollection services, string? dataRoot = null)
     {
         services.AddSingleton(new AppPaths(AppDataRoot.ResolveFromEnvironment(dataRoot)));
+        services.AddSingleton<DataLockService>();
         services.AddSingleton<SqliteConnectionFactory>();
         services.AddSingleton<MigrationRunner>();
         services.AddSingleton<IDraftChangeNotifier, DraftChangeNotifier>();

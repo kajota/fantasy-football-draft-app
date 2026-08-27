@@ -116,3 +116,45 @@ public sealed class YahooImportResult
     public bool CreatedNew { get; init; }
     public IReadOnlyList<string> ReviewItems { get; init; } = [];
 }
+
+/// Raw text a user copied out of their signed-in Yahoo browser session. Yahoo
+/// requires an approved developer application for API access, so for a private
+/// league this paste is the only way in without one.
+public sealed class YahooPasteInput
+{
+    /// League URL or bare id, e.g. "https://football.fantasysports.yahoo.com/f1/123456" or "123456".
+    public string? LeagueUrlOrId { get; init; }
+
+    /// Ctrl+A / Ctrl+C of .../f1/{id}/settings
+    public string SettingsText { get; init; } = string.Empty;
+
+    /// Ctrl+A / Ctrl+C of .../f1/{id}/teams
+    public string TeamsText { get; init; } = string.Empty;
+}
+
+public sealed class YahooPasteParseResult
+{
+    public YahooLeagueSnapshot? Snapshot { get; init; }
+
+    /// Sections the parser could not find at all. Non-empty is what offers the AI fallback.
+    public IReadOnlyList<string> MissingSections { get; init; } = [];
+
+    /// Softer problems worth showing next to the mapper's own review items.
+    public IReadOnlyList<string> Warnings { get; init; } = [];
+
+    /// True when the AI fallback produced this snapshot rather than the deterministic parser.
+    public bool UsedAi { get; init; }
+
+    public bool Succeeded => Snapshot is not null;
+}
+
+/// One AI provider that is configured well enough to read a paste: enabled on the
+/// AI Providers screen and holding an API key. Surfaced so the user chooses which
+/// one spends a request, rather than the app picking silently.
+public sealed record YahooAiReaderOption
+{
+    public required string ProviderKey { get; init; }
+    public required string Model { get; init; }
+    public required string DisplayName { get; init; }
+    public string? Role { get; init; }
+}

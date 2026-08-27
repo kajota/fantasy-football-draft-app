@@ -94,6 +94,58 @@ public sealed class OpenAiProviderAdapter(
             yield return chunk;
     }
 
+    public async Task<AiTextCompletion> CompleteTextAsync(
+        string? model,
+        string systemPrompt,
+        string userPrompt,
+        int maxOutputTokens,
+        CancellationToken cancellationToken = default)
+    {
+        var key = await credentials.GetSecretAsync("ai", ProviderKey, cancellationToken);
+        if (string.IsNullOrWhiteSpace(key))
+            return new AiTextCompletion { Succeeded = false, Error = "OpenAI API key is missing." };
+
+        var resolved = string.IsNullOrWhiteSpace(model) ? DefaultModel : model;
+        try
+        {
+            using var client = CreateClient(key, timeoutSeconds: 120);
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/chat/completions")
+            {
+                Content = JsonContent(ChatCompletionBody(
+                    resolved,
+                    maxOutputTokens,
+                    messages: new[]
+                    {
+                        new { role = "system", content = systemPrompt },
+                        new { role = "user", content = userPrompt }
+                    },
+                    stream: false,
+                    fastMode: true))
+            };
+
+            using var response = await client.SendAsync(httpRequest, cancellationToken);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return new AiTextCompletion
+                {
+                    Succeeded = false,
+                    Error = FormatOpenAiError((int)response.StatusCode, body),
+                    Model = resolved
+                };
+            }
+
+            var text = ExtractOpenAiDelta(body);
+            return string.IsNullOrWhiteSpace(text)
+                ? new AiTextCompletion { Succeeded = false, Error = "OpenAI returned no text.", Model = resolved }
+                : new AiTextCompletion { Succeeded = true, Text = text, Model = resolved };
+        }
+        catch (Exception ex)
+        {
+            return new AiTextCompletion { Succeeded = false, Error = ex.Message, Model = resolved };
+        }
+    }
+
     internal static async Task<string> ResolveContextAsync(AiAnalysisRequest request, IDraftQueryService queries, CancellationToken cancellationToken)
     {
         if (request.DecisionContextJson is not null)

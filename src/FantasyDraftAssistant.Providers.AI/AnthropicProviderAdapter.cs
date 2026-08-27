@@ -157,6 +157,83 @@ public sealed class AnthropicProviderAdapter(
         }
     }
 
+    public async Task<AiTextCompletion> CompleteTextAsync(
+        string? model,
+        string systemPrompt,
+        string userPrompt,
+        int maxOutputTokens,
+        CancellationToken cancellationToken = default)
+    {
+        var key = await credentials.GetSecretAsync("ai", ProviderKey, cancellationToken);
+        if (string.IsNullOrWhiteSpace(key))
+            return new AiTextCompletion { Succeeded = false, Error = "Anthropic API key is missing." };
+
+        var resolved = string.IsNullOrWhiteSpace(model) ? DefaultModel : model;
+        try
+        {
+            var payload = new Dictionary<string, object?>
+            {
+                ["model"] = resolved,
+                ["max_tokens"] = maxOutputTokens,
+                ["system"] = systemPrompt,
+                ["messages"] = new[] { new { role = "user", content = userPrompt } }
+            };
+
+            using var client = CreateClient(key, timeoutSeconds: 120);
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "https://api.anthropic.com/v1/messages")
+            {
+                Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
+            };
+
+            using var response = await client.SendAsync(httpRequest, cancellationToken);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return new AiTextCompletion
+                {
+                    Succeeded = false,
+                    Error = $"Anthropic request failed ({(int)response.StatusCode}): {Trim(body)}",
+                    Model = resolved
+                };
+            }
+
+            var text = ExtractAnthropicText(body);
+            return string.IsNullOrWhiteSpace(text)
+                ? new AiTextCompletion { Succeeded = false, Error = "Anthropic returned no text.", Model = resolved }
+                : new AiTextCompletion { Succeeded = true, Text = text, Model = resolved };
+        }
+        catch (Exception ex)
+        {
+            return new AiTextCompletion { Succeeded = false, Error = ex.Message, Model = resolved };
+        }
+    }
+
+    /// Concatenates the text blocks of a non-streaming /v1/messages response.
+    public static string? ExtractAnthropicText(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.Array)
+                return null;
+
+            var builder = new StringBuilder();
+            foreach (var block in content.EnumerateArray())
+            {
+                if (block.TryGetProperty("type", out var type) && type.GetString() != "text")
+                    continue;
+                if (block.TryGetProperty("text", out var text) && text.ValueKind == JsonValueKind.String)
+                    builder.Append(text.GetString());
+            }
+
+            return builder.Length == 0 ? null : builder.ToString();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     public static Dictionary<string, object?> MessagesBody(string model, bool fastMode, string userContent)
     {
         var body = new Dictionary<string, object?>

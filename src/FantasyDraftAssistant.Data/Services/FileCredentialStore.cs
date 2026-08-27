@@ -181,7 +181,12 @@ public sealed class LinuxSecretToolCredentialStore : ICredentialStore
     {
         try
         {
-            var psi = new System.Diagnostics.ProcessStartInfo("secret-tool", "--version")
+            // "secret-tool --version" is not a supported flag: it prints usage and
+            // exits 2, so probing with it reported "no keyring" on every machine and
+            // quietly sent all credentials to the machine-bound file store instead.
+            // "search" exits 0 whether or not it matches, and 1 when no Secret
+            // Service is reachable, which is the question actually being asked.
+            var psi = new System.Diagnostics.ProcessStartInfo("secret-tool", "search app fantasy-draft-assistant")
             {
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,

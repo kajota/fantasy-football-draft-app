@@ -7,6 +7,9 @@
     <RootNamespace>FantasyDraftAssistant.Core.Tests</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <Content Include="Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\..\src\FantasyDraftAssistant.Core\FantasyDraftAssistant.Core.csproj" />
   </ItemGroup>
   <ItemGroup>

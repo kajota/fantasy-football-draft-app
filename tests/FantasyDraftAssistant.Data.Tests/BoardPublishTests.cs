@@ -23,7 +23,9 @@ public class BoardPublishTests : IDisposable
     {
         _root = Path.Combine(Path.GetTempPath(), "fda-tests", Guid.NewGuid().ToString("N"));
         var collection = new ServiceCollection();
-        collection.AddFantasyDraftData(_root);
+        collection.AddFantasyDraftData(_root, credentialRoot: _root);
+        // Keep the test off the machine's real keyring and real credential file.
+        collection.AddSingleton<ICredentialStore>(sp => sp.GetRequiredService<FileCredentialStore>());
         collection.AddSingleton<IFantasyDataProvider, SeedFantasyDataProvider>();
         collection.AddSingleton<IBoardPublisher>(sp => new HttpsBoardPublisher(
             new HttpClient(_http) { Timeout = TimeSpan.FromSeconds(5) },

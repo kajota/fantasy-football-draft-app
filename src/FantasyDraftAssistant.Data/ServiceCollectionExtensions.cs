@@ -7,9 +7,12 @@ namespace FantasyDraftAssistant.Data;
 
 public static class ServiceCollectionExtensions
 {
-    public static IServiceCollection AddFantasyDraftData(this IServiceCollection services, string? dataRoot = null)
+    public static IServiceCollection AddFantasyDraftData(
+        this IServiceCollection services,
+        string? dataRoot = null,
+        string? credentialRoot = null)
     {
-        services.AddSingleton(new AppPaths(AppDataRoot.ResolveFromEnvironment(dataRoot)));
+        services.AddSingleton(new AppPaths(AppDataRoot.ResolveFromEnvironment(dataRoot), credentialRoot));
         services.AddSingleton<SqliteConnectionFactory>();
         services.AddSingleton<MigrationRunner>();
         services.AddSingleton<IDraftChangeNotifier, DraftChangeNotifier>();

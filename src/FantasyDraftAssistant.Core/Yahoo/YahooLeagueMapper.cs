@@ -41,6 +41,86 @@ public static class YahooLeagueMapper
             [56] = ScoringCategory.PointsAllowed35Plus
         };
 
+    /// Yahoo's own settings-page row labels, normalised by
+    /// <see cref="YahooPasteParser.Normalize"/>. The API path resolves scoring by
+    /// numeric stat_id; a pasted settings page has no ids, only these labels.
+    ///
+    /// Order matters where Yahoo reuses a word across sections: the settings page
+    /// lists offense before defense, and the paste parser keeps the first match
+    /// per category, so "interceptions" (thrown) resolves before the D/ST row.
+    public static readonly IReadOnlyDictionary<string, ScoringCategory> StatNames =
+        new Dictionary<string, ScoringCategory>(StringComparer.Ordinal)
+        {
+            // Offense
+            ["passing yards"] = ScoringCategory.PassingYard,
+            ["pass yards"] = ScoringCategory.PassingYard,
+            ["passing touchdowns"] = ScoringCategory.PassingTouchdown,
+            ["passing touchdown"] = ScoringCategory.PassingTouchdown,
+            ["pass td"] = ScoringCategory.PassingTouchdown,
+            ["interceptions"] = ScoringCategory.Interception,
+            ["interceptions thrown"] = ScoringCategory.Interception,
+            ["rushing yards"] = ScoringCategory.RushingYard,
+            ["rush yards"] = ScoringCategory.RushingYard,
+            ["rushing touchdowns"] = ScoringCategory.RushingTouchdown,
+            ["rushing touchdown"] = ScoringCategory.RushingTouchdown,
+            ["rush td"] = ScoringCategory.RushingTouchdown,
+            ["reception"] = ScoringCategory.Reception,
+            ["receptions"] = ScoringCategory.Reception,
+            ["points per reception"] = ScoringCategory.Reception,
+            ["receiving yards"] = ScoringCategory.ReceivingYard,
+            ["rec yards"] = ScoringCategory.ReceivingYard,
+            ["receiving touchdowns"] = ScoringCategory.ReceivingTouchdown,
+            ["receiving touchdown"] = ScoringCategory.ReceivingTouchdown,
+            ["rec td"] = ScoringCategory.ReceivingTouchdown,
+            ["2-point conversions"] = ScoringCategory.TwoPointConversion,
+            ["2 point conversions"] = ScoringCategory.TwoPointConversion,
+            ["two point conversions"] = ScoringCategory.TwoPointConversion,
+            ["fumbles lost"] = ScoringCategory.FumbleLost,
+            ["fumble lost"] = ScoringCategory.FumbleLost,
+
+            // Kicker
+            ["field goals 0-19 yards"] = ScoringCategory.FieldGoal0To19,
+            ["field goals 0-19"] = ScoringCategory.FieldGoal0To19,
+            ["field goals 20-29 yards"] = ScoringCategory.FieldGoal20To29,
+            ["field goals 20-29"] = ScoringCategory.FieldGoal20To29,
+            ["field goals 30-39 yards"] = ScoringCategory.FieldGoal30To39,
+            ["field goals 30-39"] = ScoringCategory.FieldGoal30To39,
+            ["field goals 40-49 yards"] = ScoringCategory.FieldGoal40To49,
+            ["field goals 40-49"] = ScoringCategory.FieldGoal40To49,
+            ["field goals 50+ yards"] = ScoringCategory.FieldGoal50Plus,
+            ["field goals 50+"] = ScoringCategory.FieldGoal50Plus,
+            ["point after attempt made"] = ScoringCategory.ExtraPoint,
+            ["point after attempt"] = ScoringCategory.ExtraPoint,
+            ["extra point made"] = ScoringCategory.ExtraPoint,
+            ["extra point returned"] = ScoringCategory.ExtraPointReturned,
+
+            // Defense / special teams
+            ["sack"] = ScoringCategory.Sack,
+            ["sacks"] = ScoringCategory.Sack,
+            ["interception"] = ScoringCategory.DefensiveInterception,
+            ["defensive interception"] = ScoringCategory.DefensiveInterception,
+            ["fumble recovery"] = ScoringCategory.FumbleRecovery,
+            ["fumble recoveries"] = ScoringCategory.FumbleRecovery,
+            ["touchdown"] = ScoringCategory.DefensiveTouchdown,
+            ["defensive touchdown"] = ScoringCategory.DefensiveTouchdown,
+            ["safety"] = ScoringCategory.Safety,
+            ["safeties"] = ScoringCategory.Safety,
+            ["points allowed 0 points"] = ScoringCategory.PointsAllowed0,
+            ["points allowed 0"] = ScoringCategory.PointsAllowed0,
+            ["points allowed 1-6 points"] = ScoringCategory.PointsAllowed1To6,
+            ["points allowed 1-6"] = ScoringCategory.PointsAllowed1To6,
+            ["points allowed 7-13 points"] = ScoringCategory.PointsAllowed7To13,
+            ["points allowed 7-13"] = ScoringCategory.PointsAllowed7To13,
+            ["points allowed 14-20 points"] = ScoringCategory.PointsAllowed14To20,
+            ["points allowed 14-20"] = ScoringCategory.PointsAllowed14To20,
+            ["points allowed 21-27 points"] = ScoringCategory.PointsAllowed21To27,
+            ["points allowed 21-27"] = ScoringCategory.PointsAllowed21To27,
+            ["points allowed 28-34 points"] = ScoringCategory.PointsAllowed28To34,
+            ["points allowed 28-34"] = ScoringCategory.PointsAllowed28To34,
+            ["points allowed 35+ points"] = ScoringCategory.PointsAllowed35Plus,
+            ["points allowed 35+"] = ScoringCategory.PointsAllowed35Plus
+        };
+
     public static YahooMappedLeague Map(YahooLeagueSnapshot snapshot, YahooImportOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
@@ -109,6 +189,14 @@ public static class YahooLeagueMapper
             if (StatIds.TryGetValue(stat.StatId, out var category))
             {
                 scoring[category] = stat.Value;
+                continue;
+            }
+
+            // Pasted settings pages carry no stat_id, only Yahoo's row label.
+            if (stat.StatId <= 0
+                && StatNames.TryGetValue(YahooPasteParser.Normalize(stat.DisplayName), out var byName))
+            {
+                scoring[byName] = stat.Value;
                 continue;
             }
 

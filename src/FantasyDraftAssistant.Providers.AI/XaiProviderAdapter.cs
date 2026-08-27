@@ -170,6 +170,94 @@ public sealed class XaiProviderAdapter(
         }
     }
 
+    public async Task<AiTextCompletion> CompleteTextAsync(
+        string? model,
+        string systemPrompt,
+        string userPrompt,
+        int maxOutputTokens,
+        CancellationToken cancellationToken = default)
+    {
+        var key = await credentials.GetSecretAsync("ai", Key, cancellationToken);
+        if (string.IsNullOrWhiteSpace(key))
+            return new AiTextCompletion { Succeeded = false, Error = "xAI API key is missing." };
+
+        var resolved = string.IsNullOrWhiteSpace(model) ? DefaultModel : model;
+        try
+        {
+            var payload = new Dictionary<string, object?>
+            {
+                ["model"] = resolved,
+                ["instructions"] = systemPrompt,
+                ["input"] = userPrompt,
+                ["reasoning"] = new Dictionary<string, object?> { ["effort"] = "low" },
+                ["max_output_tokens"] = maxOutputTokens
+            };
+
+            using var client = CreateClient(key, timeoutSeconds: 120);
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "responses")
+            {
+                Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
+            };
+
+            using var response = await client.SendAsync(httpRequest, cancellationToken);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return new AiTextCompletion
+                {
+                    Succeeded = false,
+                    Error = $"xAI request failed ({(int)response.StatusCode}): {Trim(body)}",
+                    Model = resolved
+                };
+            }
+
+            var text = ExtractResponsesText(body);
+            return string.IsNullOrWhiteSpace(text)
+                ? new AiTextCompletion { Succeeded = false, Error = "xAI returned no text.", Model = resolved }
+                : new AiTextCompletion { Succeeded = true, Text = text, Model = resolved };
+        }
+        catch (Exception ex)
+        {
+            return new AiTextCompletion { Succeeded = false, Error = ex.Message, Model = resolved };
+        }
+    }
+
+    /// Concatenates visible output_text blocks of a non-streaming Responses payload.
+    public static string? ExtractResponsesText(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("output_text", out var direct) && direct.ValueKind == JsonValueKind.String)
+                return direct.GetString();
+            if (!root.TryGetProperty("output", out var output) || output.ValueKind != JsonValueKind.Array)
+                return null;
+
+            var builder = new StringBuilder();
+            foreach (var item in output.EnumerateArray())
+            {
+                if (item.TryGetProperty("type", out var itemType) && itemType.GetString() != "message")
+                    continue;
+                if (!item.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.Array)
+                    continue;
+                foreach (var part in content.EnumerateArray())
+                {
+                    if (part.TryGetProperty("type", out var partType) && partType.GetString() is not ("output_text" or "text"))
+                        continue;
+                    if (part.TryGetProperty("text", out var text) && text.ValueKind == JsonValueKind.String)
+                        builder.Append(text.GetString());
+                }
+            }
+
+            return builder.Length == 0 ? null : builder.ToString();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     private static HttpClient CreateClient(string apiKey, int timeoutSeconds = 60)
     {
         var client = new HttpClient { BaseAddress = new Uri(BaseUrl), Timeout = TimeSpan.FromSeconds(timeoutSeconds) };

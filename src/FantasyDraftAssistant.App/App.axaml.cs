@@ -106,6 +106,8 @@ public partial class App : Application
         services.AddSingleton<IYahooAuthService>(sp => sp.GetRequiredService<YahooAuthService>());
         services.AddSingleton(sp => new YahooFantasyClient(sp.GetRequiredService<IHttpClientFactory>().CreateClient("yahoo-fantasy")));
         services.AddSingleton<IYahooLeagueImporter, YahooLeagueImporter>();
+        services.AddSingleton<YahooPasteAiReader>();
+        services.AddSingleton<IYahooPasteImporter, YahooPasteImporter>();
         services.AddSingleton<SessionState>();
         services.AddSingleton<Navigator>();
         services.AddSingleton<ShellViewModel>();

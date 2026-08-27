@@ -92,6 +92,62 @@ public class YahooImportPersistenceTests : IDisposable
         Assert.Equal(2, after.Single(t => t.Name == "Blue Steel").DraftPosition);
     }
 
+    [Fact]
+    public async Task A_pasted_league_persists_and_re_importing_it_updates_the_same_row()
+    {
+        var leagues = _services.GetRequiredService<ILeagueService>();
+        var parsed = YahooPasteParser.Parse(PasteInput());
+        Assert.True(parsed.Succeeded, string.Join("; ", parsed.MissingSections));
+
+        var created = await leagues.UpsertImportedLeagueAsync(YahooLeagueMapper.Map(parsed.Snapshot!).Request);
+
+        // The paste path builds the same key shape the API returns, so an API
+        // import later lands on this row rather than creating a second league.
+        Assert.Equal(FantasyPlatform.Yahoo, created.Platform);
+        Assert.Equal("nfl.l.777001", created.ExternalLeagueId);
+        Assert.Equal("Pasted League", created.Name);
+
+        var teams = await leagues.GetTeamsAsync(created.LeagueId);
+        Assert.Equal(2, teams.Count);
+        Assert.Equal("kelly", teams.Single(t => t.Name == "Thunder Ducks").OwnerName);
+        Assert.Equal("nfl.l.777001.t.1", teams.Single(t => t.Name == "Thunder Ducks").ExternalTeamId);
+
+        var roster = await leagues.GetRosterSlotsAsync(created.LeagueId);
+        Assert.Equal(6, roster.Single(s => s.SlotCode == "BN").Count);
+        Assert.Equal(2, roster.Single(s => s.SlotCode == "WR").Count);
+
+        var scoring = await leagues.GetScoringRulesAsync(created.LeagueId);
+        Assert.Equal(0.04m, scoring.Single(r => r.Category == ScoringCategory.PassingYard).Points);
+        Assert.Equal(0.5m, scoring.Single(r => r.Category == ScoringCategory.Reception).Points);
+
+        var reimported = await leagues.UpsertImportedLeagueAsync(
+            YahooLeagueMapper.Map(YahooPasteParser.Parse(PasteInput("Renamed League")).Snapshot!).Request);
+
+        Assert.Equal(created.LeagueId, reimported.LeagueId);
+        Assert.Equal("Renamed League", reimported.Name);
+        Assert.Equal(2, (await leagues.GetTeamsAsync(reimported.LeagueId)).Count);
+    }
+
+    private static YahooPasteInput PasteInput(string leagueName = "Pasted League") => new()
+    {
+        LeagueUrlOrId = "https://football.fantasysports.yahoo.com/f1/777001",
+        SettingsText =
+            $"League Name: \t{leagueName}\n" +
+            "Season: \t2026\n" +
+            "Draft Type: \tLive Standard Draft\n" +
+            "Max Teams: \t2\n" +
+            "Roster Positions: \tQB, WR, WR, RB, RB, TE, W/R/T, K, DEF, BN, BN, BN, BN, BN, BN\n" +
+            "Offense \tLeague Value \tYahoo Default Value\n" +
+            "Passing Yards \t25 yards per point \t\n" +
+            "Passing Touchdowns \t4 \t\n" +
+            "Reception \t0.5 \t\n" +
+            "Receiving Yards \t10 yards per point \t\n",
+        TeamsText =
+            "Team Name \tManager \tEmail \tMoves\n" +
+            "logo Thunder Ducks\tkelly\tone@example.com\t0\n" +
+            "logo Gridiron Goons\tdave\ttwo@example.com\t0\n"
+    };
+
     private static YahooLeagueSnapshot Snapshot(string name, string userTeam) =>
         new()
         {

@@ -181,6 +181,15 @@ public sealed class AiConversationExchange
     public int StateVersion { get; init; }
 }
 
+/// Result of a one-shot, non-streaming AI completion (see IAiProviderAdapter.CompleteTextAsync).
+public sealed class AiTextCompletion
+{
+    public bool Succeeded { get; init; }
+    public string Text { get; init; } = string.Empty;
+    public string? Error { get; init; }
+    public string? Model { get; init; }
+}
+
 public sealed class AiProviderConfig
 {
     public required string ProviderKey { get; init; }

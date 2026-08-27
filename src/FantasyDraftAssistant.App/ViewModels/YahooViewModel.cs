@@ -15,9 +15,16 @@ public sealed class YahooLeagueRow
     public required string ActionLabel { get; init; }
 }
 
+public sealed record YahooPasteTeamRow(int Seat, string Name, string Owner);
+
+public sealed record YahooPasteSlotRow(string Slot, int Count);
+
+public sealed record YahooPasteScoringRow(string Label, string Points);
+
 public partial class YahooViewModel(
     IYahooAuthService auth,
     IYahooLeagueImporter importer,
+    IYahooPasteImporter pasteImporter,
     ICredentialStore credentials,
     SessionState session,
     Navigator navigator) : PageViewModel
@@ -39,11 +46,203 @@ public partial class YahooViewModel(
     [ObservableProperty] private bool _hasReview;
     [ObservableProperty] private string _attribution = YahooAuthDefaults.AttributionText;
 
+    // --- Paste import (no API key) ---------------------------------------
+
+    private YahooLeagueSnapshot? _pasteSnapshot;
+
+    public ObservableCollection<YahooPasteTeamRow> PasteTeams { get; } = [];
+    public ObservableCollection<YahooPasteSlotRow> PasteRoster { get; } = [];
+    public ObservableCollection<YahooPasteScoringRow> PasteScoring { get; } = [];
+    public ObservableCollection<string> PasteWarnings { get; } = [];
+    public ObservableCollection<string> PasteProblems { get; } = [];
+    public ObservableCollection<YahooAiReaderOption> AiReaders { get; } = [];
+
+    [ObservableProperty] private string _pasteLeagueUrl = "";
+    [ObservableProperty] private string _pasteSettingsText = "";
+    [ObservableProperty] private string _pasteTeamsText = "";
+    [ObservableProperty] private string _pasteSummary = "";
+    [ObservableProperty] private bool _hasPastePreview;
+    [ObservableProperty] private bool _hasPasteWarnings;
+    [ObservableProperty] private bool _hasPasteProblems;
+    [ObservableProperty] private bool _canUseAi;
+    [ObservableProperty] private YahooAiReaderOption? _selectedAiReader;
+    [ObservableProperty] private bool _isReadingPaste;
+
     public override async Task OnNavigatedToAsync()
     {
         Title = "Yahoo";
         StoreDescription = credentials.Description;
+        await RefreshAiReadersAsync();
         await RefreshStatusAsync();
+    }
+
+    // --- Paste import commands -------------------------------------------
+
+    private async Task RefreshAiReadersAsync()
+    {
+        var readers = await pasteImporter.ListAiReadersAsync();
+        AiReaders.Clear();
+        foreach (var reader in readers)
+            AiReaders.Add(reader);
+
+        // First entry is the Fast Advisor when one is set up — the role meant for
+        // cheap, quick calls. The user can still pick a different one.
+        SelectedAiReader = AiReaders.FirstOrDefault();
+        CanUseAi = AiReaders.Count > 0;
+    }
+
+    [RelayCommand]
+    private async Task ParsePasteAsync()
+    {
+        await ApplyParseAsync(() => Task.FromResult(pasteImporter.Parse(BuildPasteInput())));
+    }
+
+    [RelayCommand]
+    private async Task ReadPasteWithAiAsync()
+    {
+        if (SelectedAiReader is not { } reader)
+        {
+            StatusMessage = "Enable a provider and save its API key on AI Providers first.";
+            return;
+        }
+
+        StatusMessage = $"Asking {reader.DisplayName} ({reader.Model}) to read the paste…";
+        await ApplyParseAsync(() => pasteImporter.ParseWithAiAsync(BuildPasteInput(), reader.ProviderKey));
+    }
+
+    private async Task ApplyParseAsync(Func<Task<YahooPasteParseResult>> parse)
+    {
+        if (string.IsNullOrWhiteSpace(PasteSettingsText) && string.IsNullOrWhiteSpace(PasteTeamsText))
+        {
+            StatusMessage = "Paste the Settings page and the Teams page first.";
+            return;
+        }
+
+        IsReadingPaste = true;
+        try
+        {
+            var result = await parse();
+
+            PasteWarnings.Clear();
+            foreach (var warning in result.Warnings)
+                PasteWarnings.Add(warning);
+            HasPasteWarnings = PasteWarnings.Count > 0;
+
+            PasteProblems.Clear();
+            foreach (var missing in result.MissingSections)
+                PasteProblems.Add(missing);
+            HasPasteProblems = PasteProblems.Count > 0;
+
+            if (result.Snapshot is null)
+            {
+                ClearPastePreview();
+                StatusMessage = result.UsedAi
+                    ? "The AI could not read this paste. Fill the league in by hand on League Setup."
+                    : "Could not read part of the paste. Try \"Let the AI read it\", or fill the league in by hand on League Setup.";
+                return;
+            }
+
+            ShowPastePreview(result.Snapshot);
+            StatusMessage = result.UsedAi
+                ? $"Read by {SelectedAiReader?.DisplayName ?? "the AI"}. Check the preview carefully, then import."
+                : "Parsed the paste. Check the preview, then import.";
+        }
+        catch (Exception ex)
+        {
+            ClearPastePreview();
+            StatusMessage = ex.Message;
+        }
+        finally
+        {
+            IsReadingPaste = false;
+        }
+    }
+
+    private void ShowPastePreview(YahooLeagueSnapshot snapshot)
+    {
+        // Preview what will actually be saved, i.e. after canonicalisation.
+        var request = pasteImporter.Preview(snapshot).Mapped.Request;
+        _pasteSnapshot = snapshot;
+
+        PasteTeams.Clear();
+        foreach (var team in request.Teams)
+            PasteTeams.Add(new YahooPasteTeamRow(team.SuggestedDraftPosition, team.Name, team.OwnerName ?? "—"));
+
+        PasteRoster.Clear();
+        foreach (var slot in request.Roster)
+            PasteRoster.Add(new YahooPasteSlotRow(slot.SlotCode, slot.Count));
+
+        PasteScoring.Clear();
+        foreach (var rule in request.Scoring.OrderBy(r => r.Category.ToString(), StringComparer.Ordinal))
+            PasteScoring.Add(new YahooPasteScoringRow(Humanize(rule.Category.ToString()), rule.Points.ToString("0.####")));
+
+        PasteSummary = $"{request.Name} · {request.Season} · {request.Teams.Count} teams · {request.RoundCount} rounds · {request.DraftType}";
+        HasPastePreview = true;
+    }
+
+    private void ClearPastePreview()
+    {
+        _pasteSnapshot = null;
+        PasteTeams.Clear();
+        PasteRoster.Clear();
+        PasteScoring.Clear();
+        PasteSummary = "";
+        HasPastePreview = false;
+    }
+
+    [RelayCommand]
+    private async Task ImportPasteAsync()
+    {
+        if (_pasteSnapshot is null)
+        {
+            StatusMessage = "Parse the paste first.";
+            return;
+        }
+
+        try
+        {
+            StatusMessage = "Importing…";
+            var result = await pasteImporter.ImportAsync(_pasteSnapshot, new YahooImportOptions
+            {
+                ReplaceDraftOrder = ReplaceDraftOrder
+            });
+            await AfterImportAsync(result);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = ex.Message;
+        }
+    }
+
+    private YahooPasteInput BuildPasteInput() => new()
+    {
+        LeagueUrlOrId = string.IsNullOrWhiteSpace(PasteLeagueUrl) ? null : PasteLeagueUrl.Trim(),
+        SettingsText = PasteSettingsText,
+        TeamsText = PasteTeamsText
+    };
+
+    /// "PointsAllowed35Plus" -> "Points allowed 35 plus", "FieldGoal0To19" -> "Field goal 0 to 19".
+    private static string Humanize(string category)
+    {
+        var builder = new System.Text.StringBuilder(category.Length + 8);
+        for (var i = 0; i < category.Length; i++)
+        {
+            var ch = category[i];
+            if (i == 0)
+            {
+                builder.Append(ch);
+                continue;
+            }
+
+            if (char.IsUpper(ch))
+                builder.Append(' ').Append(char.ToLowerInvariant(ch));
+            else if (char.IsDigit(ch) && !char.IsDigit(category[i - 1]))
+                builder.Append(' ').Append(ch);
+            else
+                builder.Append(ch);
+        }
+
+        return builder.ToString();
     }
 
     [RelayCommand]
@@ -177,29 +376,34 @@ public partial class YahooViewModel(
             {
                 ReplaceDraftOrder = ReplaceDraftOrder
             });
-            if (!result.Succeeded || result.LeagueId is not { } leagueId)
-            {
-                StatusMessage = result.Error ?? "Yahoo import failed.";
-                return;
-            }
-
-            session.LeagueId = leagueId;
-            session.LeagueName = result.LeagueName;
-            SessionDraft.BindDraft(session, null);
-
-            ReviewItems.Clear();
-            foreach (var item in result.ReviewItems)
-                ReviewItems.Add(item);
-            HasReview = ReviewItems.Count > 0;
-            StatusMessage = result.CreatedNew
-                ? $"Imported \"{result.LeagueName}\". Review the flagged settings, then continue on League Setup."
-                : $"Updated \"{result.LeagueName}\" from Yahoo. Draft order and keepers were left alone unless you checked replace.";
-            await navigator.GoSetupAsync();
+            await AfterImportAsync(result);
         }
         catch (Exception ex)
         {
             StatusMessage = ex.Message;
         }
+    }
+
+    private async Task AfterImportAsync(YahooImportResult result)
+    {
+        if (!result.Succeeded || result.LeagueId is not { } leagueId)
+        {
+            StatusMessage = result.Error ?? "Yahoo import failed.";
+            return;
+        }
+
+        session.LeagueId = leagueId;
+        session.LeagueName = result.LeagueName;
+        SessionDraft.BindDraft(session, null);
+
+        ReviewItems.Clear();
+        foreach (var item in result.ReviewItems)
+            ReviewItems.Add(item);
+        HasReview = ReviewItems.Count > 0;
+        StatusMessage = result.CreatedNew
+            ? $"Imported \"{result.LeagueName}\". Review the flagged settings, then continue on League Setup."
+            : $"Updated \"{result.LeagueName}\" from Yahoo. Draft order and keepers were left alone unless you checked replace.";
+        await navigator.GoSetupAsync();
     }
 
     private async Task RefreshStatusAsync()

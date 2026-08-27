@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:FantasyDraftAssistant.App.ViewModels"
+             xmlns:yahoo="using:FantasyDraftAssistant.Core.Yahoo"
              x:Class="FantasyDraftAssistant.App.Views.YahooView"
              x:DataType="vm:YahooViewModel">
   <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
@@ -10,9 +11,163 @@
                  Classes="muted" TextWrapping="Wrap" />
       <TextBlock Text="{Binding StatusMessage}" Classes="muted" TextWrapping="Wrap" />
 
+      <TabControl>
+        <TabItem Header="Paste from Yahoo">
+          <StackPanel Spacing="16" Margin="0,12,0,0">
+
+            <Border Classes="card">
+              <StackPanel Spacing="10">
+                <TextBlock Text="No API key needed" Classes="h2" />
+                <TextBlock TextWrapping="Wrap" Classes="muted"
+                           Text="Yahoo only grants API access to an application a human at Yahoo has approved, and a private league is not readable without it. Copying the two pages out of your signed-in browser gets the same league settings in." />
+                <TextBlock Text="1.  Open your league's Settings page in the browser, press Ctrl+A then Ctrl+C, and paste it below." TextWrapping="Wrap" />
+                <TextBlock Text="      https://football.fantasysports.yahoo.com/f1/&lt;league id&gt;/settings" Classes="muted" TextWrapping="Wrap" />
+                <TextBlock Text="2.  Do the same on the Managers page — in the league nav, League &#x2192; Managers." TextWrapping="Wrap" />
+                <TextBlock Text="      Any page listing each team next to its manager works. Standings will do if Managers does not show owners." Classes="muted" TextWrapping="Wrap" />
+                <TextBlock Text="3.  Parse, check the preview, then import." TextWrapping="Wrap" />
+              </StackPanel>
+            </Border>
+
+            <Border Classes="card">
+              <StackPanel Spacing="12">
+                <StackPanel Spacing="4">
+                  <TextBlock Text="League URL or ID" FontWeight="SemiBold" />
+                  <TextBox Text="{Binding PasteLeagueUrl}"
+                           PlaceholderText="https://football.fantasysports.yahoo.com/f1/123456"
+                           ToolTip.Tip="Optional if the Settings paste already contains the League ID# row. This becomes the league's Yahoo key, so an API import later updates the same league instead of duplicating it." />
+                </StackPanel>
+                <StackPanel Spacing="4">
+                  <TextBlock Text="Settings page" FontWeight="SemiBold" />
+                  <TextBox Text="{Binding PasteSettingsText}" AcceptsReturn="True" TextWrapping="NoWrap"
+                           Height="180" FontFamily="monospace"
+                           VerticalContentAlignment="Top"
+                           ScrollViewer.VerticalScrollBarVisibility="Auto"
+                           ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                           PlaceholderText="Paste the whole Settings page here" />
+                </StackPanel>
+                <StackPanel Spacing="4">
+                  <TextBlock Text="Managers page" FontWeight="SemiBold" />
+                  <TextBox Text="{Binding PasteTeamsText}" AcceptsReturn="True" TextWrapping="NoWrap"
+                           Height="140" FontFamily="monospace"
+                           VerticalContentAlignment="Top"
+                           ScrollViewer.VerticalScrollBarVisibility="Auto"
+                           ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                           PlaceholderText="Paste the whole Managers page here" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <Button Content="Parse and preview" Classes="primary"
+                          Command="{Binding ParsePasteCommand}"
+                          IsEnabled="{Binding !IsReadingPaste}" />
+                  <Button Content="Let the AI read it" Classes="ghost"
+                          Command="{Binding ReadPasteWithAiCommand}"
+                          IsEnabled="{Binding CanUseAi}"
+                          ToolTip.Tip="Sends the pasted text to the provider chosen alongside and asks it for the league settings as JSON. Costs one request to that provider." />
+                  <ComboBox ItemsSource="{Binding AiReaders}"
+                            SelectedItem="{Binding SelectedAiReader}"
+                            IsVisible="{Binding CanUseAi}"
+                            MinWidth="240" VerticalAlignment="Center"
+                            ToolTip.Tip="Which provider reads the paste. Defaults to your Fast Advisor.">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate x:DataType="yahoo:YahooAiReaderOption">
+                        <TextBlock TextWrapping="NoWrap">
+                          <Run Text="{Binding DisplayName}" />
+                          <Run Text="{Binding Model}" Foreground="{StaticResource MutedBrush}" />
+                        </TextBlock>
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                </StackPanel>
+                <TextBlock IsVisible="{Binding !CanUseAi}" Classes="muted" TextWrapping="Wrap"
+                           Text="The AI fallback needs a provider that is enabled and has an API key. Set one up on AI Providers." />
+              </StackPanel>
+            </Border>
+
+            <Border Classes="card" IsVisible="{Binding HasPasteProblems}">
+              <StackPanel Spacing="8">
+                <TextBlock Text="Could not read" Classes="h2" />
+                <ItemsControl ItemsSource="{Binding PasteProblems}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,2" />
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </Border>
+
+            <Border Classes="card" IsVisible="{Binding HasPasteWarnings}">
+              <StackPanel Spacing="8">
+                <TextBlock Text="Check these" Classes="h2" />
+                <ItemsControl ItemsSource="{Binding PasteWarnings}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <TextBlock Text="{Binding}" Classes="muted" TextWrapping="Wrap" Margin="0,2" />
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </Border>
+
+            <Border Classes="card" IsVisible="{Binding HasPastePreview}">
+              <StackPanel Spacing="12">
+                <TextBlock Text="Preview" Classes="h2" />
+                <TextBlock Text="{Binding PasteSummary}" FontWeight="SemiBold" TextWrapping="Wrap" />
+
+                <TextBlock Text="Teams and managers" FontWeight="SemiBold" Margin="0,8,0,0" />
+                <ItemsControl ItemsSource="{Binding PasteTeams}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:YahooPasteTeamRow">
+                      <Grid ColumnDefinitions="40,*,*" Margin="0,2">
+                        <TextBlock Grid.Column="0" Text="{Binding Seat}" Classes="muted" />
+                        <TextBlock Grid.Column="1" Text="{Binding Name}" TextWrapping="Wrap" />
+                        <TextBlock Grid.Column="2" Text="{Binding Owner}" Classes="muted" TextWrapping="Wrap" />
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <TextBlock Text="Roster slots" FontWeight="SemiBold" Margin="0,8,0,0" />
+                <ItemsControl ItemsSource="{Binding PasteRoster}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:YahooPasteSlotRow">
+                      <Grid ColumnDefinitions="120,*" Margin="0,2">
+                        <TextBlock Grid.Column="0" Text="{Binding Slot}" />
+                        <TextBlock Grid.Column="1" Text="{Binding Count}" Classes="muted" />
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <TextBlock Text="Scoring" FontWeight="SemiBold" Margin="0,8,0,0" />
+                <ItemsControl ItemsSource="{Binding PasteScoring}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:YahooPasteScoringRow">
+                      <Grid ColumnDefinitions="260,*" Margin="0,2">
+                        <TextBlock Grid.Column="0" Text="{Binding Label}" TextWrapping="Wrap" />
+                        <TextBlock Grid.Column="1" Text="{Binding Points}" Classes="muted" />
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <CheckBox Content="Replace first-round seats with the order the teams were pasted in"
+                          IsChecked="{Binding ReplaceDraftOrder}" Margin="0,8,0,0" />
+                <Button Content="Import this league" Classes="primary" HorizontalAlignment="Left"
+                        Command="{Binding ImportPasteCommand}" />
+              </StackPanel>
+            </Border>
+
+          </StackPanel>
+        </TabItem>
+
+        <TabItem Header="Connect with API">
+          <StackPanel Spacing="16" Margin="0,12,0,0">
+
       <Border Classes="card">
         <StackPanel Spacing="12">
           <TextBlock Text="Yahoo developer app" Classes="h2" />
+          <TextBlock Text="This path needs a Client ID from a Yahoo application Yahoo has approved. Without one, use the Paste from Yahoo tab."
+                     Classes="muted" TextWrapping="Wrap" />
           <TextBlock Text="Yahoo reviews API access. Apply at sports.yahoo.com/developer/access/, then create an app with Fantasy Sports permission. Register the redirect URI exactly as shown below."
                      Classes="muted" TextWrapping="Wrap" />
           <StackPanel Spacing="4">
@@ -92,6 +247,10 @@
           </ItemsControl>
         </StackPanel>
       </Border>
+
+          </StackPanel>
+        </TabItem>
+      </TabControl>
 
       <Border Classes="card" IsVisible="{Binding HasReview}">
         <StackPanel Spacing="8">

@@ -185,6 +185,17 @@ public interface IAiProviderAdapter
     string ProviderKey { get; }
     Task<AiConnectionTestResult> TestConnectionAsync(AiProviderConfig config, CancellationToken cancellationToken = default);
     IAsyncEnumerable<AiResponseChunk> StreamAnalysisAsync(AiAnalysisRequest request, CancellationToken cancellationToken = default);
+
+    // One-shot, non-streaming completion that is not tied to a draft. Used by
+    // league import, which runs before any draft exists, so it cannot go through
+    // AiAnalysisRequest (that requires a DraftId/BranchId/StateVersion) and is
+    // deliberately not recorded against per-draft AI spend.
+    Task<AiTextCompletion> CompleteTextAsync(
+        string? model,
+        string systemPrompt,
+        string userPrompt,
+        int maxOutputTokens,
+        CancellationToken cancellationToken = default);
 }
 
 public interface IAiProviderRegistry
@@ -249,6 +260,30 @@ public interface IYahooLeagueImporter
     Task<IReadOnlyList<YahooLeagueListItem>> ListLeaguesAsync(CancellationToken cancellationToken = default);
     Task<YahooImportPreview> PreviewAsync(string leagueKey, CancellationToken cancellationToken = default);
     Task<YahooImportResult> ImportAsync(string leagueKey, YahooImportOptions options, CancellationToken cancellationToken = default);
+}
+
+/// Import path for a Yahoo league the API cannot reach — a private league with no
+/// approved Yahoo developer application. Takes text the user pasted out of their
+/// signed-in browser and produces the same result as <see cref="IYahooLeagueImporter"/>.
+public interface IYahooPasteImporter
+{
+    /// Deterministic parse. Never calls out to a network.
+    YahooPasteParseResult Parse(YahooPasteInput input);
+
+    /// Providers that could read a paste — enabled and holding an API key. Empty
+    /// means the AI fallback is unusable.
+    Task<IReadOnlyList<YahooAiReaderOption>> ListAiReadersAsync(CancellationToken cancellationToken = default);
+
+    /// Fallback for a paste the deterministic parser could not read. The caller
+    /// names the provider so the choice, and the cost, is never implicit.
+    Task<YahooPasteParseResult> ParseWithAiAsync(
+        YahooPasteInput input,
+        string providerKey,
+        CancellationToken cancellationToken = default);
+
+    YahooImportPreview Preview(YahooLeagueSnapshot snapshot);
+    Task<YahooImportPreview> PreviewAsync(YahooLeagueSnapshot snapshot, CancellationToken cancellationToken = default);
+    Task<YahooImportResult> ImportAsync(YahooLeagueSnapshot snapshot, YahooImportOptions options, CancellationToken cancellationToken = default);
 }
 
 public interface IAiUsageService

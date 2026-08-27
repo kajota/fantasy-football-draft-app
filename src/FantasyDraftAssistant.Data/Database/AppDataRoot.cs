@@ -8,7 +8,29 @@ namespace FantasyDraftAssistant.Data.Database;
 public static class AppDataRoot
 {
     public const string EnvironmentVariableName = "FANTASY_DRAFT_ASSISTANT_DATA";
+    public const string CredentialEnvironmentVariableName = "FANTASY_DRAFT_ASSISTANT_CREDENTIALS";
     public const string ConfigFileName = "data-root";
+
+    /// <summary>
+    /// Where the fallback credential file lives. Deliberately independent of the
+    /// data root: league data is meant to be synced between machines, but the
+    /// credential file is encrypted with a key derived from the machine name, so
+    /// syncing it makes every machine but one read an empty credential store.
+    /// API keys are per-machine by design — entered once on each.
+    /// </summary>
+    public static string CredentialRoot(string? explicitRoot = null, string? userProfile = null)
+    {
+        var home = Profile(userProfile);
+
+        if (TryNormalize(explicitRoot, home, out var fromExplicit))
+            return fromExplicit;
+
+        var fromEnvironment = Environment.GetEnvironmentVariable(CredentialEnvironmentVariableName);
+        if (TryNormalize(fromEnvironment, home, out var resolved))
+            return resolved;
+
+        return Path.GetFullPath(DefaultRoot(home));
+    }
 
     public static string DefaultRoot(string? userProfile = null)
     {

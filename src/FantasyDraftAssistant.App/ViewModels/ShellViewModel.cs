@@ -1,5 +1,7 @@
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using FantasyDraftAssistant.Data.Services;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace FantasyDraftAssistant.App.ViewModels;
@@ -8,10 +10,12 @@ public partial class ShellViewModel : ObservableObject
 {
     private readonly IServiceProvider _services;
 
-    public ShellViewModel(IServiceProvider services, SessionState session)
+    public ShellViewModel(IServiceProvider services, SessionState session, DataLockService dataLock)
     {
         _services = services;
         Session = session;
+        HasStolenLock = dataLock.WasStolen;
+        dataLock.Stolen += (_, _) => Dispatcher.UIThread.Post(() => HasStolenLock = true);
         CurrentPage = services.GetRequiredService<LeaguesViewModel>();
         _ = CurrentPage.OnNavigatedToAsync();
     }
@@ -26,6 +30,10 @@ public partial class ShellViewModel : ObservableObject
 
     [ObservableProperty] private PageViewModel _currentPage = null!;
     [ObservableProperty] private string _activeNav = "leagues";
+    [ObservableProperty] private bool _hasStolenLock;
+
+    public string StolenLockMessage { get; } =
+        "Another computer took over this database. Stop using this copy. Two writers can corrupt your leagues.";
 
     [RelayCommand]
     public Task GoLeaguesAsync() => NavigateAsync<LeaguesViewModel>("leagues");

@@ -45,6 +45,8 @@ Local data lives in `~/.local/share/fantasy-draft-assistant/` unless you point i
 
 Close the app and wait for Drive to go idle before opening it on another computer. On quit the app checkpoints SQLite WAL so Drive copies one complete `draft.db` instead of a live `-wal` sidecar.
 
+While the app is open it writes `draft.lock` next to `draft.db` and refreshes that file every 30 seconds. A second computer that sees a fresh lock gets a warning before it opens the database (Quit or Open anyway). A lock with no heartbeat for 5 minutes is treated as stale. This is advisory: Drive sync is not instant, so two copies started at the same moment can still collide. The **Readiness** page shows who holds the lock.
+
 xAI keys are stored through Linux Secret Service when `secret-tool` is available, otherwise a file-based fallback with a readiness warning. Set the key in **AI Providers**. Default model: `grok-4.6`.
 
 The public draft-board URLs (`/draft/<league>/` on kellynorton.com) are nginx config in `deploy/nginx/`. The app PUTs `board.json` and `index.html` there when a league has publishing enabled (League Setup) and a bearer token is saved (Player Data).

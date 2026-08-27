@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using FantasyDraftAssistant.App.ViewModels;
@@ -125,23 +126,63 @@ public partial class App : Application
         services.AddTransient<RecapViewModel>();
         Services = services.BuildServiceProvider();
 
-        Services.GetRequiredService<MigrationRunner>().Apply();
-        _ = Services.GetRequiredService<IBoardPublisher>();
-
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            desktop.MainWindow = new MainWindow
+            desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            desktop.Exit += (_, _) => OnExit();
+
+            var dataLock = Services.GetRequiredService<DataLockService>();
+            var inspection = dataLock.Inspect();
+            if (inspection.RequiresWarning)
             {
-                DataContext = Services.GetRequiredService<ShellViewModel>()
-            };
-            desktop.Exit += (_, _) => CheckpointOnExit();
+                var dialog = new DataLockWindow(inspection, Services.GetRequiredService<AppPaths>().Root);
+                desktop.MainWindow = dialog;
+                dialog.Closed += (_, _) =>
+                {
+                    if (!dialog.OpenAnyway)
+                    {
+                        desktop.Shutdown();
+                        return;
+                    }
+
+                    StartMainWindow(desktop, dataLock, show: true);
+                };
+            }
+            else
+            {
+                StartMainWindow(desktop, dataLock, show: false);
+            }
         }
 
         base.OnFrameworkInitializationCompleted();
     }
 
-    private static void CheckpointOnExit()
+    private static bool _sessionStarted;
+
+    private static void StartMainWindow(
+        IClassicDesktopStyleApplicationLifetime desktop,
+        DataLockService dataLock,
+        bool show)
     {
+        dataLock.Acquire();
+        _sessionStarted = true;
+        Services.GetRequiredService<MigrationRunner>().Apply();
+        _ = Services.GetRequiredService<IBoardPublisher>();
+        var window = new MainWindow
+        {
+            DataContext = Services.GetRequiredService<ShellViewModel>()
+        };
+        desktop.MainWindow = window;
+        desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
+        if (show)
+            window.Show();
+    }
+
+    private static void OnExit()
+    {
+        if (!_sessionStarted)
+            return;
+
         try
         {
             Services.GetRequiredService<SqliteConnectionFactory>().Checkpoint();
@@ -149,6 +190,15 @@ public partial class App : Application
         catch (Exception)
         {
             // Never block process exit on a checkpoint.
+        }
+
+        try
+        {
+            Services.GetRequiredService<DataLockService>().Release();
+        }
+        catch (Exception)
+        {
+            // Never block process exit on lock release.
         }
     }
 }

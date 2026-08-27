@@ -15,12 +15,14 @@ public sealed class ReadinessService(
     IAiConfigStore aiConfigs,
     ICredentialStore credentials,
     AppPaths paths,
+    DataLockService dataLock,
     IBoardPublisher publisher) : IReadinessService
 {
     public async Task<IReadOnlyList<ReadinessItem>> CheckAsync(DraftId? draftId, CancellationToken cancellationToken = default)
     {
         var items = new List<ReadinessItem>();
         items.Add(Item("Data directory", ReadinessLevel.Ready, paths.Root, false));
+        items.Add(LockItem(dataLock, paths.LockFilePath));
 
         if (draftId is { } id)
         {
@@ -159,6 +161,29 @@ public sealed class ReadinessService(
         if (age.TotalDays > attentionDays)
             return ReadinessLevel.Attention;
         return ReadinessLevel.Ready;
+    }
+
+    private static ReadinessItem LockItem(DataLockService dataLock, string lockPath)
+    {
+        if (dataLock.WasStolen)
+        {
+            return Item(
+                "Data lock",
+                ReadinessLevel.Attention,
+                "Another session took over this database. Close this copy so you do not write from two computers at once.",
+                false);
+        }
+
+        if (dataLock.Current is { } current)
+        {
+            return Item(
+                "Data lock",
+                ReadinessLevel.Ready,
+                $"Held on {current.Host} since {current.AcquiredAt.ToLocalTime():g}. {lockPath}",
+                false);
+        }
+
+        return Item("Data lock", ReadinessLevel.Attention, "Not acquired.", false);
     }
 
     private static ReadinessItem Item(string name, ReadinessLevel level, string detail, bool critical) => new()

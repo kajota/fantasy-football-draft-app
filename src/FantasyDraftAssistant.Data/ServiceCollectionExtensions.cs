@@ -13,6 +13,7 @@ public static class ServiceCollectionExtensions
         string? credentialRoot = null)
     {
         services.AddSingleton(new AppPaths(AppDataRoot.ResolveFromEnvironment(dataRoot), credentialRoot));
+        services.AddSingleton<DataLockService>();
         services.AddSingleton<SqliteConnectionFactory>();
         services.AddSingleton<MigrationRunner>();
         services.AddSingleton<IDraftChangeNotifier, DraftChangeNotifier>();

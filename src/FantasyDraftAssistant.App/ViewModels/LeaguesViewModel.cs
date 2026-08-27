@@ -10,9 +10,6 @@ namespace FantasyDraftAssistant.App.ViewModels;
 
 public partial class LeaguesViewModel(
     ILeagueService leagues,
-    IDraftCommandService commands,
-    IMockDraftService mock,
-    IFantasyDataProviderRegistry fantasyData,
     SessionState session,
     Navigator navigator) : PageViewModel
 {
@@ -66,52 +63,6 @@ public partial class LeaguesViewModel(
             return;
         await SessionDraft.AttachLeagueAsync(session, leagues, summary.LeagueId, summary.Name);
         await navigator.GoSetupAsync();
-    }
-
-    [RelayCommand]
-    private Task ImportFromYahooAsync() => navigator.GoYahooAsync();
-
-    [RelayCommand]
-    private async Task StartMockDraftAsync()
-    {
-        StatusMessage = "Loading player data...";
-        var refresh = await fantasyData.RefreshPreferredAsync(new Core.Results.FantasyDataRefreshRequest(), CancellationToken.None);
-        if (!refresh.Succeeded)
-        {
-            StatusMessage = refresh.Error;
-            return;
-        }
-
-        if (!string.IsNullOrWhiteSpace(refresh.Error))
-            StatusMessage = refresh.Error;
-
-        var league = await leagues.CreateLeagueAsync(new CreateLeagueRequest
-        {
-            Name = "Mock Superflex Draft",
-            Season = 2026,
-            TeamCount = 12,
-            DraftType = DraftType.Snake,
-            Superflex = true,
-            RoundCount = 16,
-            UserTeamName = "My Team"
-        });
-        var draft = await leagues.CreateDraftAsync(new CreateDraftRequest
-        {
-            LeagueId = league.LeagueId,
-            Name = "Mock Draft"
-        });
-        var started = await commands.StartDraftAsync(new StartDraftCommand(draft.DraftId));
-        if (!started.Succeeded)
-        {
-            StatusMessage = started.Error;
-            return;
-        }
-
-        session.LeagueId = league.LeagueId;
-        session.LeagueName = league.Name;
-        SessionDraft.BindDraft(session, draft);
-        await mock.SeedPoliciesAsync(draft.DraftId, draft.ActiveBranchId);
-        await navigator.GoRoomAsync();
     }
 
     [RelayCommand]

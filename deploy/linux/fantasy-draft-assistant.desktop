@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Fantasy Draft Assistant
+Comment=Desktop assistant for fantasy football drafts
+Exec=/home/kajota/dev/ff-draft-app-grok/scripts/launch-fantasy-draft-assistant.sh
+Terminal=false
+Categories=Utility;Sports;
+StartupNotify=true
+StartupWMClass=FantasyDraftAssistant

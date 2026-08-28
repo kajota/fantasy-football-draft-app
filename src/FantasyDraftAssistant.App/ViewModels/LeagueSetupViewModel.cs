@@ -45,6 +45,9 @@ public partial class TeamRow : ObservableObject
     [ObservableProperty] private bool _isGenerating;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(NewImagePrompt))]
+    private bool _isMine;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NewImagePrompt))]
     private bool _normalImage;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(NewImagePrompt))]
@@ -90,7 +93,7 @@ public partial class TeamRow : ObservableObject
     public string NewImagePrompt => TeamPortraitPrompt.Build(
         DisplayTeamName,
         OwnerName,
-        TeamPortraitPrompt.ToneFor(isUserTeam: !CanChoosePortraitStyle, normalImage: NormalImage),
+        TeamPortraitPrompt.ToneFor(isUserTeam: IsMine, normalImage: NormalImage),
         TeamId,
         portraitNotes: null,
         PreviewSpin,
@@ -101,7 +104,7 @@ public partial class TeamRow : ObservableObject
         TeamId = TeamId,
         TeamName = DisplayTeamName,
         OwnerName = OwnerName,
-        IsUserTeam = !CanChoosePortraitStyle,
+        IsUserTeam = IsMine,
         NormalImage = CanChoosePortraitStyle && NormalImage,
         ProviderKey = providerKey,
         Spin = PreviewSpin,
@@ -329,7 +332,7 @@ public partial class LeagueSetupViewModel(
         await RefreshBoardUrlAsync();
         if (league.Platform == FantasyPlatform.Yahoo)
         {
-            StatusMessage = "Imported from Yahoo. Verify team names, first-round seats, and keepers before you start. A later Yahoo refresh will not overwrite draft order or keepers unless you ask it to.";
+            StatusMessage = "Imported from Yahoo. Verify team names, first-round seats, and keepers before you start. Check the Mine column below too — pasted imports can't tell which team is yours and guess the first one. A later Yahoo refresh will not overwrite draft order or keepers unless you ask it to.";
         }
         var listed = await leagues.ListDraftsAsync(id);
         var current = SessionDraft.SelectDraft(session.DraftId, listed);
@@ -361,6 +364,7 @@ public partial class LeagueSetupViewModel(
                 PortraitNotes = team.PortraitNotes ?? "",
                 DraftPosition = team.DraftPosition,
                 ExternalTeamId = team.ExternalTeamId,
+                IsMine = isMine,
                 CanChoosePortraitStyle = !isMine,
                 HasPortrait = portraitStore.Exists(team.TeamId),
                 SelectedPersonality = TeamRow.PersonalityChoices
@@ -488,6 +492,20 @@ public partial class LeagueSetupViewModel(
     }
 
     [RelayCommand]
+    private async Task SetAsMyTeamAsync(TeamRow? row)
+    {
+        if (row is null || row.IsMine)
+            return;
+        foreach (var team in Teams)
+        {
+            team.IsMine = team == row;
+            team.CanChoosePortraitStyle = !team.IsMine;
+        }
+        StatusMessage = $"{DisplayName(row)} is now marked as your team.";
+        await PersistTeamsAsync();
+    }
+
+    [RelayCommand]
     private void MoveTeamUp(TeamRow? row) => MoveTeam(row, -1);
 
     [RelayCommand]
@@ -549,7 +567,8 @@ public partial class LeagueSetupViewModel(
         await leagues.SaveTeamsAsync(new SaveTeamsRequest
         {
             LeagueId = id,
-            Teams = seats
+            Teams = seats,
+            UserTeamId = Teams.FirstOrDefault(t => t.IsMine)?.TeamId
         });
 
         if (!CanReorderTeams)
@@ -682,15 +701,14 @@ public partial class LeagueSetupViewModel(
 
     private async Task GeneratePortraitsAsync(IReadOnlyList<TeamRow> rows)
     {
-        if (session.LeagueId is not { } leagueId || rows.Count == 0)
+        if (session.LeagueId is null || rows.Count == 0)
             return;
         if (IsGeneratingPortraits)
             return;
 
         await PersistTeamsAsync();
 
-        var league = await leagues.GetLeagueAsync(leagueId);
-        var userTeam = league?.UserTeamId ?? Teams.FirstOrDefault()?.TeamId;
+        var userTeam = Teams.FirstOrDefault(t => t.IsMine)?.TeamId;
         IsGeneratingPortraits = true;
         var done = 0;
         try

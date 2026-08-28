@@ -186,20 +186,22 @@
               </ComboBox.ItemTemplate>
             </ComboBox>
           </StackPanel>
-          <Grid ColumnDefinitions="20,48,56,200,140,120,Auto,Auto,*" ColumnSpacing="8">
+          <Grid ColumnDefinitions="20,48,56,60,200,140,120,Auto,Auto,*" ColumnSpacing="8">
             <TextBlock />
             <TextBlock Grid.Column="1" Text="#" Classes="muted" />
             <TextBlock Grid.Column="2" />
-            <TextBlock Grid.Column="3" Text="Team name" Classes="muted" />
-            <TextBlock Grid.Column="4" Text="Owner" Classes="muted" />
-            <TextBlock Grid.Column="5" Text="CPU style" Classes="muted"
+            <TextBlock Grid.Column="3" Text="Mine" Classes="muted"
+                       ToolTip.Tip="Which team is yours. Yahoo paste imports can't detect this and guess the first team — check it here." />
+            <TextBlock Grid.Column="4" Text="Team name" Classes="muted" />
+            <TextBlock Grid.Column="5" Text="Owner" Classes="muted" />
+            <TextBlock Grid.Column="6" Text="CPU style" Classes="muted"
                        ToolTip.Tip="How this seat drafts when the CPU controls it in practice drafts. Random deals a personality each practice." />
           </Grid>
           <ItemsControl x:Name="TeamList" ItemsSource="{Binding Teams}">
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:TeamRow">
                 <StackPanel>
-                <Grid ColumnDefinitions="20,48,56,200,140,120,Auto,Auto,*" ColumnSpacing="8" Margin="0,4,0,0">
+                <Grid ColumnDefinitions="20,48,56,60,200,140,120,Auto,Auto,*" ColumnSpacing="8" Margin="0,4,0,0">
                     <TextBlock Text="≡" Classes="muted" VerticalAlignment="Center" HorizontalAlignment="Center"
                                FontWeight="SemiBold" Cursor="SizeNorthSouth"
                                IsEnabled="{Binding $parent[ItemsControl].((vm:LeagueSetupViewModel)DataContext).CanReorderTeams}"
@@ -222,19 +224,30 @@
                               CommandParameter="{Binding}"
                               ToolTip.Tip="Move this team one seat later." />
                     </StackPanel>
-                    <TextBox Grid.Column="3" Text="{Binding Name}" MaxWidth="200">
+                    <Panel Grid.Column="3">
+                      <TextBlock Text="★ Mine" FontWeight="SemiBold"
+                                 VerticalAlignment="Center" HorizontalAlignment="Center"
+                                 IsVisible="{Binding IsMine}"
+                                 ToolTip.Tip="This is your team." />
+                      <Button Content="Mine?" Classes="ghost compact" HorizontalAlignment="Center"
+                              IsVisible="{Binding !IsMine}"
+                              Command="{Binding $parent[ItemsControl].((vm:LeagueSetupViewModel)DataContext).SetAsMyTeamCommand}"
+                              CommandParameter="{Binding}"
+                              ToolTip.Tip="Mark this as your team. Only one team can be yours." />
+                    </Panel>
+                    <TextBox Grid.Column="4" Text="{Binding Name}" MaxWidth="200">
                       <ToolTip.Tip>
                         <views:TeamPortraitTip TeamKey="{Binding TeamKey}" />
                       </ToolTip.Tip>
                     </TextBox>
-                    <TextBox Grid.Column="4" Text="{Binding OwnerName}" PlaceholderText="Owner" MaxWidth="140"
+                    <TextBox Grid.Column="5" Text="{Binding OwnerName}" PlaceholderText="Owner" MaxWidth="140"
                              ToolTip.Tip="Person who owns this team. Optional." />
-                    <ComboBox Grid.Column="5" MinWidth="110"
+                    <ComboBox Grid.Column="6" MinWidth="110"
                               ItemsSource="{Binding PersonalityOptions}"
                               SelectedItem="{Binding SelectedPersonality}"
                               VerticalAlignment="Center"
                               ToolTip.Tip="Practice drafts only. How this seat drafts when the CPU controls it. Random deals a personality each practice, and never deals AI drafter — pick that by hand. Live drafts ignore this." />
-                    <Button Grid.Column="6" Content="New image" Classes="ghost compact"
+                    <Button Grid.Column="7" Content="New image" Classes="ghost compact"
                             Command="{Binding $parent[ItemsControl].((vm:LeagueSetupViewModel)DataContext).EditPortraitPromptCommand}"
                             CommandParameter="{Binding}"
                             IsEnabled="{Binding !IsGenerating}">
@@ -246,7 +259,7 @@
                         </StackPanel>
                       </ToolTip.Tip>
                     </Button>
-                    <StackPanel Grid.Column="7" Orientation="Horizontal" Spacing="4">
+                    <StackPanel Grid.Column="8" Orientation="Horizontal" Spacing="4">
                       <Button Content="Import" Classes="ghost compact"
                               Command="{Binding $parent[ItemsControl].((vm:LeagueSetupViewModel)DataContext).ImportPortraitCommand}"
                               CommandParameter="{Binding}"
@@ -258,7 +271,7 @@
                               IsEnabled="{Binding HasPortrait}"
                               ToolTip.Tip="Save this team's image to a file you pick." />
                     </StackPanel>
-                    <TextBlock Grid.Column="8" Text="{Binding PortraitStatus}" Classes="muted"
+                    <TextBlock Grid.Column="9" Text="{Binding PortraitStatus}" Classes="muted"
                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                ToolTip.Tip="{Binding PortraitStatus}" />
                 </Grid>

@@ -52,7 +52,26 @@ public partial class TeamRow : ObservableObject
     [ObservableProperty] private bool _hasPortrait;
     [ObservableProperty] private bool _canMoveUp;
     [ObservableProperty] private bool _canMoveDown;
-    [ObservableProperty] private PersonalityChoice _selectedPersonality = PersonalityChoices[0];
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsAiSeat))]
+    [NotifyPropertyChangedFor(nameof(ShowAiModel))]
+    [NotifyPropertyChangedFor(nameof(ShowAiModelMissing))]
+    private PersonalityChoice _selectedPersonality = PersonalityChoices[0];
+
+    [ObservableProperty] private AiModelChoice? _selectedAiModel;
+
+    public ObservableCollection<AiModelChoice> AiModelOptions { get; } = [];
+
+    /// Drives the whole AI column. Bound on the container so the column collapses to
+    /// zero width for a normal seat instead of leaving a gap in every row.
+    public bool IsAiSeat => SelectedPersonality.Personality == MockPersonality.Ai;
+
+    /// The model dropdown only means anything for an AI seat with somewhere to send it.
+    public bool ShowAiModel => IsAiSeat && AiModelOptions.Count > 0;
+
+    /// An AI seat with nothing to draft it drafts by its strategy's fallback instead,
+    /// which is worth saying out loud rather than showing an empty dropdown.
+    public bool ShowAiModelMissing => IsAiSeat && AiModelOptions.Count == 0;
 
     public IReadOnlyList<PersonalityChoice> PersonalityOptions => PersonalityChoices;
     public IReadOnlyList<PortraitArtStyle> ArtStyleOptions => TeamPortraitPrompt.ArtStyles;
@@ -212,8 +231,11 @@ public partial class LeagueSetupViewModel(
     ITeamPortraitGenerator portraits,
     ITeamPortraitStore portraitStore,
     IFileSavePicker files,
-    IAppSettingsStore settings) : PageViewModel
+    IAppSettingsStore settings,
+    IAiModelOptions aiModels) : PageViewModel
 {
+    private IReadOnlyList<AiModelChoice> _aiModelChoices = [];
+
     private bool _loading;
     private string _publishBaseUrl = BoardSlug.DefaultBaseUrl;
 
@@ -261,11 +283,32 @@ public partial class LeagueSetupViewModel(
         BoardPublicUrl = BoardSlug.PublicUrl(_publishBaseUrl, WebSlug) ?? "";
     }
 
+    /// Offers the seat every provider that is enabled and holds a key. Falls back to the
+    /// Fast Advisor (first in the list) rather than inheriting a Deep Advisor - an
+    /// expensive model quietly drafting every round is the one costly mistake here.
+    private void FillAiModels(TeamRow row, string? savedKey)
+    {
+        row.AiModelOptions.Clear();
+        foreach (var choice in _aiModelChoices)
+            row.AiModelOptions.Add(choice);
+
+        row.SelectedAiModel =
+            row.AiModelOptions.FirstOrDefault(choice =>
+                string.Equals(choice.Key, savedKey, StringComparison.OrdinalIgnoreCase))
+            ?? row.AiModelOptions.FirstOrDefault(choice =>
+                string.Equals(choice.Model, OpenAiPracticeDefault, StringComparison.OrdinalIgnoreCase))
+            ?? row.AiModelOptions.FirstOrDefault();
+    }
+
+    /// The cheap GPT-5.6 pick. Plenty for choosing one player from a shortlist.
+    private const string OpenAiPracticeDefault = "gpt-5.6-luna";
+
     public override async Task OnNavigatedToAsync()
     {
         Title = "League Setup";
         ClosePortraitPrompt();
         Teams.Clear();
+        _aiModelChoices = await aiModels.ListEnabledAsync();
         SaveNotice = "";
         SelectedPortraitProvider ??= PortraitProviders[0];
         if (session.LeagueId is not { } id)
@@ -325,6 +368,7 @@ public partial class LeagueSetupViewModel(
                 SelectedArtStyle = TeamPortraitPrompt.StyleByKey(team.PortraitArtStyle)
             };
             row.SyncSeatText();
+            FillAiModels(row, team.PracticeAiModel);
             Teams.Add(row);
         }
         RefreshSeats();
@@ -497,6 +541,9 @@ public partial class LeagueSetupViewModel(
             DraftPosition = index + 1,
             ExternalTeamId = t.ExternalTeamId,
             PracticePersonality = t.SelectedPersonality.Personality,
+            PracticeAiModel = t.SelectedPersonality.Personality == MockPersonality.Ai
+                ? t.SelectedAiModel?.Key
+                : null,
             PortraitArtStyle = string.IsNullOrEmpty(t.SelectedArtStyle.Key) ? null : t.SelectedArtStyle.Key
         }).ToList();
         await leagues.SaveTeamsAsync(new SaveTeamsRequest

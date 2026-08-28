@@ -68,6 +68,20 @@
                   <TextBlock Text="{Binding Personality}" Classes="muted" FontStyle="Italic"
                              IsVisible="{Binding HasPersonality}"
                              ToolTip.Tip="The drafting style the CPU used for this seat in this practice draft." />
+                  <TextBlock Text="{Binding AiStrategy}" Classes="muted" FontStyle="Italic"
+                             IsVisible="{Binding HasAiStrategy}"
+                             ToolTip.Tip="An AI seat drafts to a strategy it keeps to itself. This is the reveal — it was hidden while the draft was live." />
+                  <StackPanel Spacing="3" IsVisible="{Binding HasAiReasons}" Margin="0,4,0,2">
+                    <TextBlock Text="Why it made each pick" Classes="muted" FontSize="11" />
+                    <ItemsControl ItemsSource="{Binding AiReasons}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                          <TextBlock Text="{Binding}" Classes="muted" FontSize="11"
+                                     TextWrapping="Wrap" Margin="0,1" />
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </StackPanel>
                   <TextBlock Text="{Binding Headline}" FontWeight="SemiBold" TextWrapping="Wrap" />
                   <TextBlock Text="{Binding Detail}" Classes="muted" />
                   <ItemsControl ItemsSource="{Binding Notes}" IsVisible="{Binding HasNotes}">

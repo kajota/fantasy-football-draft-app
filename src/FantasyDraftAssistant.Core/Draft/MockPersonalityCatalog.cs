@@ -6,6 +6,9 @@ namespace FantasyDraftAssistant.Core.Engine;
 
 public static class MockPersonalityCatalog
 {
+    // MockPersonality.Ai is intentionally not here. "Random" in the UI means
+    // "draw from this bag", so leaving it out is what keeps an AI seat something
+    // you opt into rather than something you get handed.
     public static readonly MockPersonality[] DealBag =
     [
         MockPersonality.BestAvailable,
@@ -31,6 +34,7 @@ public static class MockPersonalityCatalog
         MockPersonality.LateQb => "Late QB",
         MockPersonality.RookieHunter => "Rookie hunter",
         MockPersonality.AdpHunter => "Chases ADP",
+        MockPersonality.Ai => "AI drafter",
         _ => personality.ToString()
     };
 
@@ -45,6 +49,7 @@ public static class MockPersonalityCatalog
         MockPersonality.LateQb => "Waits on quarterback unless the well is dry.",
         MockPersonality.RookieHunter => "Boosts true rookies.",
         MockPersonality.AdpHunter => "Follows ADP more than expert rank.",
+        MockPersonality.Ai => "An AI model drafts this seat to a strategy it keeps to itself.",
         _ => ""
     };
 
@@ -72,7 +77,9 @@ public static class MockPersonalityCatalog
     public static IReadOnlyList<MockSeatPolicy> Assign(
         IReadOnlyList<Team> teams,
         TeamId? userTeamId,
-        int seed)
+        int seed,
+        DraftId? draftId = null,
+        BranchId? branchId = null)
     {
         // Teams with a saved practice personality keep it; only the rest of
         // the CPU seats draw from the random deal.
@@ -85,13 +92,24 @@ public static class MockPersonalityCatalog
         foreach (var team in teams.OrderBy(item => item.DraftPosition))
         {
             var isUser = userTeamId is { } user && team.TeamId.Equals(user);
+            var personality = isUser
+                ? team.PracticePersonality ?? MockPersonality.BestAvailable
+                : team.PracticePersonality ?? personalities[index++];
+
+            // The seat's model and strategy are pinned here rather than read live from
+            // the team, so a branch keeps drafting the way it started even if the team
+            // is edited later.
+            string? strategyKey = null;
+            if (personality == MockPersonality.Ai && draftId is { } draft && branchId is { } branch)
+                strategyKey = MockAiStrategyCatalog.ForSeat(draft, branch, team.TeamId).Key;
+
             policies.Add(new MockSeatPolicy
             {
                 TeamId = team.TeamId,
-                Personality = isUser
-                    ? team.PracticePersonality ?? MockPersonality.BestAvailable
-                    : team.PracticePersonality ?? personalities[index++],
-                IsCpu = !isUser
+                Personality = personality,
+                IsCpu = !isUser,
+                AiModel = personality == MockPersonality.Ai ? team.PracticeAiModel : null,
+                AiStrategy = strategyKey
             });
         }
 

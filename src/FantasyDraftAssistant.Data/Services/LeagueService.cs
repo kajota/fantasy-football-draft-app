@@ -234,6 +234,7 @@ public sealed class LeagueService(SqliteConnectionFactory factory, IBackupServic
                 DraftPosition = spec.DraftPosition,
                 ExternalTeamId = spec.ExternalTeamId,
                 PracticePersonality = spec.PracticePersonality,
+                PracticeAiModel = spec.PracticeAiModel,
                 PortraitArtStyle = spec.PortraitArtStyle
             });
         }
@@ -792,6 +793,7 @@ public sealed class LeagueService(SqliteConnectionFactory factory, IBackupServic
                 PracticePersonality = reader.GetNullString(reader.GetOrdinal("PracticePersonality")) is { } personality
                     ? Enum.Parse<MockPersonality>(personality)
                     : null,
+                PracticeAiModel = reader.GetNullString(reader.GetOrdinal("PracticeAiModel")),
                 PortraitArtStyle = reader.GetNullString(reader.GetOrdinal("PortraitArtStyle"))
             });
         }
@@ -1237,8 +1239,8 @@ public sealed class LeagueService(SqliteConnectionFactory factory, IBackupServic
     private static void InsertTeam(SqliteConnection db, SqliteTransaction tx, Team team)
     {
         using var cmd = db.Cmd("""
-            INSERT INTO Teams(TeamId, LeagueId, Name, OwnerName, DisplayLabel, PortraitNotes, DraftPosition, ExternalTeamId, PracticePersonality, PortraitArtStyle)
-            VALUES ($id, $league, $name, $owner, $label, $notes, $pos, $ext, $cpu, $art);
+            INSERT INTO Teams(TeamId, LeagueId, Name, OwnerName, DisplayLabel, PortraitNotes, DraftPosition, ExternalTeamId, PracticePersonality, PracticeAiModel, PortraitArtStyle)
+            VALUES ($id, $league, $name, $owner, $label, $notes, $pos, $ext, $cpu, $aimodel, $art);
             """, tx)
             .Bind("$id", team.TeamId.ToString())
             .Bind("$league", team.LeagueId.ToString())
@@ -1249,6 +1251,7 @@ public sealed class LeagueService(SqliteConnectionFactory factory, IBackupServic
             .Bind("$pos", team.DraftPosition)
             .Bind("$ext", team.ExternalTeamId)
             .Bind("$cpu", team.PracticePersonality?.ToString())
+            .Bind("$aimodel", team.PracticeAiModel)
             .Bind("$art", team.PortraitArtStyle);
         cmd.ExecuteNonQuery();
     }

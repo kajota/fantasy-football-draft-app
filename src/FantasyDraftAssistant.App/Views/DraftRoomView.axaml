@@ -192,7 +192,8 @@
                               <views:TeamPortraitTip TeamKey="{Binding TeamKey}" />
                             </ToolTip.Tip>
                           </TextBlock>
-                          <TextBlock Grid.Column="3" Text="{Binding Player}" TextTrimming="CharacterEllipsis" />
+                          <TextBlock Grid.Column="3" Text="{Binding Player}" TextTrimming="CharacterEllipsis"
+                                     ToolTip.Tip="{Binding ReasonTip}" />
                         </Grid>
                       </Panel>
                     </DataTemplate>
@@ -392,7 +393,8 @@
                         </ToolTip.Tip>
                       </TextBlock>
                       <TextBlock Grid.Column="3" Text="{Binding Position}" Classes="muted" />
-                      <TextBlock Grid.Column="4" Text="{Binding Player}" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Grid.Column="4" Text="{Binding Player}" TextTrimming="CharacterEllipsis"
+                                 ToolTip.Tip="{Binding ReasonTip}" />
                     </Grid>
                   </Panel>
                 </DataTemplate>
@@ -722,9 +724,9 @@
           <DockPanel>
             <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
               <Button DockPanel.Dock="Right" Content="Export Markdown" Classes="ghost"
-                      IsEnabled="{Binding HasAiHistory}"
+                      IsEnabled="{Binding CanExportAiHistory}"
                       Command="{Binding ExportAiHistoryCommand}"
-                      ToolTip.Tip="Save this draft branch's AI prompts and responses to a Markdown file." />
+                      ToolTip.Tip="Save this draft branch's AI prompts and responses to a Markdown file, along with any AI-drafted seat's picks and reasons." />
               <StackPanel Spacing="2" MinWidth="0">
                 <TextBlock Text="AI History" Classes="h2" />
                 <TextBlock Text="Saved prompts and responses for this draft branch, newest first."

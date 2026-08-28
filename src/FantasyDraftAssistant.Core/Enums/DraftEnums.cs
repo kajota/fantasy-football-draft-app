@@ -80,7 +80,12 @@ public enum MockPersonality
     QbEarly = 5,
     LateQb = 6,
     RookieHunter = 7,
-    AdpHunter = 8
+    AdpHunter = 8,
+
+    // Hands the seat's picks to an AI model. Deliberately absent from
+    // MockPersonalityCatalog.DealBag, so it is never assigned at random -
+    // a seat only drafts this way if someone chose it by hand.
+    Ai = 9
 }
 
 public enum DraftSourceMode

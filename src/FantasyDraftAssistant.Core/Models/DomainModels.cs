@@ -37,6 +37,9 @@ public sealed class Team
     // Preferred CPU drafting style for practice/mock drafts. Null means the
     // practice draft deals this seat a random personality.
     public MockPersonality? PracticePersonality { get; set; }
+
+    /// "provider:model" used when PracticePersonality is Ai. Null otherwise.
+    public string? PracticeAiModel { get; set; }
     public string? PortraitArtStyle { get; set; }
 
     public string Label => string.IsNullOrWhiteSpace(DisplayLabel) ? Name : DisplayLabel;
@@ -151,6 +154,25 @@ public sealed class MockSeatPolicy
     public required TeamId TeamId { get; init; }
     public required MockPersonality Personality { get; init; }
     public required bool IsCpu { get; init; }
+
+    /// "provider:model" for an Ai seat, e.g. "openai:gpt-5.6-luna". Null elsewhere.
+    public string? AiModel { get; init; }
+
+    /// Key into MockAiStrategyCatalog. Kept from the seat's point of view until the
+    /// draft is over - the model drafts to it, nothing displays it.
+    public string? AiStrategy { get; init; }
+}
+
+/// Why an AI seat took the player it took.
+public sealed class MockPickReason
+{
+    public required int OverallPick { get; init; }
+    public required TeamId TeamId { get; init; }
+    public required string Provider { get; init; }
+    public required string Model { get; init; }
+    public string? Strategy { get; init; }
+    public required string Reason { get; init; }
+    public required bool UsedFallback { get; init; }
 }
 
 public sealed class MockPickResult
@@ -163,6 +185,9 @@ public sealed class MockPickResult
     public string? PlayerName { get; init; }
     public string? TeamName { get; init; }
     public string? Personality { get; init; }
+
+    /// One line from an AI seat explaining the pick. Null for deterministic seats.
+    public string? Reason { get; init; }
     public BranchId? BranchId { get; init; }
 
     public static MockPickResult Fail(string error) => new()

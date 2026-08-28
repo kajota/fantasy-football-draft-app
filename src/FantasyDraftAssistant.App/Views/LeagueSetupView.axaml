@@ -198,7 +198,8 @@
           <ItemsControl x:Name="TeamList" ItemsSource="{Binding Teams}">
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:TeamRow">
-                <Grid ColumnDefinitions="20,48,56,200,140,120,Auto,Auto,*" ColumnSpacing="8" Margin="0,4,0,8">
+                <StackPanel>
+                <Grid ColumnDefinitions="20,48,56,200,140,120,Auto,Auto,*" ColumnSpacing="8" Margin="0,4,0,0">
                     <TextBlock Text="≡" Classes="muted" VerticalAlignment="Center" HorizontalAlignment="Center"
                                FontWeight="SemiBold" Cursor="SizeNorthSouth"
                                IsEnabled="{Binding $parent[ItemsControl].((vm:LeagueSetupViewModel)DataContext).CanReorderTeams}"
@@ -232,7 +233,7 @@
                               ItemsSource="{Binding PersonalityOptions}"
                               SelectedItem="{Binding SelectedPersonality}"
                               VerticalAlignment="Center"
-                              ToolTip.Tip="Practice drafts only. How this seat drafts when the CPU controls it. Random deals a personality each practice; live drafts ignore this." />
+                              ToolTip.Tip="Practice drafts only. How this seat drafts when the CPU controls it. Random deals a personality each practice, and never deals AI drafter — pick that by hand. Live drafts ignore this." />
                     <Button Grid.Column="6" Content="New image" Classes="ghost compact"
                             Command="{Binding $parent[ItemsControl].((vm:LeagueSetupViewModel)DataContext).EditPortraitPromptCommand}"
                             CommandParameter="{Binding}"
@@ -261,6 +262,24 @@
                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                ToolTip.Tip="{Binding PortraitStatus}" />
                 </Grid>
+                <!-- Its own line rather than a column: the row is already close to full
+                     at a narrow window, and an extra 150px there pushed the portrait
+                     buttons off-screen with nothing to scroll them back into view. -->
+                <StackPanel Orientation="Horizontal" Spacing="8" Margin="124,2,0,8"
+                            IsVisible="{Binding IsAiSeat}">
+                  <TextBlock Text="drafted by" Classes="muted" VerticalAlignment="Center" />
+                  <ComboBox MinWidth="180"
+                            IsVisible="{Binding ShowAiModel}"
+                            ItemsSource="{Binding AiModelOptions}"
+                            SelectedItem="{Binding SelectedAiModel}"
+                            VerticalAlignment="Center"
+                            ToolTip.Tip="Which model drafts this seat. Roughly $0.02 for a 15-round practice draft on Luna. Set different seats to different providers to watch them draft against each other." />
+                  <TextBlock IsVisible="{Binding ShowAiModelMissing}"
+                             Text="no AI provider set up — this seat falls back to its strategy"
+                             Classes="muted" VerticalAlignment="Center"
+                             ToolTip.Tip="Enable a provider and save its API key on AI Providers." />
+                </StackPanel>
+                </StackPanel>
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>

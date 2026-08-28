@@ -20,8 +20,19 @@ public sealed class RecapTeamBlock
     public required IReadOnlyList<string> Notes { get; init; }
     public required IReadOnlyList<string> Players { get; init; }
     public string Personality { get; init; } = "";
+
+    /// An AI seat drafts to a strategy it keeps to itself for the whole draft. This is
+    /// where it finally gets told - the recap is the first point where knowing it
+    /// cannot change how you play against it.
+    public string AiStrategy { get; init; } = "";
+
+    /// The seat's own picks with the rationale it gave at the time.
+    public IReadOnlyList<string> AiReasons { get; init; } = [];
+
     public bool HasNotes => Notes.Count > 0;
     public bool HasPersonality => Personality.Length > 0;
+    public bool HasAiStrategy => AiStrategy.Length > 0;
+    public bool HasAiReasons => AiReasons.Count > 0;
 }
 
 public partial class RecapViewModel(
@@ -145,6 +156,27 @@ public partial class RecapViewModel(
         // Practice branches have seat policies; the live board has none, so
         // personality lines only appear on practice recaps.
         var policies = await mock.GetPoliciesAsync(draftId, state.ActiveBranch.BranchId);
+
+        var playerNames = playerList.ToDictionary(player => player.PlayerId, player => player.Name);
+        var reasonsByTeam = (await mock.GetPickReasonsAsync(draftId, state.ActiveBranch.BranchId))
+            .GroupBy(reason => reason.TeamId)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<string>)group
+                    .OrderBy(reason => reason.OverallPick)
+                    .Select(reason =>
+                    {
+                        var slot = state.Slots.FirstOrDefault(item => item.OverallPick == reason.OverallPick);
+                        var label = slot is null ? $"#{reason.OverallPick}" : $"{slot.Round}.{slot.RoundPick:00}";
+                        var name = state.ActiveSelections.TryGetValue(reason.OverallPick, out var selection)
+                                   && playerNames.TryGetValue(selection.PlayerId, out var playerName)
+                            ? playerName
+                            : "";
+                        var fallback = reason.UsedFallback ? " (fallback pick)" : "";
+                        return $"{label}  {name}{fallback} — {reason.Reason}";
+                    })
+                    .ToList());
+
         var grades = DraftGrader.Grade(state, playerList, rankings, adp, projections);
         foreach (var grade in grades)
         {
@@ -165,7 +197,13 @@ public partial class RecapViewModel(
                     .ToList(),
                 Personality = policy is { IsCpu: true }
                     ? $"CPU personality: {MockPersonalityCatalog.Title(policy.Personality)}"
-                    : ""
+                    : "",
+                AiStrategy = policy is { Personality: MockPersonality.Ai }
+                    ? $"Hidden strategy: {MockAiStrategyCatalog.Find(policy.AiStrategy).Title}"
+                    : "",
+                AiReasons = reasonsByTeam.TryGetValue(grade.TeamId, out var teamReasons)
+                    ? teamReasons
+                    : []
             });
         }
 

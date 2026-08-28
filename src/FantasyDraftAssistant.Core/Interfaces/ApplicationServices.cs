@@ -25,6 +25,12 @@ public interface IMockDraftService
         DraftId draftId,
         BranchId? branchId = null,
         CancellationToken cancellationToken = default);
+
+    /// Why each AI seat took what it took, keyed by overall pick.
+    Task<IReadOnlyList<MockPickReason>> GetPickReasonsAsync(
+        DraftId draftId,
+        BranchId branchId,
+        CancellationToken cancellationToken = default);
 }
 
 public interface IDraftCommandService
@@ -284,6 +290,83 @@ public interface IYahooPasteImporter
     YahooImportPreview Preview(YahooLeagueSnapshot snapshot);
     Task<YahooImportPreview> PreviewAsync(YahooLeagueSnapshot snapshot, CancellationToken cancellationToken = default);
     Task<YahooImportResult> ImportAsync(YahooLeagueSnapshot snapshot, YahooImportOptions options, CancellationToken cancellationToken = default);
+}
+
+/// A provider that is enabled on AI Providers and holds an API key, so it can actually
+/// be asked to do something. Shared by every feature that has to offer the user a
+/// choice of model rather than picking one silently.
+public sealed record AiModelChoice
+{
+    public required string ProviderKey { get; init; }
+    public required string Model { get; init; }
+    public required string DisplayName { get; init; }
+    public string? Role { get; init; }
+
+    /// "openai:gpt-5.6-luna" - the form stored on a seat.
+    public string Key => $"{ProviderKey}:{Model}";
+
+    public override string ToString() => $"{DisplayName} · {Model}";
+}
+
+public interface IAiModelOptions
+{
+    /// Fast Advisor first, so a default selection lands on the model meant for cheap,
+    /// quick work rather than an expensive one.
+    Task<IReadOnlyList<AiModelChoice>> ListEnabledAsync(CancellationToken cancellationToken = default);
+}
+
+/// Hands one practice-draft seat's pick to an AI model.
+///
+/// Only ever consulted for an actual pick. The turn outlook simulates dozens of picks
+/// synchronously on every refresh and must never reach this - it uses the seat
+/// strategy's deterministic proxy personality instead.
+public interface IMockPickAdvisor
+{
+    /// Null means "could not decide" - no model configured, a timeout, a bad answer, a
+    /// player that is not actually available. Callers fall back to MockPickPolicy.
+    Task<MockAiPick?> ChooseAsync(MockAiPickRequest request, CancellationToken cancellationToken = default);
+}
+
+public sealed class MockAiPickRequest
+{
+    public required DraftId DraftId { get; init; }
+    public required TeamId TeamId { get; init; }
+
+    /// "provider:model", e.g. "openai:gpt-5.6-luna".
+    public required string AiModel { get; init; }
+
+    /// The seat's private brief, from MockAiStrategyCatalog.
+    public required string StrategyPrompt { get; init; }
+
+    public required int Round { get; init; }
+    public required int RoundPick { get; init; }
+    public required int RoundCount { get; init; }
+    public required string TeamName { get; init; }
+
+    /// The shortlist the model chooses from. Nothing outside it is a legal answer.
+    public required IReadOnlyList<MockAiCandidate> Candidates { get; init; }
+
+    public IReadOnlyList<string> RosterSoFar { get; init; } = [];
+    public IReadOnlyList<string> RemainingNeeds { get; init; } = [];
+    public IReadOnlyList<string> RecentPicks { get; init; } = [];
+    public string? ScoringSummary { get; init; }
+}
+
+public sealed record MockAiCandidate(
+    PlayerId PlayerId,
+    string Name,
+    string Position,
+    string? Team,
+    int OverallRank,
+    double? Adp,
+    int YearsExp);
+
+public sealed class MockAiPick
+{
+    public required PlayerId PlayerId { get; init; }
+    public required string Reason { get; init; }
+    public required string Provider { get; init; }
+    public required string Model { get; init; }
 }
 
 public interface IAiUsageService

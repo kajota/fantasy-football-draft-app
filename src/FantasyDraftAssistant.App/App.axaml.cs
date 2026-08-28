@@ -90,6 +90,8 @@ public partial class App : Application
         services.AddSingleton<IAiProviderAdapter, AnthropicProviderAdapter>();
         services.AddSingleton<IAiProviderAdapter, XaiProviderAdapter>();
         services.AddSingleton<IAiProviderRegistry, AiProviderRegistry>();
+        services.AddSingleton<IAiModelOptions, AiModelOptions>();
+        services.AddSingleton<IMockPickAdvisor, AiMockPickAdvisor>();
         services.AddHttpClient("imagine", client =>
         {
             client.Timeout = TimeSpan.FromMinutes(2);

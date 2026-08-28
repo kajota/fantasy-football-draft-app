@@ -169,6 +169,7 @@ public sealed class AiHistoryRow
 
 public sealed class BoardRow
 {
+    public required int OverallPick { get; init; }
     public required string RoundPick { get; init; }
     public required string Team { get; init; }
     public required TeamId TeamId { get; init; }
@@ -176,6 +177,15 @@ public sealed class BoardRow
     public required string Position { get; init; }
     public bool IsCurrent { get; init; }
     public bool IsMine { get; init; }
+
+    /// Why an AI seat took this player. Null for every other pick.
+    public string? Reason { get; init; }
+
+    public bool HasReason => !string.IsNullOrWhiteSpace(Reason);
+
+    /// Null when this was not an AI pick, so no tooltip is attached at all rather
+    /// than an empty one popping up over every other row.
+    public string? ReasonTip => HasReason ? $"AI seat: {Reason}" : null;
     public string TeamKey => TeamId.ToString();
     public string Marker => IsCurrent ? "▶" : " ";
 }
@@ -535,7 +545,17 @@ public partial class DraftRoomViewModel : PageViewModel
     [NotifyPropertyChangedFor(nameof(AiTileVertical))]
     private bool _aiStackVertically;
     [ObservableProperty] private int _selectedTabIndex;
-    [ObservableProperty] private bool _hasAiHistory;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanExportAiHistory))]
+    private bool _hasAiHistory;
+
+    /// An AI seat's picks are exportable even when you never asked the advisor
+    /// anything, so the export button cannot key off advisor history alone.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanExportAiHistory))]
+    private bool _hasAiSeatPicks;
+
+    public bool CanExportAiHistory => HasAiHistory || HasAiSeatPicks;
     [ObservableProperty] private bool _canReset;
     [ObservableProperty] private int _pickCount;
 
@@ -724,6 +744,9 @@ public partial class DraftRoomViewModel : PageViewModel
         var context = new QueryContext { DraftId = draftId, BranchId = state.ActiveBranch.BranchId };
         var playersById = (await _drafts.GetPlayersAsync()).ToDictionary(p => p.PlayerId);
         var userTeam = state.League.UserTeamId;
+        var reasonByPick = (await _mock.GetPickReasonsAsync(draftId, state.ActiveBranch.BranchId))
+            .ToDictionary(reason => reason.OverallPick);
+        HasAiSeatPicks = reasonByPick.Count > 0;
         RebuildMentionIndex(playersById.Values, state);
         foreach (var slot in state.Slots.OrderBy(s => s.OverallPick))
         {
@@ -752,6 +775,7 @@ public partial class DraftRoomViewModel : PageViewModel
 
             Board.Add(new BoardRow
             {
+                OverallPick = slot.OverallPick,
                 RoundPick = $"{slot.Round}.{slot.RoundPick:00}",
                 Team = slotTeam is null
                     ? ""
@@ -760,7 +784,10 @@ public partial class DraftRoomViewModel : PageViewModel
                 Player = playerName,
                 Position = position,
                 IsCurrent = isCurrent,
-                IsMine = userTeam is { } mine && slot.TeamId.Equals(mine)
+                IsMine = userTeam is { } mine && slot.TeamId.Equals(mine),
+                Reason = reasonByPick.TryGetValue(slot.OverallPick, out var pickReason)
+                    ? pickReason.Reason
+                    : null
             });
         }
 
@@ -1252,7 +1279,8 @@ public partial class DraftRoomViewModel : PageViewModel
         }
 
         var saved = await _responses.ListAsync(draftId, branchId);
-        if (saved.Count == 0)
+        var seatPicks = await _mock.GetPickReasonsAsync(draftId, branchId);
+        if (saved.Count == 0 && seatPicks.Count == 0)
         {
             StatusMessage = "No AI history to export for this draft branch.";
             return;
@@ -1264,7 +1292,7 @@ public partial class DraftRoomViewModel : PageViewModel
         if (dest is null)
             return;
 
-        await File.WriteAllTextAsync(dest, BuildAiHistoryMarkdown(saved), CancellationToken.None);
+        await File.WriteAllTextAsync(dest, BuildAiHistoryMarkdown(saved, seatPicks), CancellationToken.None);
         StatusMessage = $"Exported AI history to {dest}.";
     }
 
@@ -1368,7 +1396,7 @@ public partial class DraftRoomViewModel : PageViewModel
                 }
 
                 made += result.PicksMade;
-                last = $"{result.TeamName} ({result.Personality}) took {result.PlayerName}.";
+                last = DescribeCpuPick(result);
                 StatusMessage = last;
                 await ReloadAsync();
                 if (!_pauseMock)
@@ -1403,7 +1431,7 @@ public partial class DraftRoomViewModel : PageViewModel
             : result.IsComplete
                 ? "The draft is complete."
                 : result.Succeeded
-                    ? $"{result.TeamName} ({result.Personality}) took {result.PlayerName}."
+                    ? DescribeCpuPick(result)
                     : result.Error;
         await ReloadAsync();
     }
@@ -1850,7 +1878,9 @@ public partial class DraftRoomViewModel : PageViewModel
         StateVersion = response.AnalyzedStateVersion
     };
 
-    private string BuildAiHistoryMarkdown(IReadOnlyList<AiSavedResponse> saved)
+    private string BuildAiHistoryMarkdown(
+        IReadOnlyList<AiSavedResponse> saved,
+        IReadOnlyList<Core.Models.MockPickReason> seatPicks)
     {
         var builder = new System.Text.StringBuilder();
         builder.AppendLine($"# AI History - {LeagueName}");
@@ -1879,6 +1909,28 @@ public partial class DraftRoomViewModel : PageViewModel
             builder.AppendLine("Response:");
             builder.AppendLine();
             builder.AppendLine(response.Body);
+            builder.AppendLine();
+        }
+
+        // Opponent picks belong in the exported record even though they are kept out
+        // of the AI History tab: the tab answers "what did my advisor tell me", while
+        // the document is a account of the whole draft.
+        if (seatPicks.Count > 0)
+        {
+            builder.AppendLine("## AI seat picks");
+            builder.AppendLine();
+            builder.AppendLine("Picks an AI-drafted seat made, with the reason it gave at the time.");
+            builder.AppendLine();
+            foreach (var pick in seatPicks.OrderBy(row => row.OverallPick))
+            {
+                var row = Board.FirstOrDefault(item => item.OverallPick == pick.OverallPick);
+                var label = row?.RoundPick ?? $"#{pick.OverallPick}";
+                var who = row is null ? "" : $" - {row.Team} took {row.Player}";
+                var fallback = pick.UsedFallback ? " (fallback - the model did not answer)" : "";
+                builder.AppendLine($"- **{label}**{who}{fallback}");
+                builder.AppendLine($"  - {pick.Reason}");
+            }
+
             builder.AppendLine();
         }
 
@@ -2336,4 +2388,10 @@ public partial class DraftRoomViewModel : PageViewModel
         if (_session.DraftId is { } id && e.DraftId.Equals(id))
             _ = ReloadAsync();
     }
+
+    /// An AI seat explains itself; a deterministic seat has nothing to say.
+    private static string DescribeCpuPick(MockPickResult result) =>
+        string.IsNullOrWhiteSpace(result.Reason)
+            ? $"{result.TeamName} ({result.Personality}) took {result.PlayerName}."
+            : $"{result.TeamName} ({result.Personality}) took {result.PlayerName} — {result.Reason}";
 }

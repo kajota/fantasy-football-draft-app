@@ -11,8 +11,7 @@ namespace FantasyDraftAssistant.Providers.Yahoo;
 /// <see cref="YahooLeagueMapper"/> the deterministic path uses.
 public sealed class YahooPasteAiReader(
     IAiProviderRegistry providers,
-    IAiConfigStore configs,
-    ICredentialStore credentials)
+    IAiModelOptions options)
 {
     private const int MaxOutputTokens = 8000;
 
@@ -44,41 +43,18 @@ public sealed class YahooPasteAiReader(
         - Omit nothing you can see; use null only when the text genuinely lacks it.
         """;
 
-    /// Every provider that is enabled and has a key, cheapest-role first so the
-    /// default selection is the one meant for quick work.
-    public async Task<IReadOnlyList<YahooAiReaderOption>> ListAvailableAsync(CancellationToken cancellationToken = default)
-    {
-        var saved = await configs.ListAsync(cancellationToken);
-        var options = new List<YahooAiReaderOption>();
-
-        foreach (var config in saved)
+    /// Every provider that is enabled and has a key, Fast Advisor first so the default
+    /// selection is the one meant for quick work.
+    public async Task<IReadOnlyList<YahooAiReaderOption>> ListAvailableAsync(CancellationToken cancellationToken = default) =>
+        (await options.ListEnabledAsync(cancellationToken))
+        .Select(choice => new YahooAiReaderOption
         {
-            if (!config.Enabled)
-                continue;
-            if (providers.Get(config.ProviderKey) is null)
-                continue;
-
-            var key = await credentials.GetSecretAsync("ai", config.ProviderKey, cancellationToken);
-            if (string.IsNullOrWhiteSpace(key))
-                continue;
-
-            var descriptor = AiProviderCatalog.Find(config.ProviderKey);
-            options.Add(new YahooAiReaderOption
-            {
-                ProviderKey = config.ProviderKey,
-                Model = config.Model,
-                DisplayName = descriptor?.ProductName ?? config.ProviderKey,
-                Role = config.Role
-            });
-        }
-
-        // Fast Advisor is the role meant for cheap, quick calls, so it heads the
-        // list and becomes the default selection.
-        return options
-            .OrderByDescending(option => string.Equals(option.Role, AiAnalysisMode.FastAdvisor, StringComparison.OrdinalIgnoreCase))
-            .ThenBy(option => option.DisplayName, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-    }
+            ProviderKey = choice.ProviderKey,
+            Model = choice.Model,
+            DisplayName = choice.DisplayName,
+            Role = choice.Role
+        })
+        .ToList();
 
     public async Task<YahooPasteParseResult> ReadAsync(
         YahooPasteInput input,

@@ -78,9 +78,10 @@ public static class SessionDraft
                 return match;
         }
 
+        // Newest wins. An old abandoned draft left sitting at InProgress must never
+        // outrank the real, newer draft just because "InProgress" sounds more current.
         return drafts
-            .OrderByDescending(draft => draft.Status == DraftStatus.InProgress)
-            .ThenByDescending(draft => draft.CreatedAt)
+            .OrderByDescending(draft => draft.CreatedAt)
             .FirstOrDefault();
     }
 }

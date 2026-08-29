@@ -60,6 +60,43 @@ public class DraftEngineTests
     }
 
     [Fact]
+    public void Rollback_does_not_deactivate_keeper_picks_beyond_target()
+    {
+        var state = LeagueFactory.CreateStandardState(teamCount: 4, roundCount: 4);
+        var keeperTeam = state.Teams[0];
+        var keeperPlayer = PlayerId.New();
+        state.Keepers = [new Keeper
+        {
+            KeeperId = KeeperId.New(),
+            DraftId = state.Draft.DraftId,
+            TeamId = keeperTeam.TeamId,
+            PlayerId = keeperPlayer,
+            RoundCost = 2
+        }];
+
+        var started = DraftEngine.StartDraft(state, new StartDraftCommand(state.Draft.DraftId));
+        Assert.True(started.Succeeded, started.Error);
+        var keeperOverallPick = state.Slots.Single(s => s.TeamId.Equals(keeperTeam.TeamId) && s.Round == 2).OverallPick;
+
+        DraftEngine.DraftPlayer(state, new DraftPlayerCommand(state.Draft.DraftId, PlayerId.New())); // pick 1
+        DraftEngine.DraftPlayer(state, new DraftPlayerCommand(state.Draft.DraftId, PlayerId.New())); // pick 2
+        DraftEngine.DraftPlayer(state, new DraftPlayerCommand(state.Draft.DraftId, PlayerId.New())); // pick 3
+
+        var rollback = DraftEngine.Rollback(state, new RollbackDraftCommand(state.Draft.DraftId, 1));
+        Assert.True(rollback.Succeeded, rollback.Error);
+
+        Assert.True(state.ActiveSelections.ContainsKey(1));
+        Assert.False(state.ActiveSelections.ContainsKey(2));
+        Assert.False(state.ActiveSelections.ContainsKey(3));
+
+        Assert.True(state.ActiveSelections.ContainsKey(keeperOverallPick));
+        var keeperSelection = state.ActiveSelections[keeperOverallPick];
+        Assert.Equal(PickSource.Keeper, keeperSelection.Source);
+        Assert.Equal(keeperPlayer, keeperSelection.PlayerId);
+        Assert.True(state.UnavailablePlayers.Contains(keeperPlayer));
+    }
+
+    [Fact]
     public void Redo_is_invalidated_by_a_new_selection()
     {
         var state = StartedState();

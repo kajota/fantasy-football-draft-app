@@ -124,7 +124,7 @@ public static class DraftEngine
             return DraftCommitResult.Fail(validation.Error!);
 
         var deactivated = state.ActiveSelections.Values
-            .Where(s => s.OverallPick > command.TargetOverallPick)
+            .Where(s => s.OverallPick > command.TargetOverallPick && s.Source != PickSource.Keeper)
             .OrderBy(s => s.OverallPick)
             .ToList();
 

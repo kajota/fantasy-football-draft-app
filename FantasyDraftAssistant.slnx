@@ -8,6 +8,7 @@
     <Project Path="src/FantasyDraftAssistant.Providers.Yahoo/FantasyDraftAssistant.Providers.Yahoo.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/FantasyDraftAssistant.App.Tests/FantasyDraftAssistant.App.Tests.csproj" />
     <Project Path="tests/FantasyDraftAssistant.Core.Tests/FantasyDraftAssistant.Core.Tests.csproj" />
     <Project Path="tests/FantasyDraftAssistant.Data.Tests/FantasyDraftAssistant.Data.Tests.csproj" />
   </Folder>

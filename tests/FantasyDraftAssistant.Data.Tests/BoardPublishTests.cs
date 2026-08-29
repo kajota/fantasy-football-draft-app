@@ -34,7 +34,8 @@ public class BoardPublishTests : IDisposable
             sp.GetRequiredService<IFantasyDataWriter>(),
             sp.GetRequiredService<IAppSettingsStore>(),
             sp.GetRequiredService<ICredentialStore>(),
-            sp.GetRequiredService<IDraftChangeNotifier>()));
+            sp.GetRequiredService<IDraftChangeNotifier>(),
+            retryDelays: [TimeSpan.FromMilliseconds(10), TimeSpan.FromMilliseconds(10)]));
         _services = collection.BuildServiceProvider();
         _services.GetRequiredService<MigrationRunner>().Apply();
     }
@@ -170,6 +171,38 @@ public class BoardPublishTests : IDisposable
         Assert.Contains("failed", publisher.LastStatus, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task Failed_publish_retries_in_the_background_until_it_succeeds()
+    {
+        var (draftId, _) = await CreateStartedDraftAsync();
+        var state = await _services.GetRequiredService<IDraftStateService>().GetWorkingStateAsync(draftId);
+        Assert.NotNull(state);
+        await _services.GetRequiredService<ILeagueService>()
+            .SaveBoardPublishAsync(state.League.LeagueId, "filthymothers", true);
+        await _services.GetRequiredService<ICredentialStore>()
+            .SaveSecretAsync(BoardSlug.CredentialScope, BoardSlug.CredentialKey, "test-token");
+
+        // Simulates a pick made while the connection is down: the first two
+        // attempts (the initial one plus one retry) fail before connectivity
+        // returns on the third.
+        _http.FailFirstAttempts = 2;
+
+        var publisher = _services.GetRequiredService<IBoardPublisher>();
+        await publisher.PublishNowAsync(draftId, state.ActiveBranch.BranchId);
+        Assert.Contains("failed", publisher.LastStatus, StringComparison.OrdinalIgnoreCase);
+
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (!publisher.LastStatus.StartsWith("Published", StringComparison.Ordinal) && DateTime.UtcNow < deadline)
+            await Task.Delay(20);
+
+        Assert.StartsWith("Published", publisher.LastStatus, StringComparison.Ordinal);
+        // 2 failed attempts (each aborts after its first PUT throws) plus one
+        // full successful attempt (5 PUTs), with no pick/manual trigger in
+        // between - proof the background loop retried on its own rather than
+        // needing another event to catch up.
+        Assert.Equal(7, _http.Calls.Count);
+    }
+
     private async Task<(DraftId DraftId, PlayerId FirstPlayer)> CreateStartedDraftAsync()
     {
         var seed = _services.GetRequiredService<IFantasyDataProvider>();
@@ -211,13 +244,24 @@ public class BoardPublishTests : IDisposable
     private sealed class RecordingHandler : HttpMessageHandler
     {
         public HttpStatusCode Status { get; set; } = HttpStatusCode.NoContent;
+
+        // The number of publish attempts (each a batch of 5 PUTs) to fail
+        // before letting requests succeed, so tests can simulate an outage
+        // that outlives the initial attempt and one or more retries.
+        public int FailFirstAttempts { get; set; }
+
+        private int _attempt = -1;
         public List<(HttpMethod Method, string Url, string? Authorization, string Body)> Calls { get; } = [];
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var body = request.Content is null ? "" : await request.Content.ReadAsStringAsync(cancellationToken);
-            Calls.Add((request.Method, request.RequestUri?.ToString() ?? "", request.Headers.Authorization?.ToString(), body));
-            return new HttpResponseMessage(Status);
+            var url = request.RequestUri?.ToString() ?? "";
+            if (url.EndsWith("index.html", StringComparison.Ordinal))
+                _attempt++;
+            Calls.Add((request.Method, url, request.Headers.Authorization?.ToString(), body));
+            var status = _attempt < FailFirstAttempts ? HttpStatusCode.ServiceUnavailable : Status;
+            return new HttpResponseMessage(status);
         }
     }
 }

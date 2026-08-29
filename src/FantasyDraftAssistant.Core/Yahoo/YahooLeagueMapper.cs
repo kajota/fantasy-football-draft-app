@@ -271,6 +271,12 @@ public static class YahooLeagueMapper
         };
     }
 
+    /// Yahoo's own "Draft Type" setting encodes live vs. offline vs. auction, not
+    /// snake vs. linear, and its "Custom" draft-order label describes how starting
+    /// seats were assigned (random vs. manual) rather than the round-to-round pick
+    /// pattern — Yahoo leagues snake either way. So only an unambiguous linear
+    /// signal overrides the default; everything else, "custom" included, is Snake.
+    /// DraftType.Custom is left for the user to pick explicitly on Draft Order.
     public static DraftType MapDraftType(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw))
@@ -279,7 +285,6 @@ public static class YahooLeagueMapper
         return raw.Trim().ToLowerInvariant() switch
         {
             "linear" or "straight" or "sequential" => DraftType.Linear,
-            "custom" => DraftType.Custom,
             _ => DraftType.Snake
         };
     }

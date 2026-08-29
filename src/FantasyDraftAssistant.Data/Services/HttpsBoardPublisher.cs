@@ -8,9 +8,22 @@ using FantasyDraftAssistant.Core.Serialization;
 
 namespace FantasyDraftAssistant.Data.Services;
 
-public sealed class HttpsBoardPublisher : IBoardPublisher
+public sealed class HttpsBoardPublisher : IBoardPublisher, IDisposable
 {
     public const string HttpClientName = "board-publish";
+
+    // Once a publish fails (as opposed to being skipped because publishing isn't
+    // configured), keep retrying on a backoff until it succeeds or a newer pick
+    // supersedes it. Without this, a pick made while offline that outlives its
+    // window never reaches the web board unless something else happens to
+    // trigger another publish after connectivity returns.
+    private static readonly IReadOnlyList<TimeSpan> DefaultRetryDelays =
+    [
+        TimeSpan.FromSeconds(5),
+        TimeSpan.FromSeconds(10),
+        TimeSpan.FromSeconds(20),
+        TimeSpan.FromSeconds(30)
+    ];
 
     private static readonly IReadOnlyDictionary<string, string> Pages = LoadPages();
     private readonly HttpClient _http;
@@ -20,8 +33,11 @@ public sealed class HttpsBoardPublisher : IBoardPublisher
     private readonly IAppSettingsStore _settings;
     private readonly ICredentialStore _credentials;
     private readonly TimeProvider _clock;
+    private readonly IReadOnlyList<TimeSpan> _retryDelays;
+    private readonly object _retryLock = new();
     private int _epoch;
     private string _lastStatus = "Not published yet.";
+    private CancellationTokenSource? _retryCts;
 
     public HttpsBoardPublisher(
         HttpClient http,
@@ -31,7 +47,8 @@ public sealed class HttpsBoardPublisher : IBoardPublisher
         IAppSettingsStore settings,
         ICredentialStore credentials,
         IDraftChangeNotifier notifier,
-        TimeProvider? clock = null)
+        TimeProvider? clock = null,
+        IReadOnlyList<TimeSpan>? retryDelays = null)
     {
         _http = http;
         _drafts = drafts;
@@ -40,6 +57,7 @@ public sealed class HttpsBoardPublisher : IBoardPublisher
         _settings = settings;
         _credentials = credentials;
         _clock = clock ?? TimeProvider.System;
+        _retryDelays = retryDelays ?? DefaultRetryDelays;
         notifier.DraftChanged += (_, args) => Schedule(args.DraftId, args.BranchId);
     }
 
@@ -52,8 +70,13 @@ public sealed class HttpsBoardPublisher : IBoardPublisher
         _ = DebouncedAsync(draftId, branchId, epoch);
     }
 
-    public Task PublishNowAsync(DraftId draftId, BranchId? branchId = null, CancellationToken cancellationToken = default) =>
-        PublishCoreAsync(draftId, branchId, cancellationToken);
+    public async Task PublishNowAsync(DraftId draftId, BranchId? branchId = null, CancellationToken cancellationToken = default)
+    {
+        var epoch = Interlocked.Increment(ref _epoch);
+        var outcome = await PublishCoreAsync(draftId, branchId, cancellationToken).ConfigureAwait(false);
+        if (outcome == PublishOutcome.Failed)
+            StartRetryLoop(draftId, branchId, epoch);
+    }
 
     private async Task DebouncedAsync(DraftId draftId, BranchId branchId, int epoch)
     {
@@ -62,7 +85,9 @@ public sealed class HttpsBoardPublisher : IBoardPublisher
             await Task.Delay(250).ConfigureAwait(false);
             if (epoch != Volatile.Read(ref _epoch))
                 return;
-            await PublishCoreAsync(draftId, branchId).ConfigureAwait(false);
+            var outcome = await PublishCoreAsync(draftId, branchId).ConfigureAwait(false);
+            if (outcome == PublishOutcome.Failed)
+                StartRetryLoop(draftId, branchId, epoch);
         }
         catch
         {
@@ -70,7 +95,54 @@ public sealed class HttpsBoardPublisher : IBoardPublisher
         }
     }
 
-    private async Task PublishCoreAsync(DraftId draftId, BranchId? branchId, CancellationToken cancellationToken = default)
+    // A pick made while offline is superseded the moment a newer pick (or a
+    // manual publish) bumps the epoch — that newer attempt reads fresh full
+    // state, so it already carries everything this loop was trying to send.
+    private void StartRetryLoop(DraftId draftId, BranchId? branchId, int epoch)
+    {
+        CancellationTokenSource cts;
+        lock (_retryLock)
+        {
+            _retryCts?.Cancel();
+            _retryCts?.Dispose();
+            cts = new CancellationTokenSource();
+            _retryCts = cts;
+        }
+
+        _ = RetryLoopAsync(draftId, branchId, epoch, cts.Token);
+    }
+
+    private async Task RetryLoopAsync(DraftId draftId, BranchId? branchId, int epoch, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var attempt = 0;
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                if (epoch != Volatile.Read(ref _epoch))
+                    return;
+
+                var delay = _retryDelays[Math.Min(attempt, _retryDelays.Count - 1)];
+                attempt++;
+                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+
+                if (epoch != Volatile.Read(ref _epoch))
+                    return;
+
+                var outcome = await PublishCoreAsync(draftId, branchId, cancellationToken).ConfigureAwait(false);
+                if (outcome != PublishOutcome.Failed)
+                    return;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer publish, or disposed. Nothing left to do.
+        }
+    }
+
+    private enum PublishOutcome { Success, Skipped, Failed }
+
+    private async Task<PublishOutcome> PublishCoreAsync(DraftId draftId, BranchId? branchId, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -78,24 +150,24 @@ public sealed class HttpsBoardPublisher : IBoardPublisher
             if (state is null)
             {
                 SetStatus("Draft was not found.");
-                return;
+                return PublishOutcome.Skipped;
             }
 
             var league = state.League;
             if (!league.PublishBoard)
-                return;
+                return PublishOutcome.Skipped;
 
             if (!BoardSlug.TryNormalize(league.BoardSlug, out var slug))
             {
                 SetStatus("Publishing is on, but this league has no valid web board slug.");
-                return;
+                return PublishOutcome.Skipped;
             }
 
             var token = await _credentials.GetSecretAsync(BoardSlug.CredentialScope, BoardSlug.CredentialKey, cancellationToken).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(token))
             {
                 SetStatus("Publishing is on, but no bearer token is saved.");
-                return;
+                return PublishOutcome.Skipped;
             }
 
             var baseUrl = await _settings.GetAsync(BoardSlug.BaseUrlSettingKey, cancellationToken).ConfigureAwait(false);
@@ -103,7 +175,7 @@ public sealed class HttpsBoardPublisher : IBoardPublisher
             if (folder is null)
             {
                 SetStatus("Could not build the publish URL.");
-                return;
+                return PublishOutcome.Skipped;
             }
 
             var players = await _drafts.GetPlayersAsync(cancellationToken).ConfigureAwait(false);
@@ -131,10 +203,22 @@ public sealed class HttpsBoardPublisher : IBoardPublisher
             await PutAsync(new Uri(root, "available.json"), DraftJson.Serialize(remaining), "application/json", token, cancellationToken).ConfigureAwait(false);
 
             SetStatus($"Published {league.Name} to {folder} at {_clock.GetLocalNow():t}.");
+            return PublishOutcome.Success;
         }
         catch (Exception ex)
         {
             SetStatus("Publish failed: " + Short(ex));
+            return PublishOutcome.Failed;
+        }
+    }
+
+    public void Dispose()
+    {
+        lock (_retryLock)
+        {
+            _retryCts?.Cancel();
+            _retryCts?.Dispose();
+            _retryCts = null;
         }
     }
 

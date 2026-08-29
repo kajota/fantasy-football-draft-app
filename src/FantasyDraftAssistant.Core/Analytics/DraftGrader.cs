@@ -113,18 +113,28 @@ public static class DraftGrader
                 ["No players drafted."]);
         }
 
+        // Grades ignore K/DEF entirely: they're a coin flip most weeks and drafted last
+        // on purpose, so neither a K/DEF reach nor an empty K/DEF slot should move a grade.
+        var gradingSlots = state.RosterSlots
+            .Where(slot => slot.EligiblePositions.Count != 1
+                           || slot.EligiblePositions[0] is not (PlayerPosition.K or PlayerPosition.DEF))
+            .ToList();
+        var gradedPicks = picks
+            .Where(pick => pick.Position is not (PlayerPosition.K or PlayerPosition.DEF))
+            .ToList();
+
         var board = RosterBoardBuilder.Build(
-            state.RosterSlots,
-            picks.Select(pick => new RosterBoardPlayer(pick.Name, pick.Position, pick.NflTeam, pick.RoundPick, pick.OverallPick)).ToList());
+            gradingSlots,
+            gradedPicks.Select(pick => new RosterBoardPlayer(pick.Name, pick.Position, pick.NflTeam, pick.RoundPick, pick.OverallPick)).ToList());
         var starterKeys = board.Slots
             .Where(slot => slot.IsFilled && slot.Kind is SlotKind.Required or SlotKind.Flex)
             .Select(slot => (slot.Player, slot.RoundPick))
             .ToHashSet();
-        var starterPoints = picks
+        var starterPoints = gradedPicks
             .Where(pick => starterKeys.Contains((pick.Name, pick.RoundPick)))
             .Sum(pick => pick.ProjectedPoints ?? 0);
         var teamCount = Math.Max(1, state.League.TeamCount);
-        var values = picks
+        var values = gradedPicks
             .Where(pick => pick.Adp is not null)
             .Select(pick => pick.OverallPick - AdpConverter.ScaleToLeague(pick.Adp!.Value, teamCount))
             .ToList();
@@ -135,11 +145,11 @@ public static class DraftGrader
 
         if (values.Count > 0)
         {
-            var best = picks
+            var best = gradedPicks
                 .Where(pick => pick.Adp is not null)
                 .OrderByDescending(pick => pick.OverallPick - AdpConverter.ScaleToLeague(pick.Adp!.Value, teamCount))
                 .First();
-            var worst = picks
+            var worst = gradedPicks
                 .Where(pick => pick.Adp is not null)
                 .OrderBy(pick => pick.OverallPick - AdpConverter.ScaleToLeague(pick.Adp!.Value, teamCount))
                 .First();

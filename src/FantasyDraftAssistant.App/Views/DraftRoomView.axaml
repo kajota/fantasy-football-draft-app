@@ -650,43 +650,38 @@
 
       <TabItem Header="AI Analysts">
         <DockPanel Margin="0,4,0,0">
-          <Border DockPanel.Dock="Top" Classes="card" Padding="10" Margin="0,0,0,8">
-            <StackPanel Spacing="8">
+          <Border DockPanel.Dock="Top" Classes="card" Padding="8" Margin="0,0,0,6">
+            <StackPanel Spacing="6">
               <DockPanel>
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
-                  <Button Content="Side by side" Classes="ghost" Command="{Binding TileAiSideBySideCommand}"
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6">
+                  <Button Content="Side by side" Classes="ghost compact" Command="{Binding TileAiSideBySideCommand}"
                           ToolTip.Tip="Give each provider a column." />
-                  <Button Content="Stacked" Classes="ghost" Command="{Binding TileAiStackedCommand}"
+                  <Button Content="Stacked" Classes="ghost compact" Command="{Binding TileAiStackedCommand}"
                           ToolTip.Tip="Stack each provider in a row." />
                 </StackPanel>
-                <TextBlock Text="Ask" Classes="h2" VerticalAlignment="Center" />
+                <TextBlock Text="{Binding AiContextLine}" Classes="muted" TextWrapping="Wrap" FontSize="11"
+                           VerticalAlignment="Center" />
               </DockPanel>
-              <TextBlock Text="{Binding AiContextLine}" Classes="muted" TextWrapping="Wrap" FontSize="11" />
-              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                <TextBox x:Name="AiPromptBoxTab" Text="{Binding AiPrompt}" MinHeight="56"
+              <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="6">
+                <TextBox Grid.Column="0" x:Name="AiPromptBoxTab" Text="{Binding AiPrompt}" Height="40"
                          AcceptsReturn="True" TextWrapping="Wrap"
                          PlaceholderText="Who should the person drafting now pick?" />
-                <StackPanel Grid.Column="1" Spacing="8">
-                  <Button Content="Fast" Classes="ghost" Command="{Binding UseFastAiCommand}"
-                          HorizontalAlignment="Stretch"
-                          ToolTip.Tip="Short answer from the current snapshot. Use on the clock." />
-                  <Button Content="Deep" Classes="ghost" Command="{Binding UseDeepAiCommand}"
-                          HorizontalAlignment="Stretch"
-                          ToolTip.Tip="Same snapshot, longer look. Slower and costs more." />
-                  <Button Content="Ask" Classes="primary" Command="{Binding AskAiCommand}"
-                          HorizontalAlignment="Stretch"
-                          ToolTip.Tip="Empty box asks who the person on the clock should pick, not who you should take." />
-                  <ComboBox ItemsSource="{Binding TauntTargets}" SelectedItem="{Binding SelectedTauntTarget}"
-                            IsVisible="{Binding HasTauntTarget}"
-                            ItemTemplate="{StaticResource TauntTargetTemplate}"
-                            ToolTip.Tip="Manager the taunt is aimed at." />
-                  <Button Content="Taunt" Classes="ghost" Command="{Binding TauntManagerCommand}"
-                          HorizontalAlignment="Stretch" IsVisible="{Binding HasTauntTarget}"
-                          ToolTip.Tip="Grok writes a vulgar locker-room roast of that manager. Needs Grok enabled under AI Providers." />
-                </StackPanel>
+                <Button Grid.Column="1" Content="Fast" Classes="ghost" Command="{Binding UseFastAiCommand}"
+                        VerticalAlignment="Stretch"
+                        ToolTip.Tip="Short answer from the current snapshot. Use on the clock." />
+                <Button Grid.Column="2" Content="Deep" Classes="ghost" Command="{Binding UseDeepAiCommand}"
+                        VerticalAlignment="Stretch"
+                        ToolTip.Tip="Same snapshot, longer look. Slower and costs more." />
+                <Button Grid.Column="3" Content="Ask" Classes="primary" Command="{Binding AskAiCommand}"
+                        VerticalAlignment="Stretch"
+                        ToolTip.Tip="Empty box asks who the person on the clock should pick, not who you should take." />
               </Grid>
-              <CheckBox Content="Auto-ask when I'm on the clock" IsChecked="{Binding AutoAskEnabled}"
-                        ToolTip.Tip="Off until you check it. Opening Draft Room does not spend. When on, Fast/Deep advisors are asked automatically when it becomes your pick." />
+              <DockPanel>
+                <CheckBox DockPanel.Dock="Left" Content="Auto-ask when I'm on the clock" IsChecked="{Binding AutoAskEnabled}"
+                          ToolTip.Tip="Off until you check it. Opening Draft Room does not spend. When on, Fast/Deep advisors are asked automatically when it becomes your pick." />
+                <TextBlock Text="{Binding AiModeHint}" Classes="muted" TextWrapping="Wrap" FontSize="11"
+                           Margin="12,0,0,0" VerticalAlignment="Center" />
+              </DockPanel>
               <ItemsControl ItemsSource="{Binding Alerts}" IsVisible="{Binding HasAlerts}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="x:String">
@@ -694,7 +689,6 @@
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
-              <TextBlock Text="{Binding AiModeHint}" Classes="muted" TextWrapping="Wrap" FontSize="11" />
             </StackPanel>
           </Border>
 

@@ -179,16 +179,10 @@ public sealed class DraftCommandService(
         // From here the branch owns its selections, so a later load must not fall back to
         // inheriting the parent's picks just because this wrote no rows.
         LeagueService.MarkSelectionsMaterialized(db, tx, state.ActiveBranch.BranchId);
-        using (var cmd = db.Cmd("DELETE FROM TeamRosterProjection WHERE DraftId = $d AND BranchId = $b;", tx)
-                   .Bind("$d", draft).Bind("$b", branch))
-            cmd.ExecuteNonQuery();
-        using (var cmd = db.Cmd("DELETE FROM PlayerAvailabilityProjection WHERE DraftId = $d AND BranchId = $b;", tx)
-                   .Bind("$d", draft).Bind("$b", branch))
-            cmd.ExecuteNonQuery();
 
         foreach (var selection in state.ActiveSelections.Values)
         {
-            using (var cmd = db.Cmd("""
+            using var cmd = db.Cmd("""
                 INSERT INTO ActiveDraftSelections(DraftId, BranchId, OverallPick, EventId, DraftSlotId, Round, RoundPick, TeamId, PlayerId, Source, ExternalSourceId, ObservedAt)
                 VALUES ($d, $b, $pick, $event, $slot, $round, $rp, $team, $player, $source, $ext, $obs);
                 """, tx)
@@ -203,43 +197,7 @@ public sealed class DraftCommandService(
                        .Bind("$player", selection.PlayerId.ToString())
                        .Bind("$source", selection.Source.ToString())
                        .Bind("$ext", selection.ExternalSourceId)
-                       .Bind("$obs", selection.ObservedAt.ToString("O")))
-            {
-                cmd.ExecuteNonQuery();
-            }
-
-            using (var cmd = db.Cmd("""
-                INSERT INTO TeamRosterProjection(DraftId, BranchId, TeamId, PlayerId, OverallPick)
-                VALUES ($d, $b, $team, $player, $pick);
-                """, tx)
-                       .Bind("$d", draft)
-                       .Bind("$b", branch)
-                       .Bind("$team", selection.TeamId.ToString())
-                       .Bind("$player", selection.PlayerId.ToString())
-                       .Bind("$pick", selection.OverallPick))
-            {
-                cmd.ExecuteNonQuery();
-            }
-        }
-
-        using var playerCmd = db.Cmd("SELECT PlayerId FROM Players;", tx);
-        using var reader = playerCmd.ExecuteReader();
-        var playerIds = new List<string>();
-        while (reader.Read())
-            playerIds.Add(reader.GetString(0));
-        reader.Close();
-
-        foreach (var playerId in playerIds)
-        {
-            var available = !state.UnavailablePlayers.Contains(PlayerId.Parse(playerId));
-            using var cmd = db.Cmd("""
-                INSERT INTO PlayerAvailabilityProjection(DraftId, BranchId, PlayerId, IsAvailable)
-                VALUES ($d, $b, $p, $a);
-                """, tx)
-                .Bind("$d", draft)
-                .Bind("$b", branch)
-                .Bind("$p", playerId)
-                .Bind("$a", available ? 1 : 0);
+                       .Bind("$obs", selection.ObservedAt.ToString("O"));
             cmd.ExecuteNonQuery();
         }
 

@@ -37,16 +37,25 @@ public sealed class DraftQueryService(
     {
         var state = await Require(context, cancellationToken);
         var players = (await drafts.GetPlayersAsync(cancellationToken)).ToDictionary(p => p.PlayerId);
-        return MapRoster(state, players, teamId);
+        return MapRoster(state, players, teamId, state.SelectionsForTeam(teamId));
     }
+
+    /// Groups every active selection by team once, so callers that need several teams' rosters
+    /// in one pass (decision context, intervening teams) don't each rescan the whole draft.
+    private static IReadOnlyDictionary<TeamId, IReadOnlyList<Core.Models.ActiveSelection>> GroupSelectionsByTeam(
+        DraftWorkingState state) =>
+        state.ActiveSelections.Values
+            .GroupBy(s => s.TeamId)
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<Core.Models.ActiveSelection>)g.OrderBy(s => s.OverallPick).ToList());
 
     private static RosterDto MapRoster(
         DraftWorkingState state,
         IReadOnlyDictionary<PlayerId, Core.Models.Player> players,
-        TeamId teamId)
+        TeamId teamId,
+        IReadOnlyList<Core.Models.ActiveSelection> selections)
     {
         var team = state.Teams.First(t => t.TeamId.Equals(teamId));
-        var roster = state.SelectionsForTeam(teamId).Select(s =>
+        var roster = selections.Select(s =>
         {
             players.TryGetValue(s.PlayerId, out var player);
             return new RosterPlayerDto
@@ -207,6 +216,8 @@ public sealed class DraftQueryService(
         var queue = await MapPlayers(state, queued, cancellationToken, sourceKey, playerData);
         var mentioned = await MentionedPlayersAsync(state, players.Values.ToList(), context.Prompt, sourceKey, cancellationToken, playerData);
         var userNeeds = snapshot.TeamNeeds.FirstOrDefault(team => team.TeamId.Equals(user));
+        var selectionsByTeam = GroupSelectionsByTeam(state);
+        var userSelections = selectionsByTeam.GetValueOrDefault(user, []);
 
         var outlook = PickOutlookWindow(state, user);
         Annotate(
@@ -223,7 +234,7 @@ public sealed class DraftQueryService(
             .Take(InjuredCount)
             .ToList();
         var board = await GetDraftBoardAsync(context, cancellationToken);
-        var intervening = InterveningTeams(state, snapshot, players, user);
+        var intervening = InterveningTeams(state, snapshot, players, user, selectionsByTeam);
         var refreshes = await fantasyData.GetRefreshInfoAsync(cancellationToken);
         var now = DateTimeOffset.UtcNow;
 
@@ -231,9 +242,9 @@ public sealed class DraftQueryService(
         {
             Status = MapStatus(state, snapshot),
             League = MapLeague(state),
-            MyRoster = MapRoster(state, players, user),
+            MyRoster = MapRoster(state, players, user, userSelections),
             MyRemainingNeeds = FormatNeeds(userNeeds),
-            MyRosterNeeds = RosterNeeds(state, players, user),
+            MyRosterNeeds = RosterNeeds(state, players, userSelections),
             Queue = new MyQueueDto { Players = queue },
             TopAvailable = topAvailable,
             AvailableRookies = rookies,
@@ -248,7 +259,7 @@ public sealed class DraftQueryService(
             AllTeamNeeds = snapshot.TeamNeeds
                 .Select(t => $"{t.TeamName}: {string.Join(", ", t.RemainingNeeds.Select(n => $"{n.Value} {n.Key}"))}")
                 .ToList(),
-            AllTeamRosterNeeds = AllTeamRosterNeeds(state, players),
+            AllTeamRosterNeeds = AllTeamRosterNeeds(state, players, selectionsByTeam),
             Alerts = snapshot.Alerts.Select(a => a.Message).ToList(),
             RankingsSource = FantasyDataSourcePicker.Describe(playerData.RankingsSourceKey ?? sourceKey, format),
             DataSourcesUsed = DataSourcesUsed(playerData, refreshes),
@@ -259,7 +270,7 @@ public sealed class DraftQueryService(
             MyUpcomingPicks = MyUpcomingPicks(state, user),
             InterveningTeams = intervening,
             CurrentTeamRoster = snapshot.CurrentTeamId is { } currentTeam
-                ? MapRoster(state, players, currentTeam)
+                ? MapRoster(state, players, currentTeam, selectionsByTeam.GetValueOrDefault(currentTeam, []))
                 : null,
             DataFreshness = new DataFreshnessDto
             {
@@ -374,7 +385,8 @@ public sealed class DraftQueryService(
         DraftWorkingState state,
         AnalyticsSnapshot snapshot,
         IReadOnlyDictionary<PlayerId, Core.Models.Player> players,
-        TeamId user)
+        TeamId user,
+        IReadOnlyDictionary<TeamId, IReadOnlyList<Core.Models.ActiveSelection>> selectionsByTeam)
     {
         if (snapshot.UserNextOverallPick is not { } userNext)
             return [];
@@ -390,7 +402,8 @@ public sealed class DraftQueryService(
             .GroupBy(s => s.TeamId)
             .Select(group =>
             {
-                var roster = MapRoster(state, players, group.Key);
+                var selections = selectionsByTeam.GetValueOrDefault(group.Key, []);
+                var roster = MapRoster(state, players, group.Key, selections);
                 var full = roster.Players.Count <= FullRosterLimit;
                 return new InterveningTeamDto
                 {
@@ -410,7 +423,7 @@ public sealed class DraftQueryService(
                             .Select(p => $"{p.Name} ({p.Position}, {p.RoundPick})")
                             .ToList(),
                     RemainingNeeds = FormatNeeds(needsByTeam.GetValueOrDefault(group.Key)),
-                    RosterNeeds = RosterNeeds(state, players, group.Key)
+                    RosterNeeds = RosterNeeds(state, players, selections)
                 };
             })
             .ToList();
@@ -689,9 +702,9 @@ public sealed class DraftQueryService(
     private static IReadOnlyList<RosterNeedDto> RosterNeeds(
         DraftWorkingState state,
         IReadOnlyDictionary<PlayerId, Core.Models.Player> players,
-        TeamId teamId)
+        IReadOnlyList<Core.Models.ActiveSelection> selections)
     {
-        var drafted = state.SelectionsForTeam(teamId)
+        var drafted = selections
             .Select(selection => players.GetValueOrDefault(selection.PlayerId)?.PrimaryPosition)
             .Where(position => position is not null)
             .Select(position => position!.Value)
@@ -708,14 +721,15 @@ public sealed class DraftQueryService(
 
     private static IReadOnlyList<TeamRosterNeedsDto> AllTeamRosterNeeds(
         DraftWorkingState state,
-        IReadOnlyDictionary<PlayerId, Core.Models.Player> players) =>
+        IReadOnlyDictionary<PlayerId, Core.Models.Player> players,
+        IReadOnlyDictionary<TeamId, IReadOnlyList<Core.Models.ActiveSelection>> selectionsByTeam) =>
         state.Teams
             .OrderBy(team => team.DraftPosition)
             .Select(team => new TeamRosterNeedsDto
             {
                 TeamName = team.Label,
                 TeamId = team.TeamId.ToString(),
-                RosterNeeds = RosterNeeds(state, players, team.TeamId)
+                RosterNeeds = RosterNeeds(state, players, selectionsByTeam.GetValueOrDefault(team.TeamId, []))
             })
             .ToList();
 

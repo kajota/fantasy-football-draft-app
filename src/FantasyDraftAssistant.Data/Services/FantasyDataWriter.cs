@@ -199,6 +199,7 @@ public sealed class FantasyDataWriter(SqliteConnectionFactory factory) : IFantas
         RecordRefresh(db, tx, providerKey, "adp", adp.Count, now);
         RecordRefresh(db, tx, providerKey, "projections", projections.Count, now);
         tx.Commit();
+        LeagueService.InvalidatePlayerCache();
 
         return Task.FromResult(new FantasyDataRefreshResult
         {

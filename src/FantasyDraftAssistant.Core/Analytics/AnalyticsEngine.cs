@@ -98,11 +98,16 @@ public static class AnalyticsEngine
             remainingByTier[ranking.Tier.Value] = remainingByTier.GetValueOrDefault(ranking.Tier.Value) + 1;
         }
 
+        // Grouped once so this doesn't rescan every selection made so far, once per team.
+        var selectionsByTeam = state.ActiveSelections.Values
+            .GroupBy(s => s.TeamId)
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<ActiveSelection>)g.ToList());
+
         var teamNeeds = state.Teams
             .OrderBy(t => t.DraftPosition)
             .Select(team =>
             {
-                var positions = state.SelectionsForTeam(team.TeamId)
+                var positions = selectionsByTeam.GetValueOrDefault(team.TeamId, [])
                     .Select(s => playerLookup.TryGetValue(s.PlayerId, out var p) ? p.PrimaryPosition : (PlayerPosition?)null)
                     .Where(p => p.HasValue)
                     .Select(p => p!.Value)

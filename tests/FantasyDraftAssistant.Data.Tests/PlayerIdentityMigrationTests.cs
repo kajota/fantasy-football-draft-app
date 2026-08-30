@@ -203,11 +203,37 @@ public class PlayerIdentityMigrationTests : IDisposable
     }
 
     /// <summary>Rewinds only migration 12 so it re-runs against seeded rows; later migrations stay applied.</summary>
+    /// <summary>
+    /// Rewinds just far enough to replay migration 12 in isolation. Migration 17 (whose
+    /// SchemaVersion row is left alone, so it does not rerun) later dropped the two projection
+    /// tables migration 12 still expects to find, since those existed at version 11 and weren't
+    /// dropped until 17 — so they're recreated here to put the schema back into the shape
+    /// migration 12 was written against.
+    /// </summary>
     private void ResetSchemaVersionTo11()
     {
         using var connection = Open();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "DELETE FROM SchemaVersion WHERE Version = 12;";
+        cmd.CommandText = """
+            DELETE FROM SchemaVersion WHERE Version = 12;
+
+            CREATE TABLE IF NOT EXISTS TeamRosterProjection (
+                DraftId TEXT NOT NULL,
+                BranchId TEXT NOT NULL,
+                TeamId TEXT NOT NULL,
+                PlayerId TEXT NOT NULL,
+                OverallPick INTEGER NOT NULL,
+                PRIMARY KEY (DraftId, BranchId, TeamId, PlayerId)
+            );
+
+            CREATE TABLE IF NOT EXISTS PlayerAvailabilityProjection (
+                DraftId TEXT NOT NULL,
+                BranchId TEXT NOT NULL,
+                PlayerId TEXT NOT NULL,
+                IsAvailable INTEGER NOT NULL,
+                PRIMARY KEY (DraftId, BranchId, PlayerId)
+            );
+            """;
         cmd.ExecuteNonQuery();
     }
 }

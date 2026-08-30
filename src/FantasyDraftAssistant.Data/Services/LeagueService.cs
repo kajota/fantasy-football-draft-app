@@ -825,7 +825,13 @@ public sealed class LeagueService(SqliteConnectionFactory factory, IBackupServic
         var eligibility = new Dictionary<string, List<PlayerPosition>>();
         if (ids.Count > 0)
         {
-            using var pos = db.Cmd("SELECT RosterSlotId, Position FROM RosterSlotEligiblePositions;", tx);
+            using var pos = db.Cmd("""
+                SELECT p.RosterSlotId, p.Position
+                FROM RosterSlotEligiblePositions p
+                JOIN RosterSlots r ON r.RosterSlotId = p.RosterSlotId
+                WHERE r.LeagueId = $id
+                ORDER BY p.rowid;
+                """, tx).Bind("$id", leagueId.ToString());
             using var posReader = pos.ExecuteReader();
             while (posReader.Read())
             {
@@ -1069,7 +1075,33 @@ public sealed class LeagueService(SqliteConnectionFactory factory, IBackupServic
         return list;
     }
 
+    // The NFL player catalog only changes when FantasyDataWriter.WriteAsync runs (an explicit
+    // data refresh/import), yet it was being reloaded from SQLite on nearly every draft load and
+    // query. Nothing mutates the Player objects or list this returns after loading, so caching
+    // the whole list in memory and invalidating it from the one write path is safe.
+    private static List<Player>? _playerCache;
+    private static readonly object PlayerCacheLock = new();
+
+    internal static void InvalidatePlayerCache()
+    {
+        lock (PlayerCacheLock)
+            _playerCache = null;
+    }
+
     internal static List<Player> LoadPlayers(SqliteConnection db, SqliteTransaction? tx = null)
+    {
+        lock (PlayerCacheLock)
+        {
+            if (_playerCache is { } cached)
+                return cached;
+
+            var loaded = LoadPlayersFromDb(db, tx);
+            _playerCache = loaded;
+            return loaded;
+        }
+    }
+
+    private static List<Player> LoadPlayersFromDb(SqliteConnection db, SqliteTransaction? tx)
     {
         using var cmd = db.Cmd("SELECT * FROM Players ORDER BY Name;", tx);
         using var reader = cmd.ExecuteReader();
@@ -1144,8 +1176,6 @@ public sealed class LeagueService(SqliteConnectionFactory factory, IBackupServic
     {
         foreach (var sql in new[]
         {
-            "DELETE FROM PlayerAvailabilityProjection WHERE DraftId = $id;",
-            "DELETE FROM TeamRosterProjection WHERE DraftId = $id;",
             "DELETE FROM ActiveDraftSelections WHERE DraftId = $id;",
             "DELETE FROM AiResponses WHERE DraftId = $id;",
             "DELETE FROM AiUsageRecords WHERE DraftId = $id;",

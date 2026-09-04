@@ -16,7 +16,8 @@ drafts (I have done 3 of those with this program) but online Yahoo drafts are to
 if the timeout for each team's pick is short. I tried using this with an online Yahoo
 league with a 1 minute time limit per draft pick and putting in the players manually
 that quickly was very difficult. (it was doable but a giant PIA with 1 minute time 
-limits).
+limits). I should also note that I've only ever used this in a draft using Omarchy 4
+linux. I have run it in windows but not actually used it in a draft.
 
 ## What it does
 

@@ -9,6 +9,15 @@ It is an Avalonia desktop app on .NET 10. There is no installer and no web UI
 for the assistant itself — you clone this repo and run it. Version in the
 sidebar comes from git tags (`v1.0.5` at the time of writing).
 
+Note: This was originally written with the idea that I could get a API token for
+use with Yahoo fantasy football. I was never able to get that so anything in this
+program that needed that never worked. The program still works well for in-person 
+drafts (I have done 3 of those with this program) but online Yahoo drafts are tough
+if the timeout for each team's pick is short. I tried using this with an online Yahoo
+league with a 1 minute time limit per draft pick and putting in the players manually
+that quickly was very difficult. (it was doable but a giant PIA with 1 minute time 
+limits).
+
 ## What it does
 
 - **Leagues.** Create an 8 / 10 / 12 / 14 / 16 team snake league, 1-QB or
